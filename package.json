@@ -1,0 +1,23 @@
+{
+  "name": "social-media-automation",
+  "version": "1.0.0",
+  "description": "Autonomous TikTok content engine with Virlo + Postiz + Nano Banana",
+  "type": "module",
+  "scripts": {
+    "cycle": "tsx src/cycle.ts",
+    "research": "tsx src/research.ts",
+    "generate": "tsx src/content-generator.ts",
+    "post": "tsx src/poster.ts",
+    "analytics": "tsx src/analytics.ts",
+    "optimize": "tsx src/optimizer.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "dotenv": "^17.3.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
