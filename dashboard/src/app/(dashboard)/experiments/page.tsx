@@ -2,6 +2,14 @@ import { createClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExportButton } from "@/components/export-button";
 import { ExperimentsFilter } from "./experiments-filter";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const revalidate = 300;
 
@@ -47,17 +55,27 @@ export default async function ExperimentsPage({
   ).length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-5xl font-semibold tracking-tight">
-            Experiments
-          </h1>
-          <p className="text-lg text-muted-foreground mt-2">
+          <h1 className="text-3xl font-bold tracking-tight">Experiments</h1>
+          <p className="text-muted-foreground mt-1">
             A/B test history and results — per account.
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
+          <div className="flex gap-6 tabular-nums">
+            <div className="text-right">
+              <p className="text-2xl font-semibold">{filtered.length}</p>
+              <p className="text-xs text-muted-foreground">Total</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-semibold text-[#248a3d]">
+                {winners}
+              </p>
+              <p className="text-xs text-muted-foreground">Winners</p>
+            </div>
+          </div>
           <ExportButton
             data={filtered.map((e) => ({
               id: e.id,
@@ -78,156 +96,146 @@ export default async function ExperimentsPage({
             filename="experiments"
           />
         </div>
-        <div className="flex gap-8 tabular-nums">
-          <div className="text-right">
-            <p className="text-3xl font-semibold">{filtered.length}</p>
-            <p className="text-sm text-muted-foreground">Total</p>
-          </div>
-          <div className="text-right">
-            <p className="text-3xl font-semibold text-[#248a3d]">{winners}</p>
-            <p className="text-sm text-muted-foreground">Winners</p>
-          </div>
-        </div>
       </div>
 
       <ExperimentsFilter accounts={accounts} selected={filterAccount ?? null} />
 
       {filtered.length === 0 && (
-        <p className="text-lg text-muted-foreground">No experiments yet.</p>
+        <p className="text-muted-foreground">No experiments yet.</p>
       )}
 
-      <div className="grid gap-5 md:grid-cols-2">
-        {filtered.map((exp) => {
-          const isWinner = exp.status?.toLowerCase().includes("winner");
-          const isInconclusive = exp.status
-            ?.toLowerCase()
-            .includes("inconclusive");
-          const isCrossAccount =
-            exp.account?.includes(",") ||
-            exp.description?.toLowerCase().includes("cross-account");
+      {filtered.length > 0 && (
+        <Card className="shadow-sm border-0 ring-0">
+          <CardContent className="pt-4 pb-2">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">ID</TableHead>
+                    <TableHead className="text-xs">Date</TableHead>
+                    <TableHead className="text-xs">Account</TableHead>
+                    <TableHead className="text-xs">Variable</TableHead>
+                    <TableHead className="text-xs">Variant A</TableHead>
+                    <TableHead className="text-xs">Variant B</TableHead>
+                    <TableHead className="text-xs text-right">
+                      Views A
+                    </TableHead>
+                    <TableHead className="text-xs text-right">
+                      Views B
+                    </TableHead>
+                    <TableHead className="text-xs text-right">
+                      Saves A
+                    </TableHead>
+                    <TableHead className="text-xs text-right">
+                      Saves B
+                    </TableHead>
+                    <TableHead className="text-xs text-right">
+                      Save% A
+                    </TableHead>
+                    <TableHead className="text-xs text-right">
+                      Save% B
+                    </TableHead>
+                    <TableHead className="text-xs">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((exp) => {
+                    const isWinner = exp.status
+                      ?.toLowerCase()
+                      .includes("winner");
+                    const isInconclusive = exp.status
+                      ?.toLowerCase()
+                      .includes("inconclusive");
+                    const isCrossAccount = exp.account?.includes(",");
 
-          return (
-            <Card key={exp.id}>
-              <CardContent className="pt-6 space-y-5">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-base font-semibold">#{exp.id}</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      {exp.date}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {exp.account &&
-                      exp.account.split(",").map((a: string) => (
-                        <span
-                          key={a.trim()}
-                          className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-blue-500/10 text-blue-500"
+                    return (
+                      <TableRow key={exp.id}>
+                        <TableCell className="text-xs font-mono font-medium">
+                          {exp.id}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {exp.date}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-wrap gap-1">
+                            {exp.account
+                              ?.split(",")
+                              .map((a: string) => (
+                                <span
+                                  key={a.trim()}
+                                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-500 whitespace-nowrap"
+                                >
+                                  @{a.trim()}
+                                </span>
+                              ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {exp.variable}
+                        </TableCell>
+                        <TableCell
+                          className="text-xs max-w-[140px] truncate"
+                          title={exp.variant_a}
                         >
-                          @{a.trim()}
-                        </span>
-                      ))}
-                    {isCrossAccount && (
-                      <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-red-500/10 text-red-500">
-                        Cross-Account
-                      </span>
-                    )}
-                    <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${
-                        isWinner
-                          ? "bg-[#248a3d]/10 text-[#248a3d]"
-                          : isInconclusive
-                            ? "bg-[#bf4800]/10 text-[#bf4800]"
-                            : "bg-[#16a34a]/10 text-[#16a34a]"
-                      }`}
-                    >
-                      {isWinner
-                        ? "Winner"
-                        : isInconclusive
-                          ? "Inconclusive"
-                          : "Active"}
-                    </span>
-                  </div>
-                </div>
-
-                {exp.description && (
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {exp.description}
-                  </p>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <VariantCard
-                    label="Variant A"
-                    value={exp.variant_a}
-                    views={exp.views_a}
-                    saves={exp.saves_a}
-                    saveRate={exp.save_rate_a}
-                    isWinner={exp.winner === "A"}
-                  />
-                  <VariantCard
-                    label="Variant B"
-                    value={exp.variant_b}
-                    views={exp.views_b}
-                    saves={exp.saves_b}
-                    saveRate={exp.save_rate_b}
-                    isWinner={exp.winner === "B"}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function VariantCard({
-  label,
-  value,
-  views,
-  saves,
-  saveRate,
-  isWinner,
-}: {
-  label: string;
-  value: string;
-  views: number;
-  saves: number;
-  saveRate: number;
-  isWinner: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-xl p-4 ${
-        isWinner
-          ? "bg-[#248a3d]/5 ring-1 ring-[#248a3d]/15"
-          : "bg-secondary/60"
-      }`}
-    >
-      <div className="flex items-center gap-2 mb-2.5">
-        <span className="text-xs uppercase tracking-widest text-muted-foreground font-semibold">
-          {label}
-        </span>
-        {isWinner && (
-          <span className="text-xs font-semibold text-[#248a3d]">Winner</span>
-        )}
-      </div>
-      <p className="text-sm font-medium line-clamp-2 mb-3">{value}</p>
-      <div className="space-y-1.5 tabular-nums">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Views</span>
-          <span className="font-semibold">{views}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Saves</span>
-          <span className="font-semibold">{saves}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Save Rate</span>
-          <span className="font-semibold">{saveRate}%</span>
-        </div>
-      </div>
+                          {exp.variant_a}
+                        </TableCell>
+                        <TableCell
+                          className="text-xs max-w-[140px] truncate"
+                          title={exp.variant_b}
+                        >
+                          {exp.variant_b}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {exp.views_a?.toLocaleString() || 0}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {exp.views_b?.toLocaleString() || 0}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {exp.saves_a || 0}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {exp.saves_b || 0}
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {exp.save_rate_a || 0}%
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {exp.save_rate_b || 0}%
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {isCrossAccount && (
+                              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-500">
+                                Cross
+                              </span>
+                            )}
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${
+                                isWinner
+                                  ? "bg-[#248a3d]/10 text-[#248a3d]"
+                                  : isInconclusive
+                                    ? "bg-[#bf4800]/10 text-[#bf4800]"
+                                    : "bg-[#16a34a]/10 text-[#16a34a]"
+                              }`}
+                            >
+                              {isWinner
+                                ? `Winner ${exp.winner || ""}`
+                                : isInconclusive
+                                  ? "Inconclusive"
+                                  : "Active"}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
