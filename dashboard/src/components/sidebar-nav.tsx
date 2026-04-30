@@ -11,6 +11,7 @@ import {
   FlaskConical,
   BarChart3,
   Megaphone,
+  ShieldAlert,
   Settings,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/experiments", label: "Experiments", icon: FlaskConical },
   { href: "/formats", label: "Formats", icon: BarChart3 },
+  { href: "/errors", label: "Errors & Auto-Fix", icon: ShieldAlert },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
