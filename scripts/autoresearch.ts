@@ -261,7 +261,12 @@ async function insertExperimentJobs(
       .insert({
         label: `${baseLabel} · ${suffix} (${variant})`,
         flows: [decision.flow],
-        path: 'draft',                // experiments default to drafts; manager can publish manually
+        // path='direct' so experiment posts publish themselves via Blotato.
+        // Without this the script uploads to TikTok drafts and the loop
+        // stalls waiting for someone to open the TikTok app and tap Publish.
+        // The dashboard's batch CRUD still lets admins set draft for non-
+        // experiment runs when they want a manual review gate.
+        path: 'direct',
         account_handles: [decision.account],
         posts_per_account: 1,
         skip_research: true,          // research already done in phase 1
