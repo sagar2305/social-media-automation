@@ -1,15 +1,23 @@
 {
   "name": "social-media-automation",
   "version": "1.0.0",
-  "description": "Autonomous TikTok content engine with Virlo + Postiz + Nano Banana",
+  "description": "Autonomous TikTok content engine with Virlo + Blotato + ScrapeCreators + Gemini",
   "type": "module",
   "scripts": {
-    "cycle": "tsx src/cycle.ts",
-    "research": "tsx src/research.ts",
-    "generate": "tsx src/content-generator.ts",
-    "post": "tsx src/poster.ts",
-    "analytics": "tsx src/analytics.ts",
-    "optimize": "tsx src/optimizer.ts"
+    "cycle": "tsx main.ts",
+    "flow": "bash scripts/run_flow_chain.sh",
+    "flow1": "tsx main.ts --flow=1",
+    "flow2": "tsx main.ts --flow=2",
+    "flow3": "tsx main.ts --flow=3",
+    "research": "tsx scripts/fetch_trends.ts",
+    "generate": "tsx scripts/text_overlay.ts",
+    "post": "tsx scripts/post_to_tiktok.ts",
+    "analytics": "tsx scripts/pull_analytics.ts",
+    "optimize": "tsx scripts/optimizer.ts",
+    "refresh": "tsx scripts/daily-refresh.ts",
+    "refresh:quick": "tsx scripts/daily-refresh.ts --skip-research",
+    "sync": "tsx scripts/sync-to-supabase.ts",
+    "healthcheck": "bash scripts/healthcheck.sh"
   },
   "keywords": [],
   "author": "",
@@ -19,5 +27,8 @@
     "dotenv": "^17.3.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.102.1"
   }
 }

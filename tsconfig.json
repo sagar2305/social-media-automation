@@ -7,13 +7,15 @@
     "strict": true,
     "outDir": "dist",
     "rootDir": ".",
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
     },
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts", "config.ts"],
+  "include": ["scripts/**/*.ts", "config/**/*.ts", "main.ts"],
   "exclude": ["node_modules", "dist"]
 }

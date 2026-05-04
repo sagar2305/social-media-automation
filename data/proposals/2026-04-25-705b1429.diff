@@ -1,0 +1,5 @@
+--- a/scripts/auto_fix/__propose_scratch.ts
++++ b/scripts/auto_fix/__propose_scratch.ts
+@@ -1 +1 @@
+-export const N = 1;
++export const N = 2;

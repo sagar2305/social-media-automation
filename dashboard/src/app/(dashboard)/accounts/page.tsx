@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase";
 import { AccountsTable } from "@/components/accounts-table";
+import { AccountManager, type ManagedAccount } from "@/components/account-manager";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ExportButton } from "@/components/export-button";
 import { getDateFilter } from "@/lib/utils";
 import type { AccountSummary } from "@/lib/types";
 
-export const revalidate = 300;
+export const revalidate = 0;
 
 async function getAccountSummaries(dateFrom: string | null) {
   const supabase = await createClient();
@@ -78,13 +79,35 @@ async function getAccountSummaries(dateFrom: string | null) {
   return summaries;
 }
 
+async function getManagedAccounts(): Promise<ManagedAccount[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("accounts")
+    .select("id, name, handle, active, notes")
+    .order("created_at", { ascending: true })
+    .returns<ManagedAccount[]>();
+  return data ?? [];
+}
+
+async function getCurrentRole(): Promise<string> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return "viewer";
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+  return data?.role ?? "viewer";
+}
+
 export default async function AccountsPage(props: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const searchParams = await props.searchParams;
   const range = typeof searchParams.range === "string" ? searchParams.range : undefined;
   const dateFrom = getDateFilter(range);
-  const accounts = await getAccountSummaries(dateFrom);
+  const [accounts, managed, role] = await Promise.all([
+    getAccountSummaries(dateFrom),
+    getManagedAccounts(),
+    getCurrentRole(),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -92,7 +115,7 @@ export default async function AccountsPage(props: {
         <div>
           <h1 className="text-5xl font-semibold tracking-tight">Accounts</h1>
           <p className="text-lg text-muted-foreground mt-2">
-            {accounts.length} account{accounts.length !== 1 ? "s" : ""} tracked
+            {accounts.length} account{accounts.length !== 1 ? "s" : ""} tracked · {managed.filter((a) => a.active).length} active in pipeline
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -115,7 +138,13 @@ export default async function AccountsPage(props: {
           </Suspense>
         </div>
       </div>
-      <AccountsTable accounts={accounts} />
+
+      <AccountManager initial={managed} isAdmin={role === "admin"} />
+
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight mb-4">Performance</h2>
+        <AccountsTable accounts={accounts} />
+      </div>
     </div>
   );
 }

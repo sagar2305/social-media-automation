@@ -1,0 +1,12 @@
+{
+  "id": "2026-04-25-249bb414",
+  "signature": "test/synthetic-propose",
+  "description": "change to 99",
+  "createdAt": "2026-04-25T13:29:30.426Z",
+  "files": [
+    "scripts/auto_fix/__propose_scratch.ts"
+  ],
+  "status": "rejected",
+  "reason": "synthetic test entry",
+  "resolvedAt": "2026-04-25T13:29:30.427Z"
+}

@@ -166,6 +166,7 @@ async function syncExperiments() {
   const experiments: Array<{
     id: string;
     date: string;
+    account: string | null;
     variable: string;
     variant_a: string;
     variant_b: string;

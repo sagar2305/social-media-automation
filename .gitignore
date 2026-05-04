@@ -1,5 +1,32 @@
 node_modules/
 dist/
+
+# Secrets — never commit
 .env.local
 .env*.local
+.mcp.json
+
+# macOS junk
+.DS_Store
+
+# Generated content (large, regenerated each cycle)
 assets/slides/
+posts/
+posts/raw_*.png
+
+# Per-cycle logs (tens of MB over time)
+data/cycle-logs/
+data/exports/
+
+# Runtime sentinels and state — regenerate per run, not part of the code
+data/.batch*
+data/.last-daily-run
+data/.daily-runner.lock
+data/auto-fix-circuit.json
+data/auto-fix-alerts.state.json
+data/tier-state.json
+data/docs-freshness.json
+data/docs-refresh-queue.json
+
+# Backup state files
+data/*.backup.*

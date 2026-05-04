@@ -1,0 +1,12 @@
+{
+  "id": "2026-04-25-705b1429",
+  "signature": "test/synthetic-propose",
+  "description": "change N from 1 to 2",
+  "createdAt": "2026-04-25T13:29:29.389Z",
+  "files": [
+    "scripts/auto_fix/__propose_scratch.ts"
+  ],
+  "status": "applied",
+  "reason": "synthetic test entry",
+  "resolvedAt": "2026-04-25T13:29:29.391Z"
+}

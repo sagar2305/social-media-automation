@@ -1,0 +1,13 @@
+experiment_id	date	account	variable	variant_a	variant_b	metric_a	metric_b	views_a	views_b	saves_a	saves_b	status	description
+exp_001	2026-03-30	yournotetaker	hook_style	story_opener	stat_lead	0.0%	0.0%	0	0	0	0	inconclusive	1-slide photorealistic, both zero engagement
+exp_002	2026-03-30	yournotetaker	hook_style	contrast	story_opener	0.0%	0.0%	0	0	0	0	inconclusive	2-slide vs 4-slide photorealistic, no per-post data
+exp_003	2026-03-29	yournotetaker	hook_style	bold_claim	stat_lead	-	-	-	-	-	-	wasted	7-slide vs 5-slide, never published from drafts
+exp_005	2026-04-02	yournotetaker, grow.withamanda, hack.my.study	hook_style	question	stat_lead	-	-	-	-	-	-	inconclusive	CROSS-ACCOUNT INVALID — emoji_overlay 8-slide across 3 accounts
+exp_006	2026-04-02	yournotetaker, grow.withamanda, hack.my.study	hook_style	story_opener vs stat_lead vs bold_claim	-	-	-	-	-	-	-	inconclusive	CROSS-ACCOUNT INVALID — animated 9-slide across 3 accounts
+704431	2026-04-07	yournotetaker	hook_style	question	stat_lead	0%	0%	0	0	0	0	inconclusive	question vs stat_lead, both stuck in drafts
+hist_001	2026-04-07	yournotetaker	hook_style	contrast	story_opener	0.00%	0.00%	179	4	0	0	keep	historical scan: contrast 6-slide avg 179 views vs story_opener max 7 views
+hist_002	2026-04-07	yournotetaker	slide_count	6-slide	8-slide	0.00%	1.04%	179	97	0	1	keep	historical: 6-slide gets 2x views, 8-slide gets best save rate
+hist_003	2026-04-07	yournotetaker	hook_style	bold_claim	stat_lead	0.41%	0.19%	97	109	2	1	keep	historical: bold_claim better saves, stat_lead better views
+479300	2026-04-08	yournotetaker	hook_style	contrast	bold_claim	0%	0%	0	0	0	0	inconclusive	contrast vs bold_claim, both stuck in old Postiz drafts
+refresh_001	2026-04-14	yournotetaker	hook_style	contrast_6slide	others	0.45%	0.00%	184	97	1	0	keep	contrast 6-slide avg 184 views confirmed winner, others under 110
+refresh_002	2026-04-14	miniutewise_thomas	baseline	contrast_6slide	existing_posts	0.41%	0.50%	349	362	3	14	inconclusive	Thomas baseline ~350 views, our posts at parity not outperforming
