@@ -60,7 +60,7 @@ export function AutoresearchPanel({
   const active = runs.find((r) => r.outcome === "pending") ?? null;
   const selected = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null;
 
-  const summary = useMemo(runs);
+  const summary = summarize(runs);
 
   return (
     <div className="space-y-6">
@@ -229,7 +229,7 @@ export function AutoresearchPanel({
   );
 }
 
-function useMemo(runs: AutoresearchRun[]) {
+function summarize(runs: AutoresearchRun[]) {
   let pending = 0, winners = 0, dead = 0;
   for (const r of runs) {
     if (r.outcome === "pending" || !r.outcome) pending++;
