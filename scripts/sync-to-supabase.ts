@@ -3,12 +3,17 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mkqarsodftnlcuscsrii.supabase.co",
-  // Use the anon key - RLS policies allow all operations
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rcWFyc29kZnRubGN1c2NzcmlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NDE0MDgsImV4cCI6MjA5MTIxNzQwOH0.ZOwIVVVPmpJcVrE07yJUaQv79LRivNPshADZ5aJ5wtU"
-);
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error(
+    "sync-to-supabase: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local"
+  );
+}
+
+// Use the anon key — RLS policies enforce per-table access
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const DATA_DIR = join(import.meta.dirname, "..", "data");
 
