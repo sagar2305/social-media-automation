@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ViewsChart } from "@/components/views-chart";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ExportButton } from "@/components/export-button";
+import { FailedPostsTable } from "@/components/failed-posts-table";
 import { getDateFilter } from "@/lib/utils";
 import {
   Eye,
@@ -244,71 +245,11 @@ export default async function OverviewPage(props: {
                 {failedPosts.length} Post{failedPosts.length > 1 ? "s" : ""} Not
                 Posted
               </p>
+              <span className="text-[11px] text-muted-foreground ml-2">
+                Click any row for details
+              </span>
             </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Post ID</TableHead>
-                    <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="text-xs">Account</TableHead>
-                    <TableHead className="text-xs">Hook</TableHead>
-                    <TableHead className="text-xs">Format</TableHead>
-                    <TableHead className="text-xs">Status</TableHead>
-                    <TableHead className="text-xs">Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {failedPosts.slice(0, 8).map((p) => {
-                    let reason = "Unknown";
-                    if (p.status === "failed" || p.status === "error")
-                      reason = "Post failed to publish";
-                    else if (p.status === "in-progress")
-                      reason = "Stuck in draft — never published";
-                    else if (!p.tiktok_url)
-                      reason = "Published but no TikTok URL captured";
-
-                    return (
-                      <TableRow key={p.id}>
-                        <TableCell className="text-xs font-mono">
-                          {p.id.slice(0, 12)}...
-                        </TableCell>
-                        <TableCell className="text-xs">{p.date}</TableCell>
-                        <TableCell className="text-xs">
-                          @{p.account || "unknown"}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {p.hook_style}
-                        </TableCell>
-                        <TableCell className="text-xs">{p.format}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              p.status === "failed" || p.status === "error"
-                                ? "bg-red-500/10 text-red-500"
-                                : "bg-amber-500/10 text-amber-600"
-                            }`}
-                          >
-                            {p.status}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {reason}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-            {failedPosts.length > 8 && (
-              <Link
-                href="/posts"
-                className="block text-xs font-medium text-primary hover:underline text-center pt-2"
-              >
-                View all {failedPosts.length} unposted items
-              </Link>
-            )}
+            <FailedPostsTable posts={failedPosts} />
           </CardContent>
         </Card>
       )}
