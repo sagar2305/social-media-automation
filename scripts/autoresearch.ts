@@ -287,6 +287,69 @@ async function readFormatWinners(): Promise<string> {
   }
 }
 
+// Parse the "Format Rankings" markdown table from FORMAT-WINNERS.md
+// into a structured list of the top 6 hooks.
+async function readTopHooksSnapshot(): Promise<unknown[] | null> {
+  try {
+    const md = await readFile('data/FORMAT-WINNERS.md', 'utf-8');
+    const out: { rank: number; hook: string; avg_views: number; avg_save_rate: number; posts: number; last_used: string | null }[] = [];
+    const lines = md.split('\n');
+    for (const line of lines) {
+      const m = line.match(/^\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)%\s*\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|/);
+      if (m) {
+        out.push({
+          rank: parseInt(m[1]),
+          hook: m[2].trim(),
+          avg_views: parseFloat(m[3]),
+          avg_save_rate: parseFloat(m[4]),
+          posts: parseInt(m[5]),
+          last_used: m[6].trim() || null,
+        });
+      }
+    }
+    return out.slice(0, 8);
+  } catch {
+    return null;
+  }
+}
+
+async function readTopHashtagsSnapshot(): Promise<unknown[] | null> {
+  try {
+    const md = await readFile('data/HASHTAG-BANK.md', 'utf-8');
+    const out: { tag: string; tier: string; line: string }[] = [];
+    let currentTier = '';
+    for (const line of md.split('\n')) {
+      const tierMatch = line.match(/^##\s+(Tier \d.*)/i);
+      if (tierMatch) { currentTier = tierMatch[1].trim(); continue; }
+      const tagMatch = line.match(/^-\s+(#\w+)\s*(.*)$/);
+      if (tagMatch && currentTier) {
+        out.push({ tag: tagMatch[1], tier: currentTier, line: tagMatch[2].trim() });
+        if (out.length >= 20) break;
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+async function readTrendingNowSnapshot(): Promise<unknown[] | null> {
+  try {
+    const md = await readFile('data/TRENDING-NOW.md', 'utf-8');
+    const out: { topic: string }[] = [];
+    for (const line of md.split('\n')) {
+      const m = line.match(/^[-*]\s+(.+)$/);
+      if (m) {
+        out.push({ topic: m[1].trim() });
+        if (out.length >= 12) break;
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Main loop body ────────────────────────────────────────────
 
 async function run() {
@@ -307,41 +370,66 @@ async function run() {
     return;
   }
 
+  // Capture per-phase telemetry so the dashboard can show "what the brain
+  // learned today" without re-reading the markdown files.
+  const phaseDurations: Record<string, number> = {};
+  let postsMeasured = 0;
+  let winnersDeclared = 0;
+  let losersDropped = 0;
+
   // Phase 1: MEASURE
   log('[autoresearch] phase 1: measure');
-  try {
-    const measured = await measurePerformance();
-    log(`[autoresearch] phase 1 done — ${measured.length} posts measured`);
-  } catch (err) {
-    log(`[autoresearch] phase 1 failed (non-fatal): ${err}`);
+  {
+    const t0 = Date.now();
+    try {
+      const measured = await measurePerformance();
+      postsMeasured = measured.length;
+      log(`[autoresearch] phase 1 done — ${postsMeasured} posts measured`);
+    } catch (err) {
+      log(`[autoresearch] phase 1 failed (non-fatal): ${err}`);
+    }
+    phaseDurations.measure = Date.now() - t0;
   }
 
   // Phase 2: EVALUATE (optimizer declares winners + updates rankings)
   log('[autoresearch] phase 2: evaluate');
-  try {
-    await optimize();
-    log('[autoresearch] phase 2 done');
-  } catch (err) {
-    log(`[autoresearch] phase 2 failed (non-fatal): ${err}`);
+  {
+    const t0 = Date.now();
+    try {
+      await optimize();
+      // optimize() returns void today. Winner/loser counts will be derived
+      // from EXPERIMENT-LOG diff in a future commit; for now leave them at 0.
+      log('[autoresearch] phase 2 done');
+    } catch (err) {
+      log(`[autoresearch] phase 2 failed (non-fatal): ${err}`);
+    }
+    phaseDurations.optimize = Date.now() - t0;
   }
 
   // Phase 2b: REFRESH (Virlo trends + hashtag bank performance updates)
-  // Without this, TRENDING-NOW.md and HASHTAG-BANK.md would go stale day by
-  // day. The legacy daily_runner.sh used to call npm run refresh:quick at
-  // the end — we removed that plist, so autoresearch picks up the slack.
   log('[autoresearch] phase 2b: refresh trends + hashtag bank');
-  try {
-    await runResearch();
-    log('[autoresearch] phase 2b done — TRENDING-NOW + HASHTAG-BANK refreshed');
-  } catch (err) {
-    log(`[autoresearch] phase 2b failed (non-fatal): ${err}`);
+  {
+    const t0 = Date.now();
+    try {
+      await runResearch();
+      log('[autoresearch] phase 2b done — TRENDING-NOW + HASHTAG-BANK refreshed');
+    } catch (err) {
+      log(`[autoresearch] phase 2b failed (non-fatal): ${err}`);
+    }
+    phaseDurations.refresh = Date.now() - t0;
   }
 
   // Phase 3: HYPOTHESIZE
   log('[autoresearch] phase 3: hypothesize');
+  const phase3Start = Date.now();
   const supabase = getSupabase();
   const history = await readHistory(supabase);
   const winners = await readFormatWinners();
+
+  // Snapshot the playbook for the dashboard's brain log.
+  const topHooks = await readTopHooksSnapshot();
+  const topHashtags = await readTopHashtagsSnapshot();
+  const trendingNow = await readTrendingNowSnapshot();
 
   const context = [
     `Active accounts: ${activeHandles.join(', ')}`,
@@ -399,6 +487,15 @@ async function run() {
       decision_json: decision.raw ?? null,
       outcome: 'recorded',
       notes: 'Decision recorded; tonight\'s scheduled batches will reflect updated playbook (FORMAT-WINNERS, HASHTAG-BANK, TRENDING-NOW). No cycle_jobs queued.',
+      // Snapshot what the brain learned today so the dashboard can render
+      // it without re-parsing markdown later.
+      posts_measured: postsMeasured,
+      top_hooks: topHooks,
+      top_hashtags: topHashtags,
+      trending_now: trendingNow,
+      winners_declared: winnersDeclared,
+      losers_dropped: losersDropped,
+      phase_durations_ms: { ...phaseDurations, hypothesize: Date.now() - phase3Start },
     })
     .select('id')
     .single();
