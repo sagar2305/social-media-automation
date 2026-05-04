@@ -8,7 +8,6 @@ export const revalidate = 0;
 
 interface ScheduleSettings {
   enabled: boolean;
-  run_time: string;
   timezone: string;
   last_run_date: string | null;
   last_run_at: string | null;
@@ -16,8 +15,6 @@ interface ScheduleSettings {
 
 export default async function SchedulePage() {
   // Auth first to settle the token before parallel data fetches.
-  // Avoids Supabase "lock was released" race when getUser() runs alongside
-  // other queries via Promise.all.
   const user = await getUser();
   const supabase = await createClient();
 
@@ -40,10 +37,10 @@ export default async function SchedulePage() {
     <div className="space-y-12">
       <ScheduleForm
         enabled={settingsRes.data?.enabled ?? true}
-        runTime={settingsRes.data?.run_time ?? "19:00"}
         timezone={settingsRes.data?.timezone ?? "Asia/Kolkata"}
         lastRunDate={settingsRes.data?.last_run_date ?? null}
         lastRunAt={settingsRes.data?.last_run_at ?? null}
+        batches={batchesRes.data ?? []}
       />
 
       <BatchManager
