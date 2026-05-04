@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase";
+import { getUser } from "@/lib/auth";
 import { ScheduleForm } from "@/components/schedule-form";
 import { BatchManager, type CycleBatch } from "@/components/batch-manager";
 import type { ManagedAccount } from "@/components/account-manager";
@@ -14,9 +15,13 @@ interface ScheduleSettings {
 }
 
 export default async function SchedulePage() {
+  // Auth first to settle the token before parallel data fetches.
+  // Avoids Supabase "lock was released" race when getUser() runs alongside
+  // other queries via Promise.all.
+  const user = await getUser();
   const supabase = await createClient();
 
-  const [settingsRes, batchesRes, accountsRes, userRes] = await Promise.all([
+  const [settingsRes, batchesRes, accountsRes] = await Promise.all([
     supabase.from("schedule_settings").select("*").eq("id", 1).single<ScheduleSettings>(),
     supabase
       .from("cycle_batches")
@@ -29,19 +34,7 @@ export default async function SchedulePage() {
       .eq("active", true)
       .order("created_at", { ascending: true })
       .returns<ManagedAccount[]>(),
-    supabase.auth.getUser(),
   ]);
-
-  const userId = userRes.data?.user?.id;
-  let role = "viewer";
-  if (userId) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", userId)
-      .single();
-    role = profile?.role ?? "viewer";
-  }
 
   return (
     <div className="space-y-12">
@@ -56,7 +49,7 @@ export default async function SchedulePage() {
       <BatchManager
         initial={batchesRes.data ?? []}
         accounts={accountsRes.data ?? []}
-        isAdmin={role === "admin"}
+        isAdmin={user?.role === "admin"}
       />
     </div>
   );

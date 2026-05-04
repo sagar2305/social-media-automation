@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase";
+import { getUser } from "@/lib/auth";
 import { AccountsTable } from "@/components/accounts-table";
 import { AccountManager, type ManagedAccount } from "@/components/account-manager";
 import { DateRangeFilter } from "@/components/date-range-filter";
@@ -89,25 +90,20 @@ async function getManagedAccounts(): Promise<ManagedAccount[]> {
   return data ?? [];
 }
 
-async function getCurrentRole(): Promise<string> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return "viewer";
-  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  return data?.role ?? "viewer";
-}
-
 export default async function AccountsPage(props: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const searchParams = await props.searchParams;
   const range = typeof searchParams.range === "string" ? searchParams.range : undefined;
   const dateFrom = getDateFilter(range);
-  const [accounts, managed, role] = await Promise.all([
+  // Sequence: auth first (settles the token), then parallel data fetches.
+  // Avoids Supabase auth lock contention.
+  const user = await getUser();
+  const [accounts, managed] = await Promise.all([
     getAccountSummaries(dateFrom),
     getManagedAccounts(),
-    getCurrentRole(),
   ]);
+  const role = user?.role ?? "viewer";
 
   return (
     <div className="space-y-8">

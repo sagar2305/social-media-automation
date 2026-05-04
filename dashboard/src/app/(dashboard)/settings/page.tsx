@@ -1,13 +1,13 @@
 import { createClient } from "@/lib/supabase";
+import { getUser } from "@/lib/auth";
 import { SettingsForm } from "@/components/settings-form";
 
 export const revalidate = 0;
 
 export default async function SettingsPage() {
+  // Auth first via shared helper to avoid token lock contention.
+  const user = await getUser();
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   let profile = null;
   let notifPrefs = null;
@@ -27,7 +27,7 @@ export default async function SettingsPage() {
       email={user?.email ?? ""}
       displayName={profile?.display_name ?? ""}
       bio={profile?.bio ?? ""}
-      role={profile?.role ?? "viewer"}
+      role={user?.role ?? "viewer"}
       systemUpdates={notifPrefs?.system_updates ?? true}
       contentInsights={notifPrefs?.content_insights ?? true}
       teamActivity={notifPrefs?.team_activity ?? false}
