@@ -58,6 +58,28 @@ const HANDLED_EXPLAIN: Record<string, string> = {
     "The auto-fixer tried but verify failed and the change was rolled back.",
 };
 
+// RETRY-tier events are handled inline by api-client (back off + retry the
+// same request). When the retry succeeds, the cycle continues — but the
+// audit-log row never gets updated to "retried" because there's no callback
+// from the inline retry path. So a RETRY+pending row almost always means
+// "the request was retried inline and succeeded; the audit row is stale".
+// Surface that nuance in the UI rather than making it look like an open issue.
+function effectiveStatus(tier: string, handled: string): { label: string; explain: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+  if (tier === "RETRY" && handled === "pending") {
+    return {
+      label: "auto-retried",
+      explain:
+        "RETRY-tier events are handled inline by api-client (back off and retry the same request). When the retry succeeds the cycle continues normally; the audit row is left as 'pending' because the inline retry path doesn't write back. If the cycle that produced this event completed successfully, the retry worked — no action needed.",
+      variant: "secondary",
+    };
+  }
+  return {
+    label: handled,
+    explain: HANDLED_EXPLAIN[handled] ?? "Status unknown.",
+    variant: HANDLED_VARIANT[handled] ?? "outline",
+  };
+}
+
 function fmtTime(iso: string): string {
   const d = new Date(iso);
   const now = Date.now();
@@ -162,9 +184,10 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
                   {e.action || <span className="italic">No fix suggested</span>}
                 </TableCell>
                 <TableCell className="pt-3">
-                  <Badge variant={HANDLED_VARIANT[e.handled] ?? "outline"}>
-                    {e.handled}
-                  </Badge>
+                  {(() => {
+                    const eff = effectiveStatus(e.tier, e.handled);
+                    return <Badge variant={eff.variant}>{eff.label}</Badge>;
+                  })()}
                 </TableCell>
               </TableRow>
 
@@ -249,14 +272,15 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
                         <p className="text-muted-foreground uppercase tracking-wide text-xs mb-1">
                           Result
                         </p>
-                        <div className="flex items-start gap-3">
-                          <Badge variant={HANDLED_VARIANT[e.handled] ?? "outline"}>
-                            {e.handled}
-                          </Badge>
-                          <p className="text-sm text-muted-foreground flex-1">
-                            {HANDLED_EXPLAIN[e.handled] ?? "Status unknown."}
-                          </p>
-                        </div>
+                        {(() => {
+                          const eff = effectiveStatus(e.tier, e.handled);
+                          return (
+                            <div className="flex items-start gap-3">
+                              <Badge variant={eff.variant}>{eff.label}</Badge>
+                              <p className="text-sm text-muted-foreground flex-1">{eff.explain}</p>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {e.resolution && (

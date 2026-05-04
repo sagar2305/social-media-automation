@@ -27,7 +27,14 @@ export default async function ErrorsPage({
 
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
   const last24h = all.filter((e) => new Date(e.occurred_at).getTime() >= dayAgo);
-  const pending = all.filter((e) => e.handled === "pending").length;
+  // RETRY+pending = inline auto-retried (cycle continued normally). Don't
+  // count those as "pending action needed" — only true open items.
+  const trulyPending = all.filter(
+    (e) => e.handled === "pending" && e.tier !== "RETRY",
+  ).length;
+  const autoRetried = all.filter(
+    (e) => e.tier === "RETRY" && e.handled === "pending",
+  ).length;
   const autoFixed = all.filter((e) => e.handled === "auto-fixed").length;
   const escalated = all.filter(
     (e) => e.handled === "escalated" || e.handled === "gave-up"
@@ -63,18 +70,22 @@ export default async function ErrorsPage({
               Auto-fixed
             </p>
             <p className="text-3xl font-semibold tabular-nums mt-1 text-[#248a3d]">
-              {autoFixed}
+              {autoFixed + autoRetried}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {autoRetried > 0 ? `incl. ${autoRetried} auto-retried` : "applied + verified"}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
-              Pending
+              Open
             </p>
             <p className="text-3xl font-semibold tabular-nums mt-1">
-              {pending}
+              {trulyPending}
             </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">non-retry events still pending</p>
           </CardContent>
         </Card>
         <Card>
