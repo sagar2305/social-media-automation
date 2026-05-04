@@ -1,23 +1,31 @@
 /**
- * Autoresearch — autonomous experiment design loop.
+ * Autoresearch — daily playbook updater (no posting).
  *
- * Replaces the Claude /loop pattern with a Node.js script that:
- *   1. (measure)     calls measurePerformance()  — pulls metrics from ScrapeCreators
- *   2. (evaluate)    calls optimize()             — declares winners, updates rankings
- *   3. (hypothesize) asks Gemini "what should we test next?" — single API call
- *   4. (post)        inserts 2 cycle_jobs        — variant A + variant B for SAME account
- *   5. (logs)        writes the decision to autoresearch_runs
+ * Runs once per day via launchd at 08:30. Acts as the system's "morning
+ * brain": measures yesterday's posts, declares winners, refreshes trend
+ * data + hashtag bank, and asks Gemini what experiment to design for the
+ * next day. Writes the decision to autoresearch_runs for the dashboard
+ * to display.
  *
- * launchd fires this once per day. cycle_jobs_poller picks up the inserted
- * jobs within 60s and the cycle_runs telemetry shows progress on /runs.
+ * What it does NOT do: post anything. The dashboard-managed scheduled
+ * batches (and the manual "Run Cycle Now" button) remain the ONLY paths
+ * that trigger cycles. They will automatically pick up today's refreshed
+ * playbook (FORMAT-WINNERS.md, HASHTAG-BANK.md, TRENDING-NOW.md) when
+ * they fire later in the day, because text_overlay.ts and generate_images.ts
+ * read those files at runtime.
  *
- * Quality safeguards (defense in depth):
- *   • Gemini's output is constrained by JSON schema in the prompt
+ * Phases:
+ *   1. measure       — pull_analytics.measurePerformance() (POST-TRACKER, ACCOUNT-STATS)
+ *   2. evaluate      — optimizer.optimize() (FORMAT-WINNERS, LESSONS-LEARNED, EXPERIMENT-LOG)
+ *   2b. refresh      — fetch_trends.runResearch() (TRENDING-NOW, HASHTAG-BANK)
+ *   3. hypothesize   — Gemini designs the next experiment
+ *   4. log decision  — autoresearch_runs row (visible on /autoresearch)
+ *
+ * Quality safeguards on the Gemini decision:
+ *   • Output constrained by JSON schema in the prompt
  *   • Code validates: variable in priority queue, account in active accounts,
  *     variants different, flow valid
- *   • If Gemini fails or output is invalid, we use a deterministic fallback
- *     (pick least-tested variable + first untested variant for that variable)
- *   • If everything fails, we exit cleanly without inserting bad jobs
+ *   • Deterministic fallback if Gemini fails or output is invalid
  */
 
 import { readFile } from 'node:fs/promises';
@@ -247,48 +255,6 @@ async function readFormatWinners(): Promise<string> {
   }
 }
 
-// ─── Phase 4: insert two cycle_jobs ────────────────────────────
-
-async function insertExperimentJobs(
-  supabase: SupabaseClient,
-  decision: Decision,
-  runId: string,
-): Promise<{ jobA?: string; jobB?: string }> {
-  const baseLabel = `exp ${decision.variable} · @${decision.account}`;
-  const insertOne = async (variant: string, suffix: 'A' | 'B') => {
-    const { data, error } = await supabase
-      .from('cycle_jobs')
-      .insert({
-        label: `${baseLabel} · ${suffix} (${variant})`,
-        flows: [decision.flow],
-        // path='direct' so experiment posts publish themselves via Blotato.
-        // Without this the script uploads to TikTok drafts and the loop
-        // stalls waiting for someone to open the TikTok app and tap Publish.
-        // The dashboard's batch CRUD still lets admins set draft for non-
-        // experiment runs when they want a manual review gate.
-        path: 'direct',
-        account_handles: [decision.account],
-        posts_per_account: 1,
-        skip_research: true,          // research already done in phase 1
-        schedule_offset_hours: 0,
-      })
-      .select('id')
-      .single();
-    if (error || !data) {
-      log(`[autoresearch] cycle_jobs insert failed (${suffix}): ${error?.message}`);
-      return undefined;
-    }
-    return data.id as string;
-  };
-  const jobA = await insertOne(decision.variant_a, 'A');
-  const jobB = await insertOne(decision.variant_b, 'B');
-  await supabase.from('autoresearch_runs').update({
-    cycle_job_a: jobA ?? null,
-    cycle_job_b: jobB ?? null,
-  }).eq('id', runId);
-  return { jobA, jobB };
-}
-
 // ─── Main loop body ────────────────────────────────────────────
 
 async function run() {
@@ -369,11 +335,18 @@ async function run() {
   log(`[autoresearch] hypothesis: ${decision.hypothesis}`);
 
   if (!supabase) {
-    log('[autoresearch] no Supabase — cannot persist or fire jobs');
+    log('[autoresearch] no Supabase — cannot persist decision');
     return;
   }
 
-  // Persist the decision
+  // Persist the decision into autoresearch_runs.
+  // NOTE: autoresearch is a pure brain. It updates the daily playbook (analytics,
+  // optimizer winners, format rankings, hashtag bank, trends, next-experiment
+  // hypothesis) but does NOT queue any cycle_jobs. The user wants posting to
+  // remain solely under the dashboard's scheduled batches and the manual "Run
+  // Cycle Now" button. Tonight's 19:00 batches automatically pick up today's
+  // refreshed FORMAT-WINNERS / HASHTAG-BANK / TRENDING-NOW because text_overlay
+  // and generate_images read those files at runtime — no extra plumbing needed.
   const { data: runRow, error: runErr } = await supabase
     .from('autoresearch_runs')
     .insert({
@@ -385,7 +358,8 @@ async function run() {
       hypothesis: decision.hypothesis,
       source: decision.source,
       decision_json: decision.raw ?? null,
-      outcome: 'pending',
+      outcome: 'recorded',
+      notes: 'Decision recorded; tonight\'s scheduled batches will reflect updated playbook (FORMAT-WINNERS, HASHTAG-BANK, TRENDING-NOW). No cycle_jobs queued.',
     })
     .select('id')
     .single();
@@ -395,19 +369,7 @@ async function run() {
   }
   const runId = runRow.id as string;
   log(`[autoresearch] autoresearch_runs id=${runId}`);
-
-  // Phase 4: queue the two experiment jobs
-  log('[autoresearch] phase 4: queueing experiment jobs');
-  const { jobA, jobB } = await insertExperimentJobs(supabase, decision, runId);
-  if (!jobA || !jobB) {
-    log('[autoresearch] one or both jobs failed to insert');
-    await supabase.from('autoresearch_runs').update({
-      outcome: 'cancelled',
-      notes: `partial insert: jobA=${jobA ?? 'fail'} jobB=${jobB ?? 'fail'}`,
-    }).eq('id', runId);
-    return;
-  }
-  log(`[autoresearch] jobs queued: A=${jobA} B=${jobB}`);
+  log('[autoresearch] decision recorded — scheduled batches will use the refreshed playbook tonight');
   log('═══ AUTORESEARCH DONE ═══');
 }
 

@@ -25,7 +25,7 @@ export interface AutoresearchRun {
   source: "gemini" | "fallback" | "manual";
   cycle_job_a: string | null;
   cycle_job_b: string | null;
-  outcome: "pending" | "winner_a" | "winner_b" | "inconclusive" | "cancelled" | null;
+  outcome: "pending" | "recorded" | "winner_a" | "winner_b" | "inconclusive" | "cancelled" | null;
   notes: string | null;
 }
 
@@ -57,7 +57,7 @@ export function AutoresearchPanel({
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
-  const active = runs.find((r) => r.outcome === "pending") ?? null;
+  const active = runs.find((r) => r.outcome === "recorded" || r.outcome === "pending") ?? null;
   const selected = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null;
 
   const summary = summarize(runs);
@@ -71,8 +71,9 @@ export function AutoresearchPanel({
             Autoresearch
           </h1>
           <p className="text-muted-foreground mt-1 max-w-2xl">
-            Daily AI-driven experiment design. Gemini reads the experiment history every morning and
-            picks the next test. Cycles run automatically — no Claude Code, no human in the loop.
+            Daily AI brain. Every morning at 08:30 it measures yesterday&apos;s posts, declares winners,
+            refreshes Virlo trends and the hashtag bank, and asks Gemini what to test next. The decision
+            updates the playbook used by tonight&apos;s scheduled batches — autoresearch never posts on its own.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -84,7 +85,7 @@ export function AutoresearchPanel({
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI label="Total decisions" value={summary.total.toString()} />
-        <KPI label="Pending experiments" value={summary.pending.toString()} accent="emerald" />
+        <KPI label="Active (today)" value={summary.pending.toString()} accent="emerald" />
         <KPI label="Resolved (winner)" value={summary.winners.toString()} accent="primary" />
         <KPI label="Inconclusive / cancelled" value={summary.dead.toString()} />
       </div>
@@ -97,10 +98,10 @@ export function AutoresearchPanel({
               <Sparkles className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-emerald-900">
-                  Active experiment — testing {active.variable} on @{active.account}
+                  Today&apos;s recommendation — focus on {active.variable} for @{active.account}
                 </p>
                 <p className="text-sm text-emerald-800 mt-1">
-                  <strong>{active.variant_a}</strong> vs <strong>{active.variant_b}</strong>
+                  Lean toward <strong>{active.variant_a}</strong> vs <strong>{active.variant_b}</strong>
                 </p>
                 {active.hypothesis && (
                   <p className="text-xs text-emerald-700 mt-2 italic">
@@ -108,7 +109,7 @@ export function AutoresearchPanel({
                   </p>
                 )}
                 <p className="text-[11px] text-emerald-700 mt-2">
-                  Decided by {active.source} · {formatRelative(active.occurred_at)}
+                  Recorded by {active.source} · {formatRelative(active.occurred_at)} · scheduled batches will reflect this when they fire
                 </p>
               </div>
             </div>
@@ -232,7 +233,7 @@ export function AutoresearchPanel({
 function summarize(runs: AutoresearchRun[]) {
   let pending = 0, winners = 0, dead = 0;
   for (const r of runs) {
-    if (r.outcome === "pending" || !r.outcome) pending++;
+    if (r.outcome === "pending" || r.outcome === "recorded" || !r.outcome) pending++;
     else if (r.outcome === "winner_a" || r.outcome === "winner_b") winners++;
     else dead++;
   }
