@@ -227,7 +227,7 @@ export function AutoresearchPanel({
 
                 <div className="text-[11px] text-muted-foreground space-y-0.5">
                   <p>Decided by: <span className="font-mono">{selected.source}</span></p>
-                  <p>At: <span className="font-mono">{new Date(selected.occurred_at).toLocaleString()}</span></p>
+                  <p>At: <span className="font-mono">{fmtDay(selected.occurred_at)} {fmtTime(selected.occurred_at)}</span></p>
                   <p>Outcome: <span className="font-mono">{selected.outcome ?? "pending"}</span></p>
                 </div>
               </CardContent>
@@ -300,7 +300,7 @@ function formatRelative(iso: string): string {
     if (ms < 60_000) return "just now";
     if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} min ago`;
     if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-    return new Date(iso).toLocaleDateString();
+    return fmtDay(iso);
   } catch {
     return iso;
   }
@@ -308,14 +308,31 @@ function formatRelative(iso: string): string {
 
 function fmtDay(iso: string): string {
   try {
+    // Use a deterministic Intl format with explicit en-GB DD/MM/YYYY so server
+    // and client agree byte-for-byte. The default toLocaleDateString returns
+    // "Mon, May 5, 2026" on Node but "Mon, 5 May 2026" on some browsers.
     const d = new Date(iso);
-    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+    return fmt.format(d);
   } catch { return iso; }
 }
 
 function fmtTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // hour12: false avoids the AM/PM case mismatch that breaks hydration
+    // (Node renders "11:56 PM" while some browsers render "11:56 pm").
+    const d = new Date(iso);
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    return fmt.format(d);
   } catch { return iso; }
 }
 
