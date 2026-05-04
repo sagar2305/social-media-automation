@@ -20,6 +20,14 @@ export async function createClient() {
           });
         },
       },
+      auth: {
+        // Don't auto-refresh on every server-side query. The proxy middleware
+        // already refreshes once per request — letting page components refresh
+        // again triggers the "Lock was released because another request stole
+        // it" runtime error when Promise.all fires multiple queries in parallel.
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     }
   );
 }
