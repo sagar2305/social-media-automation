@@ -316,16 +316,31 @@ async function readTopHooksSnapshot(): Promise<unknown[] | null> {
 async function readTopHashtagsSnapshot(): Promise<unknown[] | null> {
   try {
     const md = await readFile('data/HASHTAG-BANK.md', 'utf-8');
+    // HASHTAG-BANK.md uses `## Section` headers and Markdown tables with
+    // columns like: | Hashtag | Video Count | Total Views | Avg Views | ...
     const out: { tag: string; tier: string; line: string }[] = [];
-    let currentTier = '';
+    let currentSection = '';
     for (const line of md.split('\n')) {
-      const tierMatch = line.match(/^##\s+(Tier \d.*)/i);
-      if (tierMatch) { currentTier = tierMatch[1].trim(); continue; }
-      const tagMatch = line.match(/^-\s+(#\w+)\s*(.*)$/);
-      if (tagMatch && currentTier) {
-        out.push({ tag: tagMatch[1], tier: currentTier, line: tagMatch[2].trim() });
-        if (out.length >= 20) break;
-      }
+      const sectionMatch = line.match(/^##\s+(.+?)\s*$/);
+      if (sectionMatch) { currentSection = sectionMatch[1].trim(); continue; }
+      // Skip header row, divider row, and blank lines
+      if (!line.startsWith('|')) continue;
+      if (line.includes('---')) continue;
+      if (/\|\s*Hashtag\s*\|/i.test(line)) continue;
+      // Pull the first column = the tag name (no # prefix in source, add it)
+      const cols = line.split('|').map(c => c.trim()).filter(Boolean);
+      if (cols.length === 0) continue;
+      const rawTag = cols[0];
+      if (!rawTag || rawTag.startsWith('#---')) continue;
+      const tag = rawTag.startsWith('#') ? rawTag : `#${rawTag}`;
+      // Extra context = "12k avg views" if we can extract it
+      const avgViews = cols[3] ?? '';
+      out.push({
+        tag,
+        tier: currentSection || 'Hashtag Bank',
+        line: avgViews ? `${avgViews} avg views` : '',
+      });
+      if (out.length >= 20) break;
     }
     return out;
   } catch {
