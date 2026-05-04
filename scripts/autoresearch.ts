@@ -28,10 +28,42 @@
  *   • Deterministic fallback if Gemini fails or output is invalid
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { config as dotenvConfig } from 'dotenv';
 
 dotenvConfig({ path: '.env.local', override: true });
+
+// Per-day sentinel — guards against double-running when launchd ticks the
+// plist hourly. First successful run of the calendar day writes today's date
+// here; subsequent ticks within the same day silent-exit.
+const SENTINEL_PATH = 'data/.last-autoresearch-run';
+
+function todayLocal(): string {
+  const d = new Date();
+  // Local-date YYYY-MM-DD (not UTC) so "today" matches whichever calendar day
+  // the operator perceives. launchd fires in local TZ.
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+async function alreadyRanToday(): Promise<boolean> {
+  try {
+    const last = (await readFile(SENTINEL_PATH, 'utf-8')).trim();
+    return last === todayLocal();
+  } catch {
+    return false;
+  }
+}
+
+async function markRanToday(): Promise<void> {
+  try {
+    await writeFile(SENTINEL_PATH, todayLocal() + '\n');
+  } catch {
+    // sentinel write failure is non-fatal — at worst we run twice today
+  }
+}
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config/config.js';
@@ -258,6 +290,13 @@ async function readFormatWinners(): Promise<string> {
 // ─── Main loop body ────────────────────────────────────────────
 
 async function run() {
+  // Per-day guard: launchd ticks the plist hourly so any wake/boot during
+  // the day picks up the work, but we only want to actually do the brain
+  // work once per calendar day. Skip silently if today's already done.
+  if (await alreadyRanToday()) {
+    return;
+  }
+
   log('═══ AUTORESEARCH START ═══');
 
   // Pull dashboard-managed accounts so account list is current.
@@ -370,6 +409,7 @@ async function run() {
   const runId = runRow.id as string;
   log(`[autoresearch] autoresearch_runs id=${runId}`);
   log('[autoresearch] decision recorded — scheduled batches will use the refreshed playbook tonight');
+  await markRanToday();
   log('═══ AUTORESEARCH DONE ═══');
 }
 

@@ -21,6 +21,7 @@ data/exports/
 # Runtime sentinels and state — regenerate per run, not part of the code
 data/.batch*
 data/.last-daily-run
+data/.last-autoresearch-run
 data/.daily-runner.lock
 data/auto-fix-circuit.json
 data/auto-fix-alerts.state.json

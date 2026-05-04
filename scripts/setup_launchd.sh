@@ -186,11 +186,17 @@ EOF
 
 echo "Wrote $JOBS_PLIST_PATH"
 
-# ─── Autoresearch plist (daily AI-driven experiment design) ───
-# Fires once per day at 08:30 local. Replaces the Claude /loop pattern with
-# a Node script that calls Gemini to pick the next experiment, then queues
-# the two variants as cycle_jobs. The system needs no Claude Code to keep
-# improving its content over time.
+# ─── Autoresearch plist (daily AI-driven brain) ───────────────
+# Fires HOURLY plus on Mac wake-from-sleep. The script itself has a
+# per-day guard (data/.last-autoresearch-run sentinel) so even though
+# launchd may invoke it many times a day, the actual brain work runs
+# at most once per calendar day. This means:
+#   • If you turn the Mac on at 9 AM, the brain runs ~within an hour
+#   • If you turn it on at 3 PM, the brain still runs once that day
+#   • If you leave it on overnight, it runs at the first tick after midnight
+#   • If the Mac is off all day, the brain runs the next time it boots
+# No fixed time of day required — the Mac just needs to be on at
+# some point in the day.
 
 cat > "$AUTORESEARCH_PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -207,15 +213,16 @@ cat > "$AUTORESEARCH_PLIST_PATH" <<EOF
     <string>$REPO_DIR/scripts/autoresearch.ts</string>
   </array>
 
-  <!-- Daily at 08:30 local. Far enough from posting times to avoid contention. -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>8</integer>
-    <key>Minute</key><integer>30</integer>
-  </dict>
+  <!-- Tick once per hour. The script's own per-day guard ensures the
+       brain only does real work once per calendar day, no matter how
+       many times launchd invokes it. -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
 
+  <!-- Run on plist load too, so first-thing-in-the-morning starts and
+       cold-boots cover the same-day case immediately. -->
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
 
   <key>AbandonProcessGroup</key>
   <false/>
@@ -279,38 +286,23 @@ cat <<EOF
 
 Setup complete.
 
-  Schedule:   Daily at 19:00 local time
-  Command:    cd $REPO_DIR && npx tsx scripts/repost_unposted_6.ts ; npm run refresh
-  Stdout:     $LOG_FILE
-  Stderr:     $ERR_FILE
+  scheduler.tick   — every 5 min  — reads cycle_batches, fires due ones
+  jobs.poller      — every 60 sec — picks up "Run Cycle Now" requests
+  autoresearch     — every 1 hour + on-load — script self-guards to once/day
 
 Useful commands:
-  launchctl list | grep minutewise              # confirm registered
-  launchctl unload "$PLIST_PATH"                 # disable
-  launchctl load   "$PLIST_PATH"                 # re-enable
-  tail -f "$LOG_FILE"                            # watch live next run
+  launchctl list | grep minutewise          # confirm 3 plists registered
+  bash scripts/teardown_launchd.sh          # disable everything
+  tail -f $LOG_DIR/scheduler-tick.log       # watch tick decisions
+  tail -f $LOG_DIR/jobs-poller.log          # watch manual triggers
+  tail -f $LOG_DIR/autoresearch.log         # watch the morning brain
 
-To change the schedule, edit StartCalendarInterval in:
-  $PLIST_PATH
-…then unload + load again.
+To change schedule:
+  Edit batches in the dashboard at /settings/schedule. No plist changes
+  needed — the tick reads the dashboard each fire.
 
-What happens at 19:00 each day:
-  STAGE 1 — Repost cycle (scripts/repost_unposted_6.ts)
-    - Scans posts/unposted/{flow1,flow2}
-    - Picks newest 3 archives per healthy account (yournotetaker, miniutewise_thomas)
-    - Slot 1 posts go live ~19:00 (direct)
-    - Slot 2 scheduled via Blotato for 22:00 (+3h, server-side)
-    - Slot 3 scheduled via Blotato for 01:00 next day (+6h, server-side)
-    - Posted folders move from posts/unposted/ → posts/ with .submitted marker
-  STAGE 2 — Refresh cycle (npm run refresh)
-    - Tier scheduler fires whatever is due:
-        hot     (page 1)        — daily
-        warm    (pages 2-3)     — every 3 days
-        cool    (pages 4-9)     — weekly
-        archive (pages 10-12)   — weekly (only if posts ≥30 days old exist)
-        stats   (/v1/profile)   — weekly
-    - Runs optimizer over fresh metrics (winners/losers, format rankings)
-    - Refreshes Virlo trends + hashtag bank
-    - Syncs everything to Supabase so the dashboard updates
-  Mac mini just needs to be awake at 19:00.
+The Mac just needs to be on at some point each day. autoresearch runs
+the first time the Mac is awake on a new calendar date; scheduled
+batches fire whenever their time arrives within an awake window
+(catch-up plays back missed runs on next wake).
 EOF
