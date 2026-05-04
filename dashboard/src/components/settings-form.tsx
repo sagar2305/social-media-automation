@@ -6,7 +6,7 @@ import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Save, RotateCcw, Bell, Puzzle, Shield } from "lucide-react";
+import { Save, RotateCcw, Bell, Shield } from "lucide-react";
 
 interface Props {
   userId: string;
@@ -37,12 +37,14 @@ export function SettingsForm({
   const [teamActivity, setTeamActivity] = useState(initialTA);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSave() {
     setSaving(true);
+    setError(null);
     const supabase = createBrowserSupabase();
 
-    await Promise.all([
+    const [profileRes, prefsRes] = await Promise.all([
       supabase
         .from("profiles")
         .update({ display_name: displayName, bio })
@@ -57,6 +59,10 @@ export function SettingsForm({
     ]);
 
     setSaving(false);
+    if (profileRes.error || prefsRes.error) {
+      setError(profileRes.error?.message ?? prefsRes.error?.message ?? "Save failed");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     router.refresh();
@@ -90,7 +96,7 @@ export function SettingsForm({
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={handleReset}>
             <RotateCcw className="h-4 w-4 mr-1.5" />
-            Reset Defaults
+            Discard Changes
           </Button>
           <Button onClick={handleSave} disabled={saving}>
             <Save className="h-4 w-4 mr-1.5" />
@@ -98,6 +104,12 @@ export function SettingsForm({
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
+          <span className="font-medium">Save failed:</span> {error}
+        </div>
+      )}
 
       {/* Profile + Plan */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -157,85 +169,61 @@ export function SettingsForm({
           </CardContent>
         </Card>
 
-        {/* Plan Card */}
+        {/* Role Card — read-only summary of the user's permission level */}
         <Card className="shadow-sm border-0 ring-0 bg-primary text-primary-foreground overflow-hidden">
           <CardContent className="pt-6 flex flex-col h-full">
             <div className="mb-4">
               <div className="h-10 w-10 rounded-lg bg-white/20 flex items-center justify-center mb-4">
                 <Shield className="h-5 w-5" />
               </div>
-              <p className="text-xl font-bold">
-                {roleBadge} Plan
-              </p>
+              <p className="text-xl font-bold">{roleBadge} Role</p>
               <p className="text-sm text-primary-foreground/70 mt-1">
-                Your current role is {roleBadge.toLowerCase()}.
-                {role === "admin" && " Full access to all features."}
-                {role === "editor" && " Can edit content and campaigns."}
-                {role === "viewer" && " Read-only access to dashboards."}
+                {role === "admin" && "Full access — you can add accounts, edit batches, trigger cycles, and manage every setting."}
+                {role === "editor" && "Can edit content and campaigns. Cannot manage accounts or trigger cycles."}
+                {role === "viewer" && "Read-only access to dashboards and analytics."}
               </p>
             </div>
-            <div className="mt-auto pt-6">
-              <Button
-                variant="outline"
-                className="w-full bg-white text-primary hover:bg-white/90 border-0"
-              >
-                Upgrade Account
-              </Button>
+            <div className="mt-auto pt-6 text-xs text-primary-foreground/70 border-t border-white/15 pt-4">
+              Roles are managed by an admin in Supabase. Contact your admin to change your role.
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Notifications + Integrations */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Notification Alerts */}
-        <Card className="shadow-sm border-0 ring-0">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 mb-6">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <p className="text-lg font-semibold">Notification Alerts</p>
-            </div>
+      {/* Notification Alerts */}
+      <Card className="shadow-sm border-0 ring-0">
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-2 mb-6">
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            <p className="text-lg font-semibold">Notification Alerts</p>
+          </div>
 
-            <div className="space-y-5">
-              <ToggleRow
-                label="System Updates"
-                description="Get notified about core engine changes."
-                checked={systemUpdates}
-                onChange={setSystemUpdates}
-              />
-              <ToggleRow
-                label="Content Insights"
-                description="Weekly summaries of your video performance."
-                checked={contentInsights}
-                onChange={setContentInsights}
-              />
-              <ToggleRow
-                label="Team Activity"
-                description="When teammates leave comments or tags."
-                checked={teamActivity}
-                onChange={setTeamActivity}
-              />
-            </div>
-          </CardContent>
-        </Card>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <ToggleRow
+              label="System Updates"
+              description="Get notified about core engine changes."
+              checked={systemUpdates}
+              onChange={setSystemUpdates}
+            />
+            <ToggleRow
+              label="Content Insights"
+              description="Weekly summaries of your video performance."
+              checked={contentInsights}
+              onChange={setContentInsights}
+            />
+            <ToggleRow
+              label="Team Activity"
+              description="When teammates leave comments or tags."
+              checked={teamActivity}
+              onChange={setTeamActivity}
+            />
+          </div>
 
-        {/* Connect Workflow */}
-        <Card className="shadow-sm border-0 ring-0">
-          <CardContent className="pt-6 flex flex-col items-center text-center">
-            <div className="h-14 w-14 rounded-xl bg-muted flex items-center justify-center mb-4">
-              <Puzzle className="h-7 w-7 text-muted-foreground" />
-            </div>
-            <p className="text-lg font-semibold">Connect Your Workflow</p>
-            <p className="text-sm text-muted-foreground mt-2 max-w-xs">
-              Integrate MinuteWise with Slack, Notion, or Zapier to
-              automate your content curation pipeline.
-            </p>
-            <Button className="mt-6 bg-purple-600 hover:bg-purple-700 text-white">
-              Browse Integrations
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          <p className="text-[11px] text-muted-foreground mt-5 pt-4 border-t border-border/40">
+            Preferences save to your profile. Email/Slack delivery for these will be wired up later — this captures your opt-in state for now.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
