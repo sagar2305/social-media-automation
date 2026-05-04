@@ -30,6 +30,7 @@ import { config } from '../config/config.js';
 import { loadAccountsIntoConfig } from './account_loader.js';
 import { measurePerformance } from './pull_analytics.js';
 import { optimize } from './optimizer.js';
+import { runResearch } from './fetch_trends.js';
 import { log } from './api-client.js';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -312,6 +313,18 @@ async function run() {
     log('[autoresearch] phase 2 done');
   } catch (err) {
     log(`[autoresearch] phase 2 failed (non-fatal): ${err}`);
+  }
+
+  // Phase 2b: REFRESH (Virlo trends + hashtag bank performance updates)
+  // Without this, TRENDING-NOW.md and HASHTAG-BANK.md would go stale day by
+  // day. The legacy daily_runner.sh used to call npm run refresh:quick at
+  // the end — we removed that plist, so autoresearch picks up the slack.
+  log('[autoresearch] phase 2b: refresh trends + hashtag bank');
+  try {
+    await runResearch();
+    log('[autoresearch] phase 2b done — TRENDING-NOW + HASHTAG-BANK refreshed');
+  } catch (err) {
+    log(`[autoresearch] phase 2b failed (non-fatal): ${err}`);
   }
 
   // Phase 3: HYPOTHESIZE
