@@ -212,7 +212,17 @@ function Row({ label, value }: { label: string; value: string }) {
 function formatDateTime(iso: string | null): string {
   if (!iso) return "Never";
   try {
-    return new Date(iso).toLocaleString();
+    // Use Intl with a fixed locale + timeZone-agnostic numeric format so the
+    // server (Node) and the client (browser) produce identical strings — the
+    // default toLocaleString() returns "11:24 PM" on Node but "11:24 pm" on
+    // some browsers, which trips React hydration.
+    const d = new Date(iso);
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    });
+    return fmt.format(d);
   } catch {
     return iso;
   }
