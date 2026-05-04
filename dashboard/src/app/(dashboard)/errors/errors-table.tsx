@@ -105,17 +105,18 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
   }
 
   return (
-    <Table className="table-fixed">
+    <div className="overflow-x-auto">
+    <Table className="min-w-[1100px]">
       <TableHeader>
         <TableRow>
           <TableHead className="w-[32px]" />
-          <TableHead className="w-[100px]">When</TableHead>
+          <TableHead className="w-[110px]">When</TableHead>
           <TableHead className="w-[110px]">Source</TableHead>
-          <TableHead className="w-[120px]">Tier</TableHead>
+          <TableHead className="w-[120px]">Severity</TableHead>
           <TableHead className="w-[70px]">HTTP</TableHead>
-          <TableHead className="w-[260px]">What happened</TableHead>
-          <TableHead>How to solve / what was done</TableHead>
-          <TableHead className="w-[110px]">Result</TableHead>
+          <TableHead className="w-[280px]">Error type</TableHead>
+          <TableHead className="min-w-[280px]">Suggested fix</TableHead>
+          <TableHead className="w-[120px]">Status</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -125,10 +126,10 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
             <Fragment key={e.id}>
               <TableRow
                 onClick={() => toggle(e.id)}
-                className="cursor-pointer"
+                className="cursor-pointer align-top"
                 aria-expanded={isOpen}
               >
-                <TableCell className="text-muted-foreground">
+                <TableCell className="text-muted-foreground pt-3">
                   {isOpen ? (
                     <ChevronDown className="h-4 w-4" />
                   ) : (
@@ -136,29 +137,31 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
                   )}
                 </TableCell>
                 <TableCell
-                  className="text-xs text-muted-foreground tabular-nums"
+                  className="text-xs text-muted-foreground tabular-nums pt-3"
                   title={e.occurred_at}
                 >
                   {fmtTime(e.occurred_at)}
                 </TableCell>
-                <TableCell className="text-sm font-medium">
+                <TableCell className="text-sm font-medium pt-3">
                   {e.source}
                 </TableCell>
-                <TableCell>
+                <TableCell className="pt-3">
                   <Badge variant={TIER_VARIANT[e.tier] ?? "outline"}>
                     {e.tier}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-xs tabular-nums text-muted-foreground">
+                <TableCell className="text-xs tabular-nums text-muted-foreground pt-3">
                   {e.status ?? "—"}
                 </TableCell>
-                <TableCell className="font-mono text-xs whitespace-normal break-all">
-                  {e.signature}
+                <TableCell className="pt-3">
+                  <code className="block text-[11px] font-mono break-all leading-snug">
+                    {e.signature}
+                  </code>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground whitespace-normal break-words">
-                  {e.action || "—"}
+                <TableCell className="text-sm text-muted-foreground whitespace-normal break-words leading-snug pt-3">
+                  {e.action || <span className="italic">No fix suggested</span>}
                 </TableCell>
-                <TableCell>
+                <TableCell className="pt-3">
                   <Badge variant={HANDLED_VARIANT[e.handled] ?? "outline"}>
                     {e.handled}
                   </Badge>
@@ -273,5 +276,6 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
         })}
       </TableBody>
     </Table>
+    </div>
   );
 }
