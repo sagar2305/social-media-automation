@@ -1,7 +1,10 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { createBrowserSupabase } from "@/lib/supabase-browser";
 import {
   Table,
   TableBody,
@@ -10,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Check } from "lucide-react";
 
 export interface AutoFixEvent {
   id: number;
@@ -38,6 +41,7 @@ const TIER_VARIANT: Record<string, "default" | "secondary" | "destructive" | "ou
 
 const HANDLED_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   "auto-fixed": "default",
+  resolved: "default",
   retried: "secondary",
   proposed: "outline",
   pending: "outline",
@@ -48,14 +52,16 @@ const HANDLED_VARIANT: Record<string, "default" | "secondary" | "destructive" | 
 const HANDLED_EXPLAIN: Record<string, string> = {
   "auto-fixed":
     "The auto-fixer applied a config/string change, ran TypeScript verify, and the change stuck.",
+  resolved:
+    "An admin manually marked this event resolved after fixing the underlying issue.",
   retried: "The system backed off and retried the request — the retry succeeded.",
   proposed:
     "A small code change was staged on a branch. Run `npx tsx scripts/auto_fix_proposals.ts list` to review.",
-  pending: "Waiting on the next cycle to handle this, or no fix was attempted.",
+  pending: "Open — waiting on a fix or human action.",
   escalated:
-    "The system stopped because it cannot fix this autonomously (billing cap, banned account, persistent outage). Notify sent if SLACK_ALERT_WEBHOOK is set.",
+    "Open — the system cannot fix this autonomously (billing cap, banned account, persistent outage). Click Mark Resolved once you've handled it.",
   "gave-up":
-    "The auto-fixer tried but verify failed and the change was rolled back.",
+    "Open — the auto-fixer tried but verify failed and the change was rolled back.",
 };
 
 // RETRY-tier events are handled inline by api-client (back off + retry the
@@ -105,8 +111,11 @@ function fmtAbsolute(iso: string): string {
   });
 }
 
-export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
+export function ErrorsTable({ events: initial, isAdmin }: { events: AutoFixEvent[]; isAdmin: boolean }) {
+  const router = useRouter();
+  const [events, setEvents] = useState<AutoFixEvent[]>(initial);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const toggle = (id: number) => {
     setExpanded((prev) => {
@@ -116,6 +125,28 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
       return next;
     });
   };
+
+  async function markResolved(eventId: number) {
+    setBusyId(eventId);
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase
+      .from("auto_fix_events")
+      .update({ handled: "resolved", resolution: "Marked resolved by admin" })
+      .eq("id", eventId);
+    setBusyId(null);
+    if (error) {
+      alert(`Could not mark as resolved: ${error.message}`);
+      return;
+    }
+    setEvents((prev) =>
+      prev.map((e) =>
+        e.id === eventId
+          ? { ...e, handled: "resolved", resolution: "Marked resolved by admin" }
+          : e
+      )
+    );
+    router.refresh();
+  }
 
   if (events.length === 0) {
     return (
@@ -274,10 +305,35 @@ export function ErrorsTable({ events }: { events: AutoFixEvent[] }) {
                         </p>
                         {(() => {
                           const eff = effectiveStatus(e.tier, e.handled);
+                          const canResolve =
+                            isAdmin &&
+                            e.handled !== "resolved" &&
+                            e.handled !== "auto-fixed" &&
+                            !(e.tier === "RETRY" && e.handled === "pending");
                           return (
-                            <div className="flex items-start gap-3">
-                              <Badge variant={eff.variant}>{eff.label}</Badge>
-                              <p className="text-sm text-muted-foreground flex-1">{eff.explain}</p>
+                            <div className="space-y-3">
+                              <div className="flex items-start gap-3">
+                                <Badge variant={eff.variant}>{eff.label}</Badge>
+                                <p className="text-sm text-muted-foreground flex-1">{eff.explain}</p>
+                              </div>
+                              {canResolve && (
+                                <div className="flex items-center gap-2 pt-2 border-t border-border/30">
+                                  <Button
+                                    onClick={() => {
+                                      if (confirm(`Mark this event as resolved?\n\nUse this only if you've actually fixed the underlying issue (e.g., raised the spending cap, updated the TikTok app, etc.).`)) {
+                                        markResolved(e.id);
+                                      }
+                                    }}
+                                    disabled={busyId === e.id}
+                                  >
+                                    <Check className="h-4 w-4 mr-1.5" />
+                                    {busyId === e.id ? "Marking…" : "Mark Resolved"}
+                                  </Button>
+                                  <p className="text-xs text-muted-foreground">
+                                    Closes this event so it doesn&apos;t count as open anymore.
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
