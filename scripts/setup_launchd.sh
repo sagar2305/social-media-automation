@@ -24,13 +24,9 @@
 
 set -euo pipefail
 
-LABEL="com.minutewise.dailyflow"
-CATCHUP_LABEL="com.minutewise.dailyflow.catchup"
 TICK_LABEL="com.minutewise.scheduler.tick"
 JOBS_LABEL="com.minutewise.jobs.poller"
 AUTORESEARCH_LABEL="com.minutewise.autoresearch"
-PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
-CATCHUP_PLIST_PATH="$HOME/Library/LaunchAgents/$CATCHUP_LABEL.plist"
 TICK_PLIST_PATH="$HOME/Library/LaunchAgents/$TICK_LABEL.plist"
 JOBS_PLIST_PATH="$HOME/Library/LaunchAgents/$JOBS_LABEL.plist"
 AUTORESEARCH_PLIST_PATH="$HOME/Library/LaunchAgents/$AUTORESEARCH_LABEL.plist"
@@ -65,107 +61,27 @@ NODE_DIR="$(dirname "$NODE_BIN")"
 mkdir -p "$LOG_DIR"
 mkdir -p "$HOME/Library/LaunchAgents"
 
-# ─── Generate plist ──────────────────────────────────────────
+# ─── Legacy plists removed ────────────────────────────────────
+# The old com.minutewise.dailyflow + com.minutewise.dailyflow.catchup plists
+# fired daily_runner.sh at 19:00 with HARDCODED batch config (Flow 1 direct +
+# Flow 2 draft + Flow 3 direct). They overrode the dashboard-managed schedule.
+#
+# Scheduler tick + jobs poller (below) replace them entirely:
+#   - schedule batches → cycle_batches table → scheduler_tick reads + fires
+#   - manual triggers → cycle_jobs table → jobs_poller reads + fires
+#
+# This setup script now removes any legacy plists if they're still installed
+# and never re-creates them. To restore the legacy behavior, run an older
+# version of this script from git history.
 
-cat > "$PLIST_PATH" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>$LABEL</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>$REPO_DIR/scripts/daily_runner.sh</string>
-    <string>primary</string>
-  </array>
-
-  <!-- Run every day at 19:00 local time. Adjust below if needed. -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>19</integer>
-    <key>Minute</key><integer>0</integer>
-  </dict>
-
-  <!-- Don't fire when launchd loads the plist; only on the schedule -->
-  <key>RunAtLoad</key>
-  <false/>
-
-  <!-- Skip if a previous run is still going (rare, but safe) -->
-  <key>AbandonProcessGroup</key>
-  <false/>
-
-  <!-- Inherit a sensible PATH so npm/tsx/git resolve -->
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>$NODE_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-  </dict>
-
-  <key>WorkingDirectory</key>
-  <string>$REPO_DIR</string>
-
-  <key>StandardOutPath</key>
-  <string>$LOG_FILE</string>
-
-  <key>StandardErrorPath</key>
-  <string>$ERR_FILE</string>
-</dict>
-</plist>
-EOF
-
-echo "Wrote $PLIST_PATH"
-
-# ─── Catch-up plist (hourly, kicks in if 19:00 was missed) ────
-
-cat > "$CATCHUP_PLIST_PATH" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>$CATCHUP_LABEL</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>$REPO_DIR/scripts/daily_runner.sh</string>
-    <string>catchup</string>
-  </array>
-
-  <!-- Fire every hour. The runner is idempotent (sentinel-guarded) and only
-       takes action after 19:00 local if today's primary run is missing. -->
-  <key>StartInterval</key>
-  <integer>3600</integer>
-
-  <!-- Run once at load too, in case 19:00 was missed before the laptop woke up -->
-  <key>RunAtLoad</key>
-  <true/>
-
-  <key>AbandonProcessGroup</key>
-  <false/>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>$NODE_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-  </dict>
-
-  <key>WorkingDirectory</key>
-  <string>$REPO_DIR</string>
-
-  <key>StandardOutPath</key>
-  <string>$LOG_FILE</string>
-
-  <key>StandardErrorPath</key>
-  <string>$ERR_FILE</string>
-</dict>
-</plist>
-EOF
-
-echo "Wrote $CATCHUP_PLIST_PATH"
+for legacy in "com.minutewise.dailyflow" "com.minutewise.dailyflow.catchup"; do
+  legacy_plist="$HOME/Library/LaunchAgents/$legacy.plist"
+  if [ -f "$legacy_plist" ]; then
+    launchctl bootout "gui/$(id -u)/$legacy" 2>/dev/null || true
+    rm -f "$legacy_plist"
+    echo "Removed legacy plist: $legacy"
+  fi
+done
 
 # ─── Scheduler tick plist (web-controlled schedule) ───────────
 # Fires every 5 min. Reads schedule_settings from Supabase. If it's past the
@@ -326,28 +242,18 @@ echo "Wrote $AUTORESEARCH_PLIST_PATH"
 
 # ─── Load it ─────────────────────────────────────────────────
 
-# Refuse to (re)load near the scheduled fire time — launchd's anti-thrash logic
-# can drop the next occurrence if a calendar-interval agent is bootstrapped
-# within minutes of its trigger.
-CURRENT_HM="$(date +%H%M)"
-if [ "$CURRENT_HM" -ge 1845 ] && [ "$CURRENT_HM" -lt 1930 ]; then
-  echo "✗ Refusing to reload between 18:45 and 19:30 — too close to 19:00 fire."
-  echo "  Re-run this script before 18:45 or after 19:30 to avoid skipping today's run."
-  exit 1
-fi
-
+# Note: the legacy 19:00 anti-thrash window is gone since we no longer have
+# any StartCalendarInterval plist. The autoresearch plist fires at 08:30 but
+# uses a much more forgiving cadence — re-bootstrapping near that window
+# would just delay autoresearch by one cycle, not skip a whole posting day.
 # Use the modern launchctl API (bootout/bootstrap). The deprecated load/unload
 # does not always recompute calendar triggers correctly on macOS 13+.
 DOMAIN="gui/$(id -u)"
 
-for L in "$LABEL" "$CATCHUP_LABEL" "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL"; do
+for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL"; do
   launchctl bootout "$DOMAIN/$L" 2>/dev/null || true
 done
 
-launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
-launchctl enable "$DOMAIN/$LABEL"
-launchctl bootstrap "$DOMAIN" "$CATCHUP_PLIST_PATH"
-launchctl enable "$DOMAIN/$CATCHUP_LABEL"
 launchctl bootstrap "$DOMAIN" "$TICK_PLIST_PATH"
 launchctl enable "$DOMAIN/$TICK_LABEL"
 launchctl bootstrap "$DOMAIN" "$JOBS_PLIST_PATH"
@@ -356,7 +262,7 @@ launchctl bootstrap "$DOMAIN" "$AUTORESEARCH_PLIST_PATH"
 launchctl enable "$DOMAIN/$AUTORESEARCH_LABEL"
 
 ok=1
-for L in "$LABEL" "$CATCHUP_LABEL" "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL"; do
+for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL"; do
   if launchctl print "$DOMAIN/$L" >/dev/null 2>&1; then
     echo "✓ Registered: $L"
   else
