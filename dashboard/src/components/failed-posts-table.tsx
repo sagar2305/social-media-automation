@@ -197,36 +197,36 @@ export function FailedPostsTable({ posts }: { posts: FailedPost[] }) {
                   {isOpen && (
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
                       <TableCell />
-                      <TableCell colSpan={7} className="py-4">
-                        <div className="space-y-4 max-w-3xl">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                            <div>
+                      <TableCell colSpan={7} className="py-4 align-top">
+                        <div className="space-y-4 max-w-3xl pr-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-xs">
+                            <div className="min-w-0">
                               <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Post ID</p>
-                              <code className="block font-mono break-all text-[11px]">{p.id}</code>
+                              <code className="block font-mono text-[11px] break-all leading-snug">{p.id}</code>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Created</p>
-                              <p className="tabular-nums">{fmtAbsolute(p.created_at)}</p>
+                              <p className="tabular-nums break-words">{fmtAbsolute(p.created_at)}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Flow</p>
-                              <p>{p.flow ?? "—"}</p>
+                              <p className="break-words">{p.flow ?? "—"}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-muted-foreground uppercase tracking-wide mb-0.5">Status</p>
-                              <p>{p.status ?? "—"}</p>
+                              <p className="break-words">{p.status ?? "—"}</p>
                             </div>
                           </div>
 
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-muted-foreground uppercase tracking-wide text-xs mb-1">
                               Why this likely failed
                             </p>
-                            <p className="text-sm">{explain}</p>
+                            <p className="text-sm leading-relaxed break-words">{explain}</p>
                           </div>
 
                           {p.hashtags && p.hashtags.length > 0 && (
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-muted-foreground uppercase tracking-wide text-xs mb-1">
                                 Hashtags ({p.hashtags.length})
                               </p>
@@ -234,7 +234,7 @@ export function FailedPostsTable({ posts }: { posts: FailedPost[] }) {
                                 {p.hashtags.slice(0, 20).map((tag, i) => (
                                   <code
                                     key={i}
-                                    className="text-[11px] font-mono bg-background border border-border/40 rounded px-1.5 py-0.5"
+                                    className="text-[11px] font-mono bg-background border border-border/40 rounded px-1.5 py-0.5 break-all"
                                   >
                                     {tag}
                                   </code>
