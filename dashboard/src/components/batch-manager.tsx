@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
   ArrowUp,
   ArrowDown,
   Layers,
+  Info,
 } from "lucide-react";
 import type { ManagedAccount } from "@/components/account-manager";
 
@@ -92,6 +93,7 @@ export function BatchManager({
   const [draft, setDraft] = useState<BatchDraft>(BLANK_DRAFT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoOpenId, setInfoOpenId] = useState<string | null>(null);
 
   function startCreate() {
     setDraft({ ...BLANK_DRAFT });
@@ -255,19 +257,22 @@ export function BatchManager({
               <TableHead className="text-right">Posts/acc</TableHead>
               <TableHead>Path</TableHead>
               <TableHead className="text-right">Status</TableHead>
-              {isAdmin && <TableHead className="text-right">Actions</TableHead>}
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {batches.length === 0 && (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 9 : 8} className="text-center text-muted-foreground py-6">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-6">
                   No batches configured. Click <strong>Add Batch</strong> to schedule the first one.
                 </TableCell>
               </TableRow>
             )}
-            {batches.map((b, i) => (
-              <TableRow key={b.id} className={b.enabled ? "" : "opacity-60"}>
+            {batches.map((b, i) => {
+              const isInfoOpen = infoOpenId === b.id;
+              return (
+              <Fragment key={b.id}>
+              <TableRow className={b.enabled ? "" : "opacity-60"}>
                 <TableCell className="tabular-nums text-xs text-muted-foreground">
                   {b.order_index}
                 </TableCell>
@@ -310,29 +315,48 @@ export function BatchManager({
                     <span className="text-xs font-medium text-muted-foreground">OFF</span>
                   )}
                 </TableCell>
-                {isAdmin && (
-                  <TableCell className="text-right">
-                    <div className="inline-flex gap-1">
-                      <Button variant="outline" disabled={busy || i === 0} onClick={() => handleReorder(b, "up")} title="Move up">
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="outline" disabled={busy || i === batches.length - 1} onClick={() => handleReorder(b, "down")} title="Move down">
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="outline" disabled={busy} onClick={() => handleToggle(b)} title={b.enabled ? "Disable" : "Enable"}>
-                        <Power className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="outline" disabled={busy} onClick={() => startEdit(b)} title="Edit">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="outline" disabled={busy} onClick={() => handleDelete(b)} title="Delete">
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                )}
+                <TableCell className="text-right">
+                  <div className="inline-flex gap-1">
+                    <Button
+                      variant="outline"
+                      onClick={() => setInfoOpenId(isInfoOpen ? null : b.id)}
+                      title={isInfoOpen ? "Hide details" : "What does this batch do?"}
+                    >
+                      <Info className={`h-3.5 w-3.5 ${isInfoOpen ? "text-primary" : ""}`} />
+                    </Button>
+                    {isAdmin && (
+                      <>
+                        <Button variant="outline" disabled={busy || i === 0} onClick={() => handleReorder(b, "up")} title="Move up">
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" disabled={busy || i === batches.length - 1} onClick={() => handleReorder(b, "down")} title="Move down">
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" disabled={busy} onClick={() => handleToggle(b)} title={b.enabled ? "Disable" : "Enable"}>
+                          <Power className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" disabled={busy} onClick={() => startEdit(b)} title="Edit">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" disabled={busy} onClick={() => handleDelete(b)} title="Delete">
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </TableCell>
               </TableRow>
-            ))}
+
+              {isInfoOpen && (
+                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableCell colSpan={9} className="py-4">
+                    <BatchInfoPanel batch={b} />
+                  </TableCell>
+                </TableRow>
+              )}
+              </Fragment>
+              );
+            })}
           </TableBody>
         </Table>
 
@@ -555,4 +579,133 @@ function labelForFlow(flow: string): string {
   if (flow === "animated") return "Flow 2";
   if (flow === "emoji_overlay") return "Flow 3";
   return flow;
+}
+
+function describeFlow(flow: string): string {
+  if (flow === "photorealistic") return "cinematic photo-style slides (Flow 1)";
+  if (flow === "animated") return "animated style — Pixar 3D, Anime, etc. (Flow 2)";
+  if (flow === "emoji_overlay") return "illustrated character + emoji reactions (Flow 3)";
+  return flow;
+}
+
+function describePath(path: "direct" | "draft", offsetHours: number): string {
+  if (path === "draft") {
+    return "save as a TikTok draft (you must open the TikTok app and tap Publish to make it live)";
+  }
+  if (offsetHours === 0) {
+    return "publish immediately to TikTok";
+  }
+  return `submit now and let Blotato publish it ${offsetHours}h later`;
+}
+
+function describeAccountSet(handles: string[]): string {
+  if (handles.length === 0) return "every account currently marked active in /accounts";
+  if (handles.length === 1) return `only @${handles[0]}`;
+  return handles.map((h) => `@${h}`).join(", ");
+}
+
+function describeNextRun(runTime: string, lastRunDate: string | null): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastRunDate === today) {
+    return `Already ran today (${lastRunDate}). Next fire: tomorrow ${runTime}.`;
+  }
+  return `Will fire today at ${runTime} if it hasn't already.`;
+}
+
+function BatchInfoPanel({ batch: b }: { batch: CycleBatch }) {
+  const flowsList = b.flows.map((f) => describeFlow(f)).join(" + ");
+  const totalPosts = Math.max(b.account_handles.length, 1) * b.posts_per_account * b.flows.length;
+  const accountSummary = describeAccountSet(b.account_handles);
+  const pathSummary = describePath(b.path, b.schedule_offset_hours);
+  const nextRun = describeNextRun(b.run_time, b.last_run_date);
+
+  return (
+    <div className="space-y-4 max-w-3xl text-sm">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+          What this batch does
+        </p>
+        <p className="leading-relaxed">
+          At <strong className="font-mono">{b.run_time}</strong>{" "}
+          (in the timezone set above), runs <strong>{flowsList}</strong> for{" "}
+          <strong>{accountSummary}</strong>, generating{" "}
+          <strong>{b.posts_per_account} post{b.posts_per_account === 1 ? "" : "s"} per account per flow</strong>{" "}
+          {b.account_handles.length === 0 ? "" : `(roughly ${totalPosts} post${totalPosts === 1 ? "" : "s"} total per fire)`}
+          . Posts will <strong>{pathSummary}</strong>.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Schedule
+          </p>
+          <p className="leading-relaxed text-muted-foreground">{nextRun}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Status
+          </p>
+          <p className="leading-relaxed text-muted-foreground">
+            {b.enabled
+              ? "Active — the scheduler will pick this up at the next 5-min tick."
+              : "Paused — won't fire until you toggle it back on."}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Research
+          </p>
+          <p className="leading-relaxed text-muted-foreground">
+            {b.skip_research
+              ? "Skips fresh Virlo trend pull (saves credits). Reuses whatever the previous batch already pulled today."
+              : "Pulls fresh Virlo trends before generating content."}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Order
+          </p>
+          <p className="leading-relaxed text-muted-foreground">
+            Position #{b.order_index} in the batch list. Use ↑/↓ to change. Lower numbers fire first when multiple batches are due simultaneously.
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-border/40 pt-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+          Equivalent CLI command
+        </p>
+        <code className="block bg-background border border-border/40 rounded p-2 text-[11px] font-mono break-all">
+          {buildCliPreview(b)}
+        </code>
+        <p className="text-[11px] text-muted-foreground mt-1">
+          This is exactly what the scheduler runs on the Mac when this batch fires.
+        </p>
+      </div>
+
+      {b.last_run_date && (
+        <p className="text-[11px] text-muted-foreground border-t border-border/40 pt-3">
+          Last run: <span className="font-mono">{b.last_run_date}</span>. The Mac records this date so the same batch won&apos;t double-fire on the same day.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function buildCliPreview(b: CycleBatch): string {
+  const flowsArg = b.flows.map(f => f === "photorealistic" ? "1" : f === "animated" ? "2" : "3").join(",");
+  const parts = [
+    "npm run cycle --",
+    `--flow=${flowsArg}`,
+    `--path=${b.path}`,
+  ];
+  if (b.account_handles.length > 0) parts.push(`--account=${b.account_handles.join(",")}`);
+  if (b.posts_per_account > 1) parts.push(`--posts-per-flow=${b.posts_per_account}`);
+  if (b.skip_research) parts.push("--skip-research");
+  if (b.schedule_offset_hours > 0) parts.push(`--delay=${b.schedule_offset_hours * 60}`);
+  return parts.join(" ");
 }
