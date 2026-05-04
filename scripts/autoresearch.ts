@@ -114,11 +114,11 @@ function getSupabase(): SupabaseClient | null {
 
 // ─── Phase 3: ask Gemini for a decision ───────────────────────
 
-async function askGemini(context: string): Promise<Decision | null> {
+async function askGemini(context: string, targetAccount: string): Promise<Decision | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
-  const prompt = buildPrompt(context);
+  const prompt = buildPrompt(context, targetAccount);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   try {
@@ -151,27 +151,31 @@ async function askGemini(context: string): Promise<Decision | null> {
   }
 }
 
-function buildPrompt(context: string): string {
+function buildPrompt(context: string, targetAccount: string): string {
   return `You are an A/B-test designer for a TikTok content automation system.
 
-Your job: pick the next experiment to run. Reply ONLY as JSON.
+Your job: pick today's experiment for a SPECIFIC account. Reply ONLY as JSON.
+
+# TODAY'S TARGET ACCOUNT
+The "account" field in your response MUST be exactly: ${targetAccount}
+(The dispatcher rotates accounts day-by-day. Your job is the variable choice.)
 
 # Variable priority queue
-Pick the LEAST-tested variable for the chosen account. Within that variable, pick two variants that haven't been compared head-to-head before.
+Pick the LEAST-tested variable for @${targetAccount}. Within that variable, pick two variants that haven't been compared head-to-head before for this account.
 
 \`\`\`json
 ${JSON.stringify(VARIABLE_QUEUE, null, 2)}
 \`\`\`
 
 # Hard rules
-- Both variants MUST go to the SAME account.
+- "account" MUST equal: ${targetAccount}
+- Both variants MUST be tested on the SAME account (we already enforce this).
 - The "variable" field MUST be one of the keys in the priority queue above.
 - "variant_a" and "variant_b" MUST both come from the variants array for that variable.
 - "variant_a" and "variant_b" MUST be different.
 - "flow" MUST be one of: photorealistic, animated, emoji_overlay.
-- "account" MUST be one of the active accounts listed below.
 
-# Context
+# Context (history across all accounts; focus on the @${targetAccount} rows)
 ${context}
 
 # Output
@@ -180,20 +184,32 @@ Reply with this exact JSON shape:
   "variable": "hook_style",
   "variant_a": "question",
   "variant_b": "bold_claim",
-  "account": "<handle from active accounts>",
+  "account": "${targetAccount}",
   "flow": "photorealistic",
-  "hypothesis": "<one sentence: why this experiment matters>"
+  "hypothesis": "<one sentence: why this experiment matters for @${targetAccount}>"
 }`;
+}
+
+// ─── Pick today's target account by deterministic rotation ────
+// Picks one account per calendar day so research focus rotates fairly across
+// the roster instead of letting Gemini pile up consecutive days on the same
+// account. The day index is days-since-epoch, which advances exactly once per
+// midnight UTC. Within a day every invocation returns the same account.
+function pickTodaysAccount(activeHandles: string[]): string | null {
+  if (activeHandles.length === 0) return null;
+  const dayIdx = Math.floor(Date.now() / 86_400_000);
+  return activeHandles[dayIdx % activeHandles.length];
 }
 
 // ─── Phase 3 (fallback): deterministic decision ────────────────
 
-function deterministicFallback(activeHandles: string[], history: ExperimentSnapshot[]): Decision | null {
+function deterministicFallback(
+  activeHandles: string[],
+  history: ExperimentSnapshot[],
+  targetAccount: string,
+): Decision | null {
   if (activeHandles.length === 0) return null;
-
-  // Rotate accounts day-by-day so we don't always pick the same one.
-  const dayIdx = Math.floor(Date.now() / 86_400_000);
-  const account = activeHandles[dayIdx % activeHandles.length];
+  const account = targetAccount;
 
   // Count experiments per (account, variable) and pick the least-tested for THIS account.
   const counts: Record<string, number> = {};
@@ -458,14 +474,28 @@ async function run() {
     winners,
   ].join('\n');
 
-  let decision = await askGemini(context);
+  // Code picks today's target account by rotation; Gemini's job is just
+  // to pick the variable + variants for THAT account. This guarantees fair
+  // coverage across the roster and prevents Gemini from camping on one
+  // account run after run.
+  const targetAccount = pickTodaysAccount(activeHandles);
+  if (!targetAccount) {
+    log('[autoresearch] no active accounts — cannot pick target');
+    return;
+  }
+  log(`[autoresearch] today's target account (rotation): @${targetAccount}`);
+
+  let decision = await askGemini(context, targetAccount);
 
   if (!decision) {
     log('[autoresearch] Gemini path failed/invalid — using deterministic fallback');
-    decision = deterministicFallback(activeHandles, history);
+    decision = deterministicFallback(activeHandles, history, targetAccount);
+  } else if (decision.account !== targetAccount) {
+    log(`[autoresearch] Gemini ignored target account (returned ${decision.account}, wanted ${targetAccount}) — overriding to ${targetAccount}`);
+    decision = { ...decision, account: targetAccount };
   } else if (!activeHandles.includes(decision.account)) {
     log(`[autoresearch] Gemini picked unknown account "${decision.account}" — using fallback`);
-    decision = deterministicFallback(activeHandles, history);
+    decision = deterministicFallback(activeHandles, history, targetAccount);
   }
 
   if (!decision) {
