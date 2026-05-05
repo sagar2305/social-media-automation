@@ -372,12 +372,24 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
                               <Check className="h-4 w-4 mr-1.5" />
                               {resolvingId === p.id ? "Marking…" : "Mark Resolved"}
                             </Button>
-                            <Link
-                              href={`/posts?search=${p.id.slice(0, 12)}`}
-                              className="text-xs font-medium text-primary hover:underline"
+                            <a
+                              href={`https://my.blotato.com/posts/${p.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
+                              title="Opens this exact post on the Blotato dashboard — same view as the email link Blotato sends"
                             >
-                              See full post details →
-                            </Link>
+                              View on Blotato <ExternalLink className="h-3 w-3" />
+                            </a>
+                            <a
+                              href="https://my.blotato.com/failed"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-medium text-muted-foreground hover:underline inline-flex items-center gap-1"
+                              title="Blotato's failed-posts dashboard — fallback if the per-post link doesn't open"
+                            >
+                              All failed (Blotato) <ExternalLink className="h-3 w-3" />
+                            </a>
                             {p.tiktok_url && (
                               <a
                                 href={p.tiktok_url}
