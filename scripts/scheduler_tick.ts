@@ -57,19 +57,29 @@ interface CycleBatch {
   schedule_offset_hours: number;
   enabled: boolean;
   last_run_date: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 function nowInTimezone(tz: string): { date: string; minutes: number } {
+  return nowInTimezoneFromDate(new Date(), tz);
+}
+
+function nowInTimezoneFromDate(d: Date, tz: string): { date: string; minutes: number } {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
     hour12: false,
   });
-  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map(p => [p.type, p.value]));
+  const parts = Object.fromEntries(fmt.formatToParts(d).map(p => [p.type, p.value]));
   const date = `${parts.year}-${parts.month}-${parts.day}`;
   const minutes = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
   return { date, minutes };
+}
+
+function nowInTimezoneFromIso(iso: string, tz: string): { date: string; minutes: number } {
+  return nowInTimezoneFromDate(new Date(iso), tz);
 }
 
 function targetMinutes(runTime: string): number {
@@ -178,6 +188,21 @@ async function main() {
       console.log(`[scheduler_tick] skip "${batch.label}" — not yet (now=${nowMin}, target=${targetMin})`);
       continue;
     }
+
+    // New-batch guard: if the batch was created today AFTER its run_time,
+    // the user meant "fire tomorrow" not "catch up immediately." Without
+    // this, a batch added at 5:30 PM with run_time=08:00 would fire within
+    // the next 5 min as a "catch-up" — which is never what the user wants.
+    //
+    // Catch-up behavior is preserved for established batches: a batch
+    // created on a previous day still fires the same day if the Mac was
+    // asleep at the scheduled time.
+    const createdParts = nowInTimezoneFromIso(batch.created_at, tz);
+    if (createdParts.date === today && createdParts.minutes > targetMin) {
+      console.log(`[scheduler_tick] skip "${batch.label}" — created today after run_time (created=${createdParts.minutes}, target=${targetMin}); will fire tomorrow`);
+      continue;
+    }
+
     try {
       await fireBatch(batch, today);
       fired++;
