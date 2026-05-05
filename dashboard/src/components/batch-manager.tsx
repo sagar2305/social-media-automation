@@ -620,12 +620,12 @@ function BatchInfoPanel({ batch: b }: { batch: CycleBatch }) {
   const nextRun = describeNextRun(b.run_time, b.last_run_date);
 
   return (
-    <div className="space-y-4 max-w-3xl text-sm">
-      <div>
+    <div className="space-y-4 max-w-3xl text-sm min-w-0">
+      <div className="min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
           What this batch does
         </p>
-        <p className="leading-relaxed">
+        <p className="leading-relaxed break-words">
           At <strong className="font-mono">{b.run_time}</strong>{" "}
           (in the timezone set above), runs <strong>{flowsList}</strong> for{" "}
           <strong>{accountSummary}</strong>, generating{" "}
@@ -635,18 +635,18 @@ function BatchInfoPanel({ batch: b }: { batch: CycleBatch }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
             Schedule
           </p>
-          <p className="leading-relaxed text-muted-foreground">{nextRun}</p>
+          <p className="leading-relaxed text-muted-foreground break-words">{nextRun}</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
             Status
           </p>
-          <p className="leading-relaxed text-muted-foreground">
+          <p className="leading-relaxed text-muted-foreground break-words">
             {b.enabled
               ? "Active — the scheduler will pick this up at the next 5-min tick."
               : "Paused — won't fire until you toggle it back on."}
@@ -654,22 +654,22 @@ function BatchInfoPanel({ batch: b }: { batch: CycleBatch }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
             Research
           </p>
-          <p className="leading-relaxed text-muted-foreground">
+          <p className="leading-relaxed text-muted-foreground break-words">
             {b.skip_research
               ? "Skips fresh Virlo trend pull (saves credits). Reuses whatever the previous batch already pulled today."
               : "Pulls fresh Virlo trends before generating content."}
           </p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
             Order
           </p>
-          <p className="leading-relaxed text-muted-foreground">
+          <p className="leading-relaxed text-muted-foreground break-words">
             Position #{b.order_index} in the batch list. Use ↑/↓ to change. Lower numbers fire first when multiple batches are due simultaneously.
           </p>
         </div>
