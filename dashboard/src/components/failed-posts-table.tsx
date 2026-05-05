@@ -2,7 +2,9 @@
 
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -11,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 
 interface FailedPost {
   id: string;
@@ -26,6 +28,7 @@ interface FailedPost {
   views: number | null;
   saves: number | null;
   created_at: string | null;
+  failure_resolved: boolean | null;
 }
 
 interface AutoFixEvent {
@@ -42,28 +45,28 @@ interface AutoFixEvent {
 function classifyReason(p: FailedPost): { reason: string; explain: string } {
   if (p.status === "failed" || p.status === "error") {
     return {
-      reason: "Post failed to publish",
+      reason: "Marked failed at the time",
       explain:
-        "Blotato accepted the submission but TikTok rejected it during publish. Common causes: TikTok app on the phone is too old (update App Store), photo carousel rejected by trust/safety, or the account was rate-limited. Check the linked auto-fix event below for the exact upstream reason.",
+        "This post was recorded as failed when it was first attempted. We don't store the exact upstream reason per-post (only the snapshot status), so this is a heuristic — not a confirmation. Possible causes that have happened in the past: TikTok app on the phone too old, photo carousel rejected by trust/safety, account rate-limited, or a transient Blotato/TikTok hiccup. Check the auto-fix events below for any classifier hits from the same date. If you've already fixed the underlying issue, click Mark Resolved to remove this from the open list.",
     };
   }
   if (p.status === "in-progress" || p.status === "draft") {
     return {
       reason: "Stuck in draft — never published",
       explain:
-        "Submission landed in TikTok's draft inbox but was never published. Either an admin must open the TikTok app and tap Publish on the draft, or the cycle ran with --path=draft (UPLOAD mode) intentionally. If unintentional, the post can be retried via the Run Cycle Now button.",
+        "Submission landed in TikTok's draft inbox but was never published. Either an admin must open the TikTok app and tap Publish on the draft, or the cycle ran with path=draft intentionally. If you don't plan to publish this draft, click Mark Resolved.",
     };
   }
   if (!p.tiktok_url && p.status === "published") {
     return {
       reason: "Published but no TikTok URL captured",
       explain:
-        "Blotato says published, but ScrapeCreators couldn't match this post to a live TikTok video by hashtag overlap. Either the post is shadowbanned, or the analytics matcher needs more data — try `npm run analytics` to retry.",
+        "Blotato reports published, but ScrapeCreators couldn't match this post to a live TikTok video by hashtag overlap. Either the post is shadowbanned, the post was deleted, or the analytics matcher needs more data. Try `npm run analytics` to retry, or Mark Resolved if you've manually verified the post is fine.",
     };
   }
   return {
-    reason: "Status unknown",
-    explain: `Status="${p.status ?? "(null)"}" — this combination wasn't expected. Check POST-TRACKER.md for raw row.`,
+    reason: "Status unclear",
+    explain: `The current status is "${p.status ?? "(null)"}". Without more context we can't say more. If you've handled this manually, click Mark Resolved.`,
   };
 }
 
@@ -76,8 +79,32 @@ function fmtAbsolute(iso: string | null): string {
   }
 }
 
-export function FailedPostsTable({ posts }: { posts: FailedPost[] }) {
+export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
+  const router = useRouter();
+  const [posts, setPosts] = useState<FailedPost[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+
+  async function markResolved(id: string) {
+    if (!confirm("Mark this post as resolved?\n\nUse this only if you've actually verified the issue is handled (e.g., the underlying cause is fixed, the post was published manually, etc.). It will disappear from the open list.")) return;
+    setResolvingId(id);
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase
+      .from("posts")
+      .update({
+        failure_resolved: true,
+        failure_resolution_note: "Marked resolved by admin",
+        failure_resolved_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    setResolvingId(null);
+    if (error) {
+      alert(`Could not mark resolved: ${error.message}`);
+      return;
+    }
+    setPosts((prev) => prev.filter((p) => p.id !== id));
+    router.refresh();
+  }
   const [eventsByDate, setEventsByDate] = useState<Map<string, AutoFixEvent[]>>(new Map());
   const [loadingEvents, setLoadingEvents] = useState(false);
 
@@ -287,7 +314,14 @@ export function FailedPostsTable({ posts }: { posts: FailedPost[] }) {
                             )}
                           </div>
 
-                          <div className="flex gap-2 pt-2 border-t border-border/40">
+                          <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border/40">
+                            <Button
+                              onClick={() => markResolved(p.id)}
+                              disabled={resolvingId === p.id}
+                            >
+                              <Check className="h-4 w-4 mr-1.5" />
+                              {resolvingId === p.id ? "Marking…" : "Mark Resolved"}
+                            </Button>
                             <Link
                               href={`/posts?search=${p.id.slice(0, 12)}`}
                               className="text-xs font-medium text-primary hover:underline"

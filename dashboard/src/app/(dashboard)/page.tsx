@@ -153,13 +153,15 @@ export default async function OverviewPage(props: {
     .sort((a, b) => (b.views || 0) - (a.views || 0))
     .slice(0, 5);
 
-  // Failed / not posted
+  // Failed / not posted (excludes admin-resolved entries)
   const failedPosts = posts.filter(
     (p) =>
-      p.status === "failed" ||
-      p.status === "in-progress" ||
-      p.status === "error" ||
-      (p.status === "published" && !p.tiktok_url && (p.views || 0) === 0)
+      !p.failure_resolved && (
+        p.status === "failed" ||
+        p.status === "in-progress" ||
+        p.status === "error" ||
+        (p.status === "published" && !p.tiktok_url && (p.views || 0) === 0)
+      )
   );
 
   // Account leaderboard
