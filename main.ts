@@ -9,6 +9,30 @@ import {
   bumpPostCounters,
   endCycleRun,
 } from './scripts/cycle_reporter.js';
+
+/**
+ * Poll the cycle_runs row for a cancellation signal from the dashboard.
+ * Called between major phases. If the dashboard set status='cancelled',
+ * we throw so the surrounding try/catch marks the run cancelled and exits
+ * cleanly without burning more Gemini/Blotato calls.
+ */
+async function checkCancelled(runId: string | null): Promise<void> {
+  if (!runId) return;
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    const sb = createClient(url, key);
+    const { data } = await sb.from('cycle_runs').select('status').eq('id', runId).single();
+    if (data?.status === 'cancelled') {
+      throw new Error('CYCLE_CANCELLED_BY_DASHBOARD');
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message === 'CYCLE_CANCELLED_BY_DASHBOARD') throw err;
+    // Network failure during poll = treat as not cancelled, keep going.
+  }
+}
 import { runResearch } from './scripts/fetch_trends.js';
 import { generateContent, resetUsedTemplates } from './scripts/text_overlay.js';
 import { generateSlidesForPost } from './scripts/generate_images.js';
@@ -262,6 +286,8 @@ async function runCycle(): Promise<void> {
     await reportEvent(runId, 'info', 'Research skipped', '--skip-research flag');
   }
 
+  await checkCancelled(runId);
+
   // Phase 4: Generate content + images for all flows × accounts.
   // Before generating, check for retryable failed posts — their archived slides
   // are reused instead of regenerating, saving Gemini credits.
@@ -363,6 +389,8 @@ async function runCycle(): Promise<void> {
     ? new Date(Date.now() + delayMinutes * 60 * 1000)
     : undefined;
 
+  await checkCancelled(runId);
+
   await setCurrentPhase(runId, 'posting');
   await reportEvent(runId, 'phase_start', 'Posting', `Submitting ${allPostData.length} posts to Blotato (${pathLabel})`);
 
@@ -447,6 +475,21 @@ async function runCycle(): Promise<void> {
     } catch { /* swallow */ }
   }
   } catch (err) {
+    const isCancellation = err instanceof Error && err.message === 'CYCLE_CANCELLED_BY_DASHBOARD';
+    if (isCancellation) {
+      await reportEvent(runId, 'info', 'Cycle cancelled', 'Admin clicked Cancel on the dashboard. Exited at next phase boundary.');
+      // Status was already 'cancelled' in DB; just record ended_at.
+      const { createClient: cc } = await import('@supabase/supabase-js');
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && key && runId) {
+        try {
+          const sb = cc(url, key);
+          await sb.from('cycle_runs').update({ ended_at: new Date().toISOString() }).eq('id', runId);
+        } catch { /* swallow */ }
+      }
+      return; // exit silently; don't propagate as a "failure"
+    }
     await reportEvent(runId, 'error', 'Cycle failed', String(err).slice(0, 500));
     await endCycleRun(runId, 'failed', String(err).slice(0, 500));
     if (cycleJobId) {

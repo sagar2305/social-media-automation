@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Activity,
   CheckCircle2,
@@ -10,6 +12,8 @@ import {
   CircleDot,
   ChevronRight,
   RefreshCw,
+  StopCircle,
+  Trash2,
 } from "lucide-react";
 
 interface CycleRun {
@@ -18,7 +22,7 @@ interface CycleRun {
   flows: string[];
   accounts: string[];
   path: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "cancelled";
   started_at: string;
   ended_at: string | null;
   current_phase: string | null;
@@ -43,13 +47,41 @@ const POLL_MS_LIVE = 4000;
 const POLL_MS_IDLE = 20000;
 
 export function RunsLive() {
+  const router = useRouter();
   const [runs, setRuns] = useState<CycleRun[]>([]);
   const [events, setEvents] = useState<CycleEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const live = runs.some((r) => r.status === "running");
   const pollMs = live ? POLL_MS_LIVE : POLL_MS_IDLE;
+
+  async function cancelRun(runId: string) {
+    if (!confirm("Cancel this running cycle?\n\nThe Mac process may take up to 30 seconds to notice and exit. Already-submitted posts to Blotato cannot be unposted — only future phases will be skipped.")) return;
+    setBusyId(runId);
+    const supabase = createBrowserSupabase();
+    await supabase
+      .from("cycle_runs")
+      .update({ status: "cancelled", ended_at: new Date().toISOString(), error_text: "Cancelled by admin" })
+      .eq("id", runId)
+      .eq("status", "running");
+    setBusyId(null);
+    setRuns((prev) => prev.map((r) => (r.id === runId ? { ...r, status: "cancelled" } : r)));
+    router.refresh();
+  }
+
+  async function deleteRun(runId: string) {
+    if (!confirm("Delete this run from history?\n\nRemoves the run + all its events. Cannot be undone.")) return;
+    setBusyId(runId);
+    const supabase = createBrowserSupabase();
+    await supabase.from("cycle_events").delete().eq("cycle_run_id", runId);
+    await supabase.from("cycle_runs").delete().eq("id", runId);
+    setBusyId(null);
+    setRuns((prev) => prev.filter((r) => r.id !== runId));
+    if (selectedId === runId) setSelectedId(null);
+    router.refresh();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -198,6 +230,35 @@ export function RunsLive() {
                       posts
                     </p>
                   </div>
+                </div>
+
+                {/* Action buttons — Cancel for running, Delete for terminal */}
+                <div className="flex items-center gap-2 pt-2 border-t border-border/40">
+                  {selectedRun.status === "running" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => cancelRun(selectedRun.id)}
+                      disabled={busyId === selectedRun.id}
+                    >
+                      <StopCircle className="h-4 w-4 mr-1.5 text-destructive" />
+                      {busyId === selectedRun.id ? "Cancelling…" : "Cancel running cycle"}
+                    </Button>
+                  )}
+                  {selectedRun.status !== "running" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => deleteRun(selectedRun.id)}
+                      disabled={busyId === selectedRun.id}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1.5 text-destructive" />
+                      {busyId === selectedRun.id ? "Deleting…" : "Delete from history"}
+                    </Button>
+                  )}
+                  {selectedRun.status === "running" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Marks the cycle cancelled in the DB. The Mac process may take up to ~30s to notice and exit between phases.
+                    </p>
+                  )}
                 </div>
 
                 {selectedRun.current_phase && selectedRun.status === "running" && (

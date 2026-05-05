@@ -189,17 +189,24 @@ async function main() {
       continue;
     }
 
+    // Strict-window guard: only fire within CATCH_UP_WINDOW_MIN of the
+    // target time. If the Mac was asleep through the entire window, skip
+    // and try again tomorrow. This prevents "8 hours late" surprises like
+    // an 08:00 batch firing at 17:00 because the prior catch-up logic was
+    // unbounded. The window is generous enough to absorb typical Mac
+    // sleep/wake delays but strict enough that the run_time has real
+    // semantic meaning.
+    const CATCH_UP_WINDOW_MIN = 60;
+    if (nowMin > targetMin + CATCH_UP_WINDOW_MIN) {
+      console.log(`[scheduler_tick] skip "${batch.label}" — past catch-up window (now=${nowMin}, target=${targetMin}, window=${CATCH_UP_WINDOW_MIN} min). Will fire tomorrow.`);
+      continue;
+    }
+
     // New-batch guard: if the batch was created today AFTER its run_time,
-    // the user meant "fire tomorrow" not "catch up immediately." Without
-    // this, a batch added at 5:30 PM with run_time=08:00 would fire within
-    // the next 5 min as a "catch-up" — which is never what the user wants.
-    //
-    // Catch-up behavior is preserved for established batches: a batch
-    // created on a previous day still fires the same day if the Mac was
-    // asleep at the scheduled time.
+    // the user meant "fire tomorrow" not "catch up immediately."
     const createdParts = nowInTimezoneFromIso(batch.created_at, tz);
     if (createdParts.date === today && createdParts.minutes > targetMin) {
-      console.log(`[scheduler_tick] skip "${batch.label}" — created today after run_time (created=${createdParts.minutes}, target=${targetMin}); will fire tomorrow`);
+      console.log(`[scheduler_tick] skip "${batch.label}" — created today after run_time; will fire tomorrow`);
       continue;
     }
 
