@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ExternalLink, Copy } from "lucide-react";
 
 interface FailedPost {
   id: string;
@@ -118,6 +118,18 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
   const [posts, setPosts] = useState<FailedPost[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyPostId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // clipboard API unavailable (rare); silently noop
+    }
+  }
 
   async function markResolved(id: string) {
     if (!confirm("Mark this post as resolved?\n\nUse this only if you've actually verified the issue is handled (e.g., the underlying cause is fixed, the post was published manually, etc.). It will disappear from the open list.")) return;
@@ -372,23 +384,22 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
                               <Check className="h-4 w-4 mr-1.5" />
                               {resolvingId === p.id ? "Marking…" : "Mark Resolved"}
                             </Button>
-                            <a
-                              href={`https://my.blotato.com/posts/${p.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
-                              title="Opens this exact post on the Blotato dashboard — same view as the email link Blotato sends"
+                            <Button
+                              variant="outline"
+                              onClick={() => copyPostId(p.id)}
+                              title="Copy this post's ID — paste it into the search bar on Blotato's failed-posts page to find this exact submission"
                             >
-                              View on Blotato <ExternalLink className="h-3 w-3" />
-                            </a>
+                              <Copy className="h-3.5 w-3.5 mr-1.5" />
+                              {copiedId === p.id ? "Copied!" : "Copy Post ID"}
+                            </Button>
                             <a
                               href="https://my.blotato.com/failed"
                               target="_blank"
                               rel="noreferrer"
-                              className="text-xs font-medium text-muted-foreground hover:underline inline-flex items-center gap-1"
-                              title="Blotato's failed-posts dashboard — fallback if the per-post link doesn't open"
+                              className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
+                              title="Opens Blotato's failed-posts dashboard. Paste the copied ID into search to find this specific post — same view as the link in Blotato's email notifications."
                             >
-                              All failed (Blotato) <ExternalLink className="h-3 w-3" />
+                              View failed posts on Blotato <ExternalLink className="h-3 w-3" />
                             </a>
                             {p.tiktok_url && (
                               <a
