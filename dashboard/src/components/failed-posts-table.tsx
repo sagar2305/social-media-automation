@@ -29,6 +29,8 @@ interface FailedPost {
   saves: number | null;
   created_at: string | null;
   failure_resolved: boolean | null;
+  error_message: string | null;
+  error_source: string | null;
 }
 
 interface AutoFixEvent {
@@ -42,12 +44,41 @@ interface AutoFixEvent {
   handled: string;
 }
 
-function classifyReason(p: FailedPost): { reason: string; explain: string } {
+function classifyReason(p: FailedPost): { reason: string; explain: string; isExact: boolean; fixHint?: string } {
+  // EXACT reason (from Blotato's errorMessage field) — this is the real
+  // upstream cause for THIS specific post. When present, prefer it over
+  // any heuristic.
+  if (p.error_message && (p.status === "failed" || p.status === "error")) {
+    const msg = p.error_message;
+    let fixHint: string | undefined;
+
+    // Map known message patterns to actionable fix hints.
+    if (/maximum number of \d+ unique accounts/i.test(msg)) {
+      fixHint = "Blotato Starter plan caps you at 3 unique TikTok accounts in any 24h window. Either upgrade the Blotato plan, or wait 24h and reduce active accounts. Our scheduler already drops the 4th+ account each day to avoid this — if you're seeing it, a manual run or autoresearch experiment likely tripped the limit.";
+    } else if (/update.*TikTok.*(?:latest|version)/i.test(msg)) {
+      fixHint = "TikTok rejected the upload because the TikTok app on the phone where this account is logged in is too old. Open the TikTok app on the affected phone, update it from the App Store / Play Store, then the next cycle will succeed for this account.";
+    } else if (/Cannot read properties of undefined/i.test(msg) || /Internal error/i.test(msg)) {
+      fixHint = "Blotato's backend hit an internal error parsing the TikTok response. Per Blotato support docs, this is usually transient — the next cycle attempt typically succeeds. retry_handler will pick it up automatically on the next run.";
+    } else if (/connection error while downloading the photo/i.test(msg) || /publicly accessible/i.test(msg)) {
+      fixHint = "TikTok couldn't fetch our slide images while publishing. The image host (Blotato media) may have been rate-limited or briefly unavailable. Usually fixes itself on the next attempt; if it persists, check Blotato media uploader status.";
+    } else if (/Something went wrong/i.test(msg)) {
+      fixHint = "Generic transient TikTok error. Retry on the next cycle. If it repeats more than 2x in a row for the same account, the account may have a deeper issue (suspension review, etc.).";
+    }
+
+    return {
+      reason: msg,
+      explain: fixHint ?? "Exact upstream error captured from Blotato. No catalog hint available for this specific message — check the auto-fix events below or the run log for context.",
+      isExact: true,
+      fixHint,
+    };
+  }
+
   if (p.status === "failed" || p.status === "error") {
     return {
-      reason: "Marked failed at the time",
+      reason: "Marked failed at the time (no upstream message captured)",
       explain:
-        "This post was recorded as failed when it was first attempted. We don't store the exact upstream reason per-post (only the snapshot status), so this is a heuristic — not a confirmation. Possible causes that have happened in the past: TikTok app on the phone too old, photo carousel rejected by trust/safety, account rate-limited, or a transient Blotato/TikTok hiccup. Check the auto-fix events below for any classifier hits from the same date. If you've already fixed the underlying issue, click Mark Resolved to remove this from the open list.",
+        "This post was recorded as failed but we didn't store the upstream reason — likely an older post from before per-post error capture was wired up. Run `npm run analytics` to refresh statuses; the next status sync will fill in the actual error message if Blotato still has it.",
+      isExact: false,
     };
   }
   if (p.status === "in-progress" || p.status === "draft") {
@@ -55,6 +86,7 @@ function classifyReason(p: FailedPost): { reason: string; explain: string } {
       reason: "Stuck in draft — never published",
       explain:
         "Submission landed in TikTok's draft inbox but was never published. Either an admin must open the TikTok app and tap Publish on the draft, or the cycle ran with path=draft intentionally. If you don't plan to publish this draft, click Mark Resolved.",
+      isExact: false,
     };
   }
   if (!p.tiktok_url && p.status === "published") {
@@ -62,11 +94,13 @@ function classifyReason(p: FailedPost): { reason: string; explain: string } {
       reason: "Published but no TikTok URL captured",
       explain:
         "Blotato reports published, but ScrapeCreators couldn't match this post to a live TikTok video by hashtag overlap. Either the post is shadowbanned, the post was deleted, or the analytics matcher needs more data. Try `npm run analytics` to retry, or Mark Resolved if you've manually verified the post is fine.",
+      isExact: false,
     };
   }
   return {
     reason: "Status unclear",
     explain: `The current status is "${p.status ?? "(null)"}". Without more context we can't say more. If you've handled this manually, click Mark Resolved.`,
+    isExact: false,
   };
 }
 
@@ -177,7 +211,7 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
           <TableBody>
             {visible.map((p) => {
               const isOpen = expanded.has(p.id);
-              const { reason, explain } = classifyReason(p);
+              const { reason, explain, isExact } = classifyReason(p);
               const dateEvents = (p.date && eventsByDate.get(p.date)) || [];
               const relevantEvents = dateEvents.filter(
                 (e) =>
@@ -218,7 +252,9 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
                         {p.status}
                       </span>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground pt-3">{reason}</TableCell>
+                    <TableCell className={`text-xs pt-3 ${isExact ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                      <span className="line-clamp-2">{reason}</span>
+                    </TableCell>
                   </TableRow>
 
                   {isOpen && (
@@ -245,12 +281,26 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
                             </div>
                           </div>
 
-                          <div className="min-w-0">
-                            <p className="text-muted-foreground uppercase tracking-wide text-xs mb-1">
-                              Why this likely failed
-                            </p>
-                            <p className="text-sm leading-relaxed break-words">{explain}</p>
-                          </div>
+                          {isExact ? (
+                            <div className="min-w-0 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-red-800 mb-1">
+                                Exact upstream error (from {p.error_source ?? "blotato"})
+                              </p>
+                              <p className="text-sm leading-relaxed break-words text-red-900 font-medium">
+                                {reason}
+                              </p>
+                              <p className="text-xs leading-relaxed break-words text-red-800 mt-2 pt-2 border-t border-red-200/70">
+                                <strong>How to fix:</strong> {explain}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="min-w-0">
+                              <p className="text-muted-foreground uppercase tracking-wide text-xs mb-1">
+                                Best-effort interpretation
+                              </p>
+                              <p className="text-sm leading-relaxed break-words">{explain}</p>
+                            </div>
+                          )}
 
                           {p.hashtags && p.hashtags.length > 0 && (
                             <div className="min-w-0">

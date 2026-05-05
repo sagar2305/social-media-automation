@@ -6,6 +6,22 @@ import { runTieredFetch, type ProfileVideo } from './tier_scheduler.js';
 import { classifyError } from './auto_fix/classifier.js';
 import { logClassified } from './auto_fix/audit_logger.js';
 import { maybeNotify } from './auto_fix/notifier.js';
+import { createClient } from '@supabase/supabase-js';
+
+// Direct upsert helper so the dashboard sees the EXACT upstream error
+// for each failed post immediately, instead of waiting on the next
+// full sync-to-supabase run.
+async function writePostErrorToSupabase(postId: string, errorMessage: string, errorSource: string): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return;
+  const sb = createClient(url, key);
+  await sb.from('posts').update({
+    error_message: errorMessage,
+    error_source: errorSource,
+    status: 'error',
+  }).eq('id', postId);
+}
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -33,6 +49,8 @@ interface TrackerRow {
   saveRate: string;
   status: string;
   tiktokUrl: string;
+  errorMessage?: string;
+  errorSource?: string;
 }
 
 interface AccountStats {
@@ -116,6 +134,15 @@ async function checkBlotPostStatus(rows: TrackerRow[]): Promise<number> {
         log(`  Status: ${row.postId} → published`);
       } else if (data.status === 'failed' || data.status === 'error') {
         row.status = 'error';
+        // Capture the upstream error so the dashboard can show the EXACT
+        // reason instead of a generic "post failed to publish" message.
+        if (data.errorMessage) {
+          row.errorMessage = data.errorMessage;
+          row.errorSource = 'blotato';
+          // Direct upsert into Supabase so the dashboard sees the real error
+          // even before the next full sync-to-supabase run.
+          await writePostErrorToSupabase(row.postId, data.errorMessage, 'blotato').catch(() => {});
+        }
         updated++;
         const errMsg = data.errorMessage ? ` — ${data.errorMessage}` : '';
         log(`  Status: ${row.postId} → error${errMsg}`);
