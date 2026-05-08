@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ExportButton } from "@/components/export-button";
+import { PostTrigger } from "@/components/post-trigger";
 
 export const revalidate = 300;
 
@@ -22,27 +23,16 @@ export default async function PostsPage() {
   const allPosts = posts ?? [];
   const published = allPosts.filter((p) => p.status === "published").length;
 
-  // Group posts by account
-  const accountMap = new Map<string, typeof allPosts>();
-  for (const post of allPosts) {
-    const account = post.account || "Unknown";
-    if (!accountMap.has(account)) accountMap.set(account, []);
-    accountMap.get(account)!.push(post);
-  }
-  const accounts = Array.from(accountMap.entries()).sort((a, b) =>
-    a[0].localeCompare(b[0])
-  );
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-5xl font-semibold tracking-tight">Posts</h1>
           <p className="text-lg text-muted-foreground mt-2">
-            Content analytics per account.
+            All posts sorted by date.
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
           <ExportButton
             data={allPosts.map((p) => ({
               date: p.date,
@@ -72,158 +62,118 @@ export default async function PostsPage() {
               { key: "tiktok_url", label: "TikTok URL" },
             ]}
           />
-        </div>
-        <div className="flex gap-8 tabular-nums">
-          <div className="text-right">
-            <p className="text-3xl font-semibold">{allPosts.length}</p>
-            <p className="text-sm text-muted-foreground">Total</p>
-          </div>
-          <div className="text-right">
-            <p className="text-3xl font-semibold">{published}</p>
-            <p className="text-sm text-muted-foreground">Published</p>
-          </div>
-          <div className="text-right">
-            <p className="text-3xl font-semibold text-muted-foreground/50">
-              {allPosts.length - published}
-            </p>
-            <p className="text-sm text-muted-foreground">Drafts</p>
+          <div className="flex gap-6 tabular-nums text-sm">
+            <div className="text-right">
+              <p className="text-2xl font-semibold">{allPosts.length}</p>
+              <p className="text-muted-foreground">Total</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-semibold">{published}</p>
+              <p className="text-muted-foreground">Published</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-semibold text-muted-foreground/50">
+                {allPosts.length - published}
+              </p>
+              <p className="text-muted-foreground">Drafts</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {accounts.map(([account, accountPosts]) => {
-        const totalViews = accountPosts.reduce((s, p) => s + (p.views || 0), 0);
-        const totalLikes = accountPosts.reduce((s, p) => s + (p.likes || 0), 0);
-        const totalSaves = accountPosts.reduce((s, p) => s + (p.saves || 0), 0);
-        const avgSaveRate =
-          accountPosts.length > 0
-            ? (
-                accountPosts.reduce((s, p) => s + (Number(p.save_rate) || 0), 0) /
-                accountPosts.length
-              ).toFixed(1)
-            : "0";
-        const pubCount = accountPosts.filter((p) => p.status === "published").length;
-
-        return (
-          <div key={account} className="space-y-4">
-            <div className="flex items-end justify-between">
-              <h2 className="text-2xl font-semibold tracking-tight">
-                @{account}
-              </h2>
-              <div className="flex gap-6 tabular-nums text-sm">
-                <div className="text-right">
-                  <p className="text-lg font-semibold">{accountPosts.length}</p>
-                  <p className="text-muted-foreground">Posts</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-semibold">{totalViews.toLocaleString()}</p>
-                  <p className="text-muted-foreground">Views</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-semibold">{totalLikes.toLocaleString()}</p>
-                  <p className="text-muted-foreground">Likes</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-semibold">{totalSaves.toLocaleString()}</p>
-                  <p className="text-muted-foreground">Saves</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-semibold">{avgSaveRate}%</p>
-                  <p className="text-muted-foreground">Avg Save %</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-semibold">{pubCount}/{accountPosts.length}</p>
-                  <p className="text-muted-foreground">Published</p>
-                </div>
-              </div>
-            </div>
-
-            <Card className="overflow-hidden">
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-sm font-medium">Date</TableHead>
-                      <TableHead className="text-sm font-medium">Hook</TableHead>
-                      <TableHead className="text-sm font-medium">Format</TableHead>
-                      <TableHead className="text-sm font-medium">Flow</TableHead>
-                      <TableHead className="text-sm font-medium text-right">Views</TableHead>
-                      <TableHead className="text-sm font-medium text-right">Likes</TableHead>
-                      <TableHead className="text-sm font-medium text-right">Saves</TableHead>
-                      <TableHead className="text-sm font-medium text-right">Save %</TableHead>
-                      <TableHead className="text-sm font-medium">Status</TableHead>
-                      <TableHead className="text-sm font-medium">Link</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {accountPosts.map((post) => (
-                      <TableRow key={post.id}>
-                        <TableCell className="whitespace-nowrap tabular-nums text-sm">
-                          {post.date}
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-sm font-medium">
-                            {post.hook_style}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-sm">{post.format}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {post.flow || "-"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">
-                          {post.views > 0 ? (
-                            <span className="font-semibold">{post.views.toLocaleString()}</span>
-                          ) : (
-                            <span className="text-muted-foreground/30">0</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">
-                          {post.likes > 0 ? (
-                            <span className="font-semibold">{post.likes.toLocaleString()}</span>
-                          ) : (
-                            <span className="text-muted-foreground/30">0</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">
-                          {post.saves > 0 ? (
-                            <span className="font-semibold">{post.saves.toLocaleString()}</span>
-                          ) : (
-                            <span className="text-muted-foreground/30">0</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">
-                          {post.save_rate > 0 ? (
-                            <span className="font-semibold">{post.save_rate}%</span>
-                          ) : (
-                            <span className="text-muted-foreground/30">0%</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <StatusPill status={post.status} />
-                        </TableCell>
-                        <TableCell>
-                          {post.tiktok_url && post.tiktok_url !== "-" ? (
-                            <a
-                              href={post.tiktok_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-[#16a34a] hover:text-[#16a34a]/80 hover:underline transition-colors"
-                            >
-                              View
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground/30">-</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      })}
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-sm font-medium">Date</TableHead>
+                <TableHead className="text-sm font-medium">Hook</TableHead>
+                <TableHead className="text-sm font-medium">Format</TableHead>
+                <TableHead className="text-sm font-medium">Flow</TableHead>
+                <TableHead className="text-sm font-medium text-right">Views</TableHead>
+                <TableHead className="text-sm font-medium text-right">Likes</TableHead>
+                <TableHead className="text-sm font-medium text-right">Saves</TableHead>
+                <TableHead className="text-sm font-medium text-right">Save %</TableHead>
+                <TableHead className="text-sm font-medium">Status</TableHead>
+                <TableHead className="text-sm font-medium">Link</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allPosts.map((post) => (
+                <TableRow key={post.id}>
+                  <TableCell className="whitespace-nowrap tabular-nums text-sm">
+                    <div>{post.date}</div>
+                    {post.account && (
+                      <div className="text-xs text-muted-foreground/60 mt-0.5">
+                        @{post.account}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {/* Click the hook pill to open the universal post drawer.
+                        External-link cell still opens TikTok in a new tab. */}
+                    <PostTrigger
+                      postId={post.id}
+                      className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-sm font-medium hover:bg-secondary/80"
+                    >
+                      {post.hook_style}
+                    </PostTrigger>
+                  </TableCell>
+                  <TableCell className="text-sm">{post.format}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {post.flow || "-"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-sm">
+                    {post.views > 0 ? (
+                      <span className="font-semibold">{post.views.toLocaleString()}</span>
+                    ) : (
+                      <span className="text-muted-foreground/30">0</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-sm">
+                    {post.likes > 0 ? (
+                      <span className="font-semibold">{post.likes.toLocaleString()}</span>
+                    ) : (
+                      <span className="text-muted-foreground/30">0</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-sm">
+                    {post.saves > 0 ? (
+                      <span className="font-semibold">{post.saves.toLocaleString()}</span>
+                    ) : (
+                      <span className="text-muted-foreground/30">0</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-sm">
+                    {post.save_rate > 0 ? (
+                      <span className="font-semibold">{post.save_rate}%</span>
+                    ) : (
+                      <span className="text-muted-foreground/30">0%</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <StatusPill status={post.status} />
+                  </TableCell>
+                  <TableCell>
+                    {post.tiktok_url && post.tiktok_url !== "-" ? (
+                      <a
+                        href={post.tiktok_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-[#16a34a] hover:text-[#16a34a]/80 hover:underline transition-colors"
+                      >
+                        View
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground/30">-</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {allPosts.length === 0 && (
         <Card>
@@ -240,6 +190,7 @@ function StatusPill({ status }: { status: string }) {
   const label = status?.replace(/ \(.*\)/, "") || "unknown";
   const isPublished = status === "published";
   const isScheduled = status?.includes("scheduled");
+  const isPending = status === "pending" || status === "in-progress";
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-medium ${
@@ -247,7 +198,9 @@ function StatusPill({ status }: { status: string }) {
           ? "bg-[#248a3d]/10 text-[#248a3d]"
           : isScheduled
             ? "bg-[#bf4800]/10 text-[#bf4800]"
-            : "bg-secondary text-muted-foreground"
+            : isPending
+              ? "bg-[#0070f3]/10 text-[#0070f3]"
+              : "bg-secondary text-muted-foreground"
       }`}
     >
       {label}

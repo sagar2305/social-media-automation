@@ -4,6 +4,7 @@ import { SidebarNav } from "@/components/sidebar-nav";
 import { UserNav } from "@/components/user-nav";
 import { AvatarLink } from "@/components/avatar-link";
 import { SearchBar } from "@/components/search-bar";
+import { PostDrawerMount } from "@/components/post-drawer-mount";
 
 export default function DashboardLayout({
   children,
@@ -66,6 +67,12 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+
+      {/* Universal post detail drawer — opens whenever ?post=<id> is in the URL.
+          Wrapped in Suspense because PostDrawerMount uses useSearchParams. */}
+      <Suspense fallback={null}>
+        <PostDrawerMount />
+      </Suspense>
     </div>
   );
 }
