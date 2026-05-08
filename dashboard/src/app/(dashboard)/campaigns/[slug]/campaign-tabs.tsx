@@ -27,12 +27,12 @@ export function CampaignTabs({ slug }: { slug: string }) {
 
   const tabs: Tab[] = [
     { href: base, label: "Overview", ready: true },
-    { href: `${base}/posts`, label: "Posts", ready: false },
+    { href: `${base}/posts`, label: "Posts", ready: true },
     { href: `${base}/accounts`, label: "Accounts", ready: true },
     { href: `${base}/schedule`, label: "Schedule", ready: true },
-    { href: `${base}/experiments`, label: "Experiments", ready: false },
-    { href: `${base}/formats`, label: "Formats", ready: false },
-    { href: `${base}/hashtags`, label: "Hashtags", ready: false },
+    { href: `${base}/experiments`, label: "Experiments", ready: true },
+    { href: `${base}/formats`, label: "Formats", ready: true },
+    { href: `${base}/hashtags`, label: "Hashtags", ready: true },
     { href: `${base}/brain`, label: "AI Brain", ready: false },
     { href: `${base}/reports`, label: "Reports", ready: false },
   ];
