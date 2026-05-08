@@ -192,6 +192,27 @@ export async function postSlideshow(
 
   await trackPost(postId, metadata, postingPath);
 
+  // Cache the first slide's public URL on the posts row as the post
+  // thumbnail so the dashboard's Top Posts cards + drawer can render
+  // a real first-slide image instead of a placeholder gradient.
+  // Blotato hosts these URLs so TikTok itself can fetch them — they're
+  // public + stable.
+  if (mediaUrls[0]) {
+    try {
+      const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (sbUrl && sbKey) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(sbUrl, sbKey);
+        await sb.from('posts')
+          .update({ thumbnail_url: mediaUrls[0] })
+          .eq('id', postId);
+      }
+    } catch {
+      // Non-fatal — the backfill script can fill this in later via oembed.
+    }
+  }
+
   return { accountName: account.name, integrationId: account.id, postId, flow: metadata.flow };
 }
 

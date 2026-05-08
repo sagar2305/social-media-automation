@@ -59,7 +59,7 @@ async function loadOverview(slug: string) {
   const [postsRes, accountsRes] = await Promise.all([
     sb
       .from("posts")
-      .select("id, hook_style, account, views, likes, saves, shares, comments, save_rate, status, tiktok_url, date")
+      .select("id, hook_style, account, views, likes, saves, shares, comments, save_rate, status, tiktok_url, thumbnail_url, date")
       .eq("campaign_id", campaign.id)
       .order("date", { ascending: false }),
     sb
@@ -114,7 +114,7 @@ export default async function CampaignOverviewPage({
   const publishedPosts = posts.filter((p) => p.status === "published");
   const topPosts: TopPost[] = [...publishedPosts]
     .sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
-    .slice(0, 12)
+    .slice(0, 5)
     .map((p) => ({
       id: p.id,
       hook_style: p.hook_style,
@@ -125,6 +125,7 @@ export default async function CampaignOverviewPage({
       shares: p.shares ?? 0,
       save_rate: p.save_rate,
       tiktok_url: p.tiktok_url,
+      thumbnail_url: (p as { thumbnail_url?: string | null }).thumbnail_url ?? null,
       status: p.status,
       date: p.date,
     }));
