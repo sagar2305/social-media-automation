@@ -6,11 +6,12 @@ import { AccountManager, type ManagedAccount } from "@/components/account-manage
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ExportButton } from "@/components/export-button";
 import { getDateFilter } from "@/lib/utils";
+import { getActiveCampaignFilter } from "@/lib/campaign-filter";
 import type { AccountSummary } from "@/lib/types";
 
 export const revalidate = 0;
 
-async function getAccountSummaries(dateFrom: string | null) {
+async function getAccountSummaries(dateFrom: string | null, campaignId: string | null) {
   const supabase = await createClient();
   let postsQuery = supabase
     .from("posts")
@@ -18,9 +19,8 @@ async function getAccountSummaries(dateFrom: string | null) {
     .eq("status", "published")
     .order("date", { ascending: false });
 
-  if (dateFrom) {
-    postsQuery = postsQuery.gte("date", dateFrom);
-  }
+  if (dateFrom) postsQuery = postsQuery.gte("date", dateFrom);
+  if (campaignId) postsQuery = postsQuery.eq("campaign_id", campaignId);
 
   const [postsRes, statsRes] = await Promise.all([
     postsQuery,
@@ -80,13 +80,14 @@ async function getAccountSummaries(dateFrom: string | null) {
   return summaries;
 }
 
-async function getManagedAccounts(): Promise<ManagedAccount[]> {
+async function getManagedAccounts(campaignId: string | null): Promise<ManagedAccount[]> {
   const supabase = await createClient();
-  const { data } = await supabase
+  let query = supabase
     .from("accounts")
     .select("id, name, handle, active, notes")
-    .order("created_at", { ascending: true })
-    .returns<ManagedAccount[]>();
+    .order("created_at", { ascending: true });
+  if (campaignId) query = query.eq("campaign_id", campaignId);
+  const { data } = await query.returns<ManagedAccount[]>();
   return data ?? [];
 }
 
@@ -99,9 +100,11 @@ export default async function AccountsPage(props: {
   // Sequence: auth first (settles the token), then parallel data fetches.
   // Avoids Supabase auth lock contention.
   const user = await getUser();
+  const activeCampaign = await getActiveCampaignFilter();
+  const campaignId = activeCampaign?.id ?? null;
   const [accounts, managed] = await Promise.all([
-    getAccountSummaries(dateFrom),
-    getManagedAccounts(),
+    getAccountSummaries(dateFrom, campaignId),
+    getManagedAccounts(campaignId),
   ]);
   const role = user?.role ?? "viewer";
 
@@ -111,7 +114,14 @@ export default async function AccountsPage(props: {
         <div>
           <h1 className="text-5xl font-semibold tracking-tight">Accounts</h1>
           <p className="text-lg text-muted-foreground mt-2">
-            {accounts.length} account{accounts.length !== 1 ? "s" : ""} tracked · {managed.filter((a) => a.active).length} active in pipeline
+            {accounts.length} account{accounts.length !== 1 ? "s" : ""} tracked ·{" "}
+            {managed.filter((a) => a.active).length} active in pipeline
+            {activeCampaign && (
+              <>
+                {" "}·{" "}
+                <span className="text-foreground font-medium">{activeCampaign.name}</span>
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">

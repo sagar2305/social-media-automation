@@ -10,16 +10,21 @@ import {
 } from "@/components/ui/table";
 import { ExportButton } from "@/components/export-button";
 import { PostTrigger } from "@/components/post-trigger";
+import { getActiveCampaignFilter } from "@/lib/campaign-filter";
 
 export const revalidate = 300;
 
 export default async function PostsPage() {
   const supabase = await createClient();
-  const { data: posts } = await supabase
+  const activeCampaign = await getActiveCampaignFilter();
+
+  let postsQuery = supabase
     .from("posts")
     .select("*")
     .order("date", { ascending: false });
+  if (activeCampaign) postsQuery = postsQuery.eq("campaign_id", activeCampaign.id);
 
+  const { data: posts } = await postsQuery;
   const allPosts = posts ?? [];
   const published = allPosts.filter((p) => p.status === "published").length;
 
@@ -29,7 +34,15 @@ export default async function PostsPage() {
         <div>
           <h1 className="text-5xl font-semibold tracking-tight">Posts</h1>
           <p className="text-lg text-muted-foreground mt-2">
-            All posts sorted by date.
+            {activeCampaign ? (
+              <>
+                Posts in{" "}
+                <span className="text-foreground font-medium">{activeCampaign.name}</span>
+                {" "}— sorted by date.
+              </>
+            ) : (
+              "All posts sorted by date."
+            )}
           </p>
         </div>
         <div className="flex items-center gap-6">

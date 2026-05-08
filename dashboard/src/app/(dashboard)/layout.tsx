@@ -5,12 +5,37 @@ import { UserNav } from "@/components/user-nav";
 import { AvatarLink } from "@/components/avatar-link";
 import { SearchBar } from "@/components/search-bar";
 import { PostDrawerMount } from "@/components/post-drawer-mount";
+import { CampaignFilter } from "@/components/campaign-filter";
+import { createClient } from "@/lib/supabase";
+import { getActiveCampaignFilter } from "@/lib/campaign-filter";
+import type { CampaignOption } from "@/components/campaign-filter";
 
-export default function DashboardLayout({
+async function loadCampaignFilterData(): Promise<{
+  campaigns: CampaignOption[];
+  activeSlug: string | null;
+}> {
+  const sb = await createClient();
+  const [campaignsRes, active] = await Promise.all([
+    sb
+      .from("campaigns")
+      .select("slug, name")
+      .neq("status", "archived")
+      .order("created_at", { ascending: true })
+      .returns<CampaignOption[]>(),
+    getActiveCampaignFilter(),
+  ]);
+  return {
+    campaigns: campaignsRes.data ?? [],
+    activeSlug: active?.slug ?? null,
+  };
+}
+
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const filter = await loadCampaignFilterData();
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
@@ -52,6 +77,10 @@ export default function DashboardLayout({
           <div className="flex items-center justify-between h-14 px-8">
             <SearchBar />
             <div className="flex items-center gap-3">
+              <CampaignFilter
+                campaigns={filter.campaigns}
+                activeSlug={filter.activeSlug}
+              />
               <Link href="/settings/alerts" className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
               </Link>

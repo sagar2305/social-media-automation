@@ -7,6 +7,7 @@ import { DateRangeFilter } from "@/components/date-range-filter";
 import { ExportButton } from "@/components/export-button";
 import { FailedPostsTable } from "@/components/failed-posts-table";
 import { getDateFilter } from "@/lib/utils";
+import { getActiveCampaignFilter } from "@/lib/campaign-filter";
 import {
   Eye,
   Heart,
@@ -26,7 +27,7 @@ import {
 
 export const revalidate = 300;
 
-async function getOverviewData(dateFrom: string | null) {
+async function getOverviewData(dateFrom: string | null, campaignId: string | null) {
   const supabase = await createClient();
   let postsQuery = supabase
     .from("posts")
@@ -34,9 +35,21 @@ async function getOverviewData(dateFrom: string | null) {
     .order("date", { ascending: false })
     .limit(500);
 
-  if (dateFrom) {
-    postsQuery = postsQuery.gte("date", dateFrom);
-  }
+  if (dateFrom) postsQuery = postsQuery.gte("date", dateFrom);
+  if (campaignId) postsQuery = postsQuery.eq("campaign_id", campaignId);
+
+  let formatsQuery = supabase
+    .from("format_rankings")
+    .select("*")
+    .order("rank", { ascending: true });
+  if (campaignId) formatsQuery = formatsQuery.eq("campaign_id", campaignId);
+
+  let experimentsQuery = supabase
+    .from("experiments")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(20);
+  if (campaignId) experimentsQuery = experimentsQuery.eq("campaign_id", campaignId);
 
   const [postsRes, accountsRes, formatsRes, experimentsRes] = await Promise.all(
     [
@@ -46,15 +59,8 @@ async function getOverviewData(dateFrom: string | null) {
         .select("*")
         .order("date", { ascending: false })
         .limit(50),
-      supabase
-        .from("format_rankings")
-        .select("*")
-        .order("rank", { ascending: true }),
-      supabase
-        .from("experiments")
-        .select("*")
-        .order("date", { ascending: false })
-        .limit(20),
+      formatsQuery,
+      experimentsQuery,
     ]
   );
 
@@ -74,8 +80,9 @@ export default async function OverviewPage(props: {
     typeof searchParams.range === "string" ? searchParams.range : undefined;
   const dateFrom = getDateFilter(range);
 
+  const activeCampaign = await getActiveCampaignFilter();
   const { posts, accountStats, formatRankings, experiments } =
-    await getOverviewData(dateFrom);
+    await getOverviewData(dateFrom, activeCampaign?.id ?? null);
 
   const publishedPosts = posts.filter((p) => p.status === "published");
 
@@ -188,7 +195,15 @@ export default async function OverviewPage(props: {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
           <p className="text-muted-foreground mt-1">
-            Platform performance snapshot.
+            {activeCampaign ? (
+              <>
+                Filtered to{" "}
+                <span className="text-foreground font-medium">{activeCampaign.name}</span>
+                {" "}— change in the campaign picker top right.
+              </>
+            ) : (
+              "Platform performance snapshot."
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
