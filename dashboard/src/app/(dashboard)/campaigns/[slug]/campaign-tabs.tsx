@@ -33,8 +33,8 @@ export function CampaignTabs({ slug }: { slug: string }) {
     { href: `${base}/experiments`, label: "Experiments", ready: true },
     { href: `${base}/formats`, label: "Formats", ready: true },
     { href: `${base}/hashtags`, label: "Hashtags", ready: true },
-    { href: `${base}/brain`, label: "AI Brain", ready: false },
-    { href: `${base}/reports`, label: "Reports", ready: false },
+    { href: `${base}/brain`, label: "AI Brain", ready: true },
+    { href: `${base}/reports`, label: "Reports", ready: true },
   ];
 
   return (
