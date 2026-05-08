@@ -94,14 +94,34 @@ Orchestrated by `main.ts`. Each flow run produces 1 post per active account. Def
 
 This applies to: new script setup, bug fixes involving APIs, refactoring API calls, adding new features, debugging API errors, or any task that touches external services.
 
-### Data Files (`data/`)
+### Data Files
 
-- `TRENDING-NOW.md` — Current trends from Virlo
+The repo is now **multi-campaign**. Each campaign owns its own copy of the
+operational state files; pipeline-level files stay at the repo root.
+
+**Per-campaign** (`data/campaigns/<slug>/`):
+- `TRENDING-NOW.md` — Current trends from Virlo (per campaign topic)
 - `FORMAT-WINNERS.md` — Formats ranked by save rate
 - `HASHTAG-BANK.md` — Hashtags with performance data
 - `LESSONS-LEARNED.md` — Rolling dashboard + insights
 - `EXPERIMENT-LOG.md` — A/B test history
-- `POST-TRACKER.md` — All posts with metrics
+- `POST-TRACKER.md` — Posts with metrics
+- `results.tsv` — Autoresearch results
+- `tier-state.json` — ScrapeCreators tier-fetch cursor
+- `.last-autoresearch-run` — Per-day brain sentinel
+
+**Pipeline-level** (stay at `data/` root):
+- `ACCOUNT-STATS.md` — Account growth (accounts shared across campaigns)
+- `REFRESH-LOG.md` — Audit log of refresh runs
+- `auto-fix-log.md`, `auto-fix-alerts.md`, `auto-fix-circuit.json` — Auto-fix system
+- `docs-freshness.json`, `docs-refresh-queue.json` — Doc freshness tracking
+- `exports/` — CSV exports
+
+**Back-compat:** During migration, the old `data/<file>.md` paths are kept as
+symlinks pointing into `data/campaigns/minutewise/<file>.md`. Existing scripts
+that read from `data/POST-TRACKER.md` continue to work transparently. The
+symlinks will be removed once Phase 3 of the multi-campaign refactor lands
+campaign-aware path resolution in every script.
 
 ## Slide Blueprint (from SOUL.md)
 
@@ -116,7 +136,7 @@ This applies to: new script setup, bug fixes involving APIs, refactoring API cal
 
 - ALL posts follow `config/caption_templates.csv` patterns
 - ALL posts naturally mention MinuteWise in at least one slide
-- Hashtags: 20 per post — 5 trending (Tier 1) + 7 niche (Tier 2) + 5 ultra-niche (Tier 3) + 3 branded/topic (Tier 4). Always include #MinuteWise. See `data/HASHTAG-BANK.md` for full list.
+- Hashtags: 20 per post — 5 trending (Tier 1) + 7 niche (Tier 2) + 5 ultra-niche (Tier 3) + 3 branded/topic (Tier 4). Always include the campaign's branded tags (e.g. #MinuteWise). See `data/campaigns/<slug>/HASHTAG-BANK.md` for the campaign-specific list.
 - Captions: hook + value line + "Save for exam week" + hashtags
 - ALL posts as DRAFTS — never auto-publish
 - `autoAddMusic: "yes"`, `video_made_with_ai: true`

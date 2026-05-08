@@ -1,0 +1,135 @@
+{
+  "startDate": "2026-04-20",
+  "lastRun": {
+    "hot": "2026-05-08",
+    "warm": "2026-05-08",
+    "cool": "2026-05-06",
+    "stats": "2026-05-06"
+  },
+  "creditHistory": [
+    {
+      "date": "2026-04-20",
+      "tiers": [
+        "hot",
+        "warm",
+        "cool",
+        "stats"
+      ],
+      "accounts": 4,
+      "credits": 33
+    },
+    {
+      "date": "2026-04-21",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 4,
+      "credits": 4
+    },
+    {
+      "date": "2026-04-22",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 4,
+      "credits": 4
+    },
+    {
+      "date": "2026-04-23",
+      "tiers": [
+        "hot",
+        "warm"
+      ],
+      "accounts": 4,
+      "credits": 12
+    },
+    {
+      "date": "2026-04-29",
+      "tiers": [
+        "hot",
+        "warm",
+        "cool",
+        "stats"
+      ],
+      "accounts": 4,
+      "credits": 35
+    },
+    {
+      "date": "2026-04-30",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 4,
+      "credits": 4
+    },
+    {
+      "date": "2026-05-01",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 4,
+      "credits": 4
+    },
+    {
+      "date": "2026-05-02",
+      "tiers": [
+        "hot",
+        "warm"
+      ],
+      "accounts": 4,
+      "credits": 12
+    },
+    {
+      "date": "2026-05-03",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 4,
+      "credits": 4
+    },
+    {
+      "date": "2026-05-04",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 4,
+      "credits": 4
+    },
+    {
+      "date": "2026-05-05",
+      "tiers": [
+        "hot",
+        "warm"
+      ],
+      "accounts": 2,
+      "credits": 6
+    },
+    {
+      "date": "2026-05-06",
+      "tiers": [
+        "hot",
+        "cool",
+        "stats"
+      ],
+      "accounts": 2,
+      "credits": 20
+    },
+    {
+      "date": "2026-05-07",
+      "tiers": [
+        "hot"
+      ],
+      "accounts": 2,
+      "credits": 2
+    },
+    {
+      "date": "2026-05-08",
+      "tiers": [
+        "hot",
+        "warm"
+      ],
+      "accounts": 2,
+      "credits": 6
+    }
+  ]
+}
