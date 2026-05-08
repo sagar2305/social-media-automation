@@ -15,7 +15,8 @@ import { createClient } from "@/lib/supabase";
 import type { Campaign } from "@/lib/types";
 import { CampaignTabs } from "./campaign-tabs";
 import { RefreshNowButton } from "./refresh-now-button";
-import { Image as ImageIcon, Pencil, Share2 } from "lucide-react";
+import { CampaignShareMenu } from "./share-menu";
+import { Image as ImageIcon, Pencil } from "lucide-react";
 import Link from "next/link";
 
 export const revalidate = 30;
@@ -186,15 +187,12 @@ export default async function CampaignLayout({
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </Link>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-muted transition-colors"
-            title="Share — implemented in Phase 12"
-            disabled
-          >
-            <Share2 className="h-3.5 w-3.5" />
-            Share
-          </button>
+          <CampaignShareMenu
+            campaignId={campaign.id}
+            campaignSlug={campaign.slug}
+            campaignName={campaign.name}
+          />
+
         </div>
       </div>
 
