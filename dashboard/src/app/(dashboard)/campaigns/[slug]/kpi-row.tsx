@@ -15,10 +15,7 @@
  */
 
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Eye, Heart, MessageCircle, Share2, Bookmark, Video,
-  TrendingUp, TrendingDown, Minus,
-} from "lucide-react";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 export interface PostMetricRow {
   date: string | null;
@@ -68,15 +65,18 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
-interface KpiCardProps {
+interface KpiCellProps {
   label: string;
   value: string;
-  icon: React.ComponentType<{ className?: string }>;
   trend: ReturnType<typeof trendArrow>;
-  iconColor: string;
 }
 
-function KpiCard({ label, value, icon: Icon, trend, iconColor }: KpiCardProps) {
+/**
+ * One cell in the grouped KPI panel. Trackr-style: just the label, the
+ * value, and a tiny trend chip. No coloured icon — multiple coloured
+ * tiles in a single panel feel noisy.
+ */
+function KpiCell({ label, value, trend }: KpiCellProps) {
   const TrendIcon = trend.direction === "up"
     ? TrendingUp
     : trend.direction === "down"
@@ -89,27 +89,20 @@ function KpiCard({ label, value, icon: Icon, trend, iconColor }: KpiCardProps) {
       : "text-muted-foreground";
 
   return (
-    <Card className="shadow-sm border-0 ring-0">
-      <CardContent className="py-4 px-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${iconColor}`}>
-            <Icon className="h-4 w-4" />
-          </div>
-          <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium tabular-nums ${trendColor}`}>
-            <TrendIcon className="h-3 w-3" />
-            {trend.pct === null
-              ? "new"
-              : trend.direction === "flat"
-                ? "—"
-                : `${trend.direction === "up" ? "+" : ""}${trend.pct.toFixed(0)}%`}
-          </span>
-        </div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mt-3">
-          {label}
-        </p>
-        <p className="text-2xl font-bold tracking-tight tabular-nums">{value}</p>
-      </CardContent>
-    </Card>
+    <div className="px-5 py-4">
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium tabular-nums ${trendColor}`}>
+          <TrendIcon className="h-3 w-3" />
+          {trend.pct === null
+            ? "new"
+            : trend.direction === "flat"
+              ? "—"
+              : `${trend.direction === "up" ? "+" : ""}${trend.pct.toFixed(0)}%`}
+        </span>
+      </div>
+      <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+    </div>
   );
 }
 
@@ -153,54 +146,16 @@ export function KpiRow({ posts }: { posts: PostMetricRow[] }) {
     comments: sum(prior, "comments"),
   };
 
-  const cards: KpiCardProps[] = [
+  const cells: KpiCellProps[] = [
+    { label: "Videos",   value: String(totals.videos), trend: trendArrow(tCurrent.videos, tPrior.videos) },
+    { label: "Views",    value: formatNumber(totals.views), trend: trendArrow(tCurrent.views, tPrior.views) },
+    { label: "Likes",    value: formatNumber(totals.likes), trend: trendArrow(tCurrent.likes, tPrior.likes) },
+    { label: "Comments", value: formatNumber(totals.comments), trend: trendArrow(tCurrent.comments, tPrior.comments) },
+    { label: "Shares",   value: formatNumber(totals.shares), trend: trendArrow(tCurrent.shares, tPrior.shares) },
+    { label: "Saves",    value: formatNumber(totals.saves), trend: trendArrow(tCurrent.saves, tPrior.saves) },
     {
-      label: "Videos",
-      value: String(totals.videos),
-      icon: Video,
-      trend: trendArrow(tCurrent.videos, tPrior.videos),
-      iconColor: "bg-blue-100 text-blue-700",
-    },
-    {
-      label: "Views",
-      value: formatNumber(totals.views),
-      icon: Eye,
-      trend: trendArrow(tCurrent.views, tPrior.views),
-      iconColor: "bg-emerald-100 text-emerald-700",
-    },
-    {
-      label: "Likes",
-      value: formatNumber(totals.likes),
-      icon: Heart,
-      trend: trendArrow(tCurrent.likes, tPrior.likes),
-      iconColor: "bg-rose-100 text-rose-700",
-    },
-    {
-      label: "Comments",
-      value: formatNumber(totals.comments),
-      icon: MessageCircle,
-      trend: trendArrow(tCurrent.comments, tPrior.comments),
-      iconColor: "bg-violet-100 text-violet-700",
-    },
-    {
-      label: "Shares",
-      value: formatNumber(totals.shares),
-      icon: Share2,
-      trend: trendArrow(tCurrent.shares, tPrior.shares),
-      iconColor: "bg-cyan-100 text-cyan-700",
-    },
-    {
-      label: "Saves",
-      value: formatNumber(totals.saves),
-      icon: Bookmark,
-      trend: trendArrow(tCurrent.saves, tPrior.saves),
-      iconColor: "bg-amber-100 text-amber-700",
-    },
-    {
-      label: "Engagement Rate",
+      label: "Engagement rate",
       value: `${engRate.toFixed(2)}%`,
-      icon: TrendingUp,
-      // Eng rate trend = change in window engagement totals vs window views
       trend: (() => {
         const curEng = tCurrent.likes + tCurrent.comments + tCurrent.shares + tCurrent.saves;
         const priorEng = tPrior.likes + tPrior.comments + tPrior.shares + tPrior.saves;
@@ -208,26 +163,31 @@ export function KpiRow({ posts }: { posts: PostMetricRow[] }) {
         const prv = tPrior.views > 0 ? (priorEng / tPrior.views) * 100 : 0;
         return trendArrow(cur, prv);
       })(),
-      iconColor: "bg-purple-100 text-purple-700",
     },
     {
-      label: "Comment Rate",
+      label: "Comment rate",
       value: `${commentRate.toFixed(2)}%`,
-      icon: MessageCircle,
       trend: (() => {
         const cur = tCurrent.views > 0 ? (tCurrent.comments / tCurrent.views) * 100 : 0;
         const prv = tPrior.views > 0 ? (tPrior.comments / tPrior.views) * 100 : 0;
         return trendArrow(cur, prv);
       })(),
-      iconColor: "bg-pink-100 text-pink-700",
     },
   ];
 
+  // One container, two rows of four. The grid has its own thin internal
+  // dividers (border-r/border-b) on each cell instead of every cell being
+  // a separate floating card — gives the panel a single, sorted feel
+  // matching Trackr's reference.
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-      {cards.map((c) => (
-        <KpiCard key={c.label} {...c} />
-      ))}
-    </div>
+    <Card className="shadow-sm border-0 ring-0 overflow-hidden">
+      <CardContent className="p-0">
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-border/60">
+          {cells.map((c) => (
+            <KpiCell key={c.label} {...c} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

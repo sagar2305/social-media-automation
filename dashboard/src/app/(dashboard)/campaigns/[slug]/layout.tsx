@@ -112,63 +112,52 @@ export default async function CampaignLayout({
       {/* Hero header */}
       <div className="flex items-start gap-5">
         {/* Image */}
-        <div className="relative h-20 w-20 rounded-xl bg-muted overflow-hidden shrink-0 flex items-center justify-center">
+        <div className="relative h-12 w-12 rounded-lg bg-muted overflow-hidden shrink-0 flex items-center justify-center">
           {campaign.image_url ? (
             <Image
               src={campaign.image_url}
               alt={campaign.name}
               fill
               className="object-cover"
-              sizes="80px"
+              sizes="48px"
             />
           ) : (
-            <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
+            <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
           )}
         </div>
 
-        {/* Title block */}
+        {/* Title block — single-line meta strip below the name keeps the
+            hero compact and Trackr-like. Description gone from the hero;
+            it lives on the edit page + appears in the Resources/share
+            views where it's actually useful. */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold tracking-tight">{campaign.name}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl font-semibold tracking-tight">{campaign.name}</h1>
             <StatusPill status={campaign.status} />
           </div>
-          {campaign.description && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2 max-w-3xl">
-              {campaign.description}
-            </p>
-          )}
-          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+          <p className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
             <span>
-              <span className="font-medium text-foreground tabular-nums">
-                {accountsCount}
-              </span>{" "}
+              <span className="text-foreground tabular-nums">{accountsCount}</span>{" "}
               account{accountsCount === 1 ? "" : "s"}
             </span>
+            <span className="text-border">·</span>
             {progress !== null ? (
-              <>
-                <span className="text-border">·</span>
-                <span>
-                  <span className="font-medium text-foreground tabular-nums">
-                    {postsCount}/{postsTargetTotal}
-                  </span>{" "}
-                  posts ({progress.toFixed(0)}%)
-                </span>
-              </>
+              <span>
+                <span className="text-foreground tabular-nums">
+                  {postsCount}/{postsTargetTotal}
+                </span>{" "}
+                posts ({progress.toFixed(0)}%)
+              </span>
             ) : (
-              <>
-                <span className="text-border">·</span>
-                <span>
-                  <span className="font-medium text-foreground tabular-nums">
-                    {postsCount}
-                  </span>{" "}
-                  posts
-                </span>
-              </>
+              <span>
+                <span className="text-foreground tabular-nums">{postsCount}</span>{" "}
+                post{postsCount === 1 ? "" : "s"}
+              </span>
             )}
             {daysLeft !== null && (
               <>
                 <span className="text-border">·</span>
-                <span className="font-medium">
+                <span>
                   {daysLeft === 0
                     ? "Ends today"
                     : daysLeft === 1
@@ -177,7 +166,7 @@ export default async function CampaignLayout({
                 </span>
               </>
             )}
-          </div>
+          </p>
         </div>
 
         {/* Actions */}
