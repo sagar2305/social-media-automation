@@ -81,10 +81,18 @@ export function BatchManager({
   initial,
   accounts,
   isAdmin,
+  campaignId,
 }: {
   initial: CycleBatch[];
   accounts: ManagedAccount[];
   isAdmin: boolean;
+  /**
+   * When set (campaign-scoped Schedule tab), every newly created batch
+   * has its campaign_id pre-populated. Existing batches are not
+   * mutated. The global /settings/schedule call leaves this undefined
+   * which preserves prior behavior.
+   */
+  campaignId?: string | null;
 }) {
   const router = useRouter();
   const [batches, setBatches] = useState<CycleBatch[]>(initial);
@@ -136,9 +144,12 @@ export function BatchManager({
 
     if (creating) {
       const order_index = batches.length > 0 ? Math.max(...batches.map((b) => b.order_index)) + 1 : 1;
+      const insertPayload = campaignId
+        ? { ...draft, order_index, campaign_id: campaignId }
+        : { ...draft, order_index };
       const { data, error: err } = await supabase
         .from("cycle_batches")
-        .insert({ ...draft, order_index })
+        .insert(insertPayload)
         .select()
         .single<CycleBatch>();
       if (err || !data) { setBusy(false); setError(err?.message ?? "Insert failed"); return; }

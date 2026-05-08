@@ -29,7 +29,7 @@ export function CampaignTabs({ slug }: { slug: string }) {
     { href: base, label: "Overview", ready: true },
     { href: `${base}/posts`, label: "Posts", ready: false },
     { href: `${base}/accounts`, label: "Accounts", ready: true },
-    { href: `${base}/schedule`, label: "Schedule", ready: false },
+    { href: `${base}/schedule`, label: "Schedule", ready: true },
     { href: `${base}/experiments`, label: "Experiments", ready: false },
     { href: `${base}/formats`, label: "Formats", ready: false },
     { href: `${base}/hashtags`, label: "Hashtags", ready: false },
