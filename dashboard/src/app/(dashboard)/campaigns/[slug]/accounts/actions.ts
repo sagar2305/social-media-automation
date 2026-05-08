@@ -67,21 +67,55 @@ export async function createAccountForCampaign(input: {
 
   const sb = await createClient();
 
-  // Reject if the handle already exists ANYWHERE — accounts.handle is
-  // the natural key against TikTok and we never want two rows pointing
-  // at the same TikTok username.
+  // accounts.handle is the natural key against TikTok — we never want
+  // two rows pointing at the same username. Three branches:
+  //   1. Already on this campaign → error (nothing to do)
+  //   2. Unassigned (campaign_id IS NULL) → attach to this campaign,
+  //      auto-reactivate if it was paused. User typing "Create new" for
+  //      a handle that just happens to be sitting unassigned probably
+  //      just wants it added; making them go to the Existing tab to do
+  //      the same thing is busywork.
+  //   3. On a different campaign → error with that campaign's name so
+  //      they know where to find it for the Move flow.
   const { data: existing } = await sb
     .from("accounts")
-    .select("id, campaign_id")
+    .select("id, campaign_id, active, campaigns:campaign_id(slug, name)")
     .eq("handle", handle)
-    .maybeSingle();
+    .maybeSingle<{
+      id: string;
+      campaign_id: string | null;
+      active: boolean;
+      campaigns: { slug: string; name: string } | null;
+    }>();
+
   if (existing) {
     if (existing.campaign_id === c.id) {
       return { ok: false, error: `@${handle} is already on this campaign` };
     }
+    if (existing.campaign_id === null) {
+      // Unassigned — quietly attach + reactivate.
+      const { error: attachErr } = await sb
+        .from("accounts")
+        .update({
+          campaign_id: c.id,
+          active: true,
+          // Refresh metadata if the user typed new values; preserve old
+          // ones when they left fields blank.
+          ...(input.name?.trim() ? { name: input.name.trim().startsWith("@") ? input.name.trim() : `@${input.name.trim()}` } : {}),
+          ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
+          ...(input.target_posts_per_week !== null ? { target_posts_per_week: input.target_posts_per_week } : {}),
+        })
+        .eq("id", existing.id);
+      if (attachErr) return { ok: false, error: attachErr.message };
+
+      revalidatePath(`/campaigns/${input.slug}`);
+      revalidatePath(`/campaigns/${input.slug}/accounts`);
+      return { ok: true, id: existing.id };
+    }
+    const otherName = existing.campaigns?.name ?? "another campaign";
     return {
       ok: false,
-      error: `@${handle} already exists on another campaign — use 'Move from another campaign' instead.`,
+      error: `@${handle} is already on ${otherName} — use the 'Move from another campaign' tab instead.`,
     };
   }
 
