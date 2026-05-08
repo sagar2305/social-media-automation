@@ -30,7 +30,12 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { config as dotenvConfig } from 'dotenv';
-import { dataPath } from './lib/campaign-paths.js';
+import { dataPath, setCampaignSlug } from './lib/campaign-paths.js';
+import {
+  listActiveCampaigns,
+  resetCampaignCache,
+  type Campaign,
+} from './lib/campaigns.js';
 
 dotenvConfig({ path: '.env.local', override: true });
 
@@ -522,21 +527,24 @@ async function readTrendingNowSnapshot(): Promise<unknown[] | null> {
 
 // ─── Main loop body ────────────────────────────────────────────
 
-async function run() {
-  // Per-day guard: launchd ticks the plist hourly so any wake/boot during
-  // the day picks up the work, but we only want to actually do the brain
-  // work once per calendar day. Skip silently if today's already done.
+async function runOneCampaign(campaign: Campaign | null) {
+  // Per-day guard, scoped to this campaign's sentinel
+  // (data/campaigns/<slug>/.last-autoresearch-run). Multi-campaign loops
+  // can therefore re-fire the brain for one campaign without skipping
+  // another that already ran.
   if (await alreadyRanToday()) {
+    log(`[autoresearch] ${campaign?.slug ?? '(default)'} — already ran today, skipping`);
     return;
   }
 
-  log('═══ AUTORESEARCH START ═══');
+  log(`═══ AUTORESEARCH START — ${campaign?.name ?? '(default campaign)'} ═══`);
 
-  // Pull dashboard-managed accounts so account list is current.
-  await loadAccountsIntoConfig();
+  // Load only the accounts on THIS campaign so the brain reasons over
+  // the right account set (suppression detection, target picking, etc.).
+  await loadAccountsIntoConfig(campaign?.slug);
   const activeHandles = config.tiktokAccounts.map(a => a.handle);
   if (activeHandles.length === 0) {
-    log('[autoresearch] no active accounts — exiting');
+    log(`[autoresearch] ${campaign?.slug ?? '(default)'} — no active accounts, skipping`);
     return;
   }
 
@@ -697,6 +705,9 @@ async function run() {
       winners_declared: winnersDeclared,
       losers_dropped: losersDropped,
       phase_durations_ms: { ...phaseDurations, hypothesize: Date.now() - phase3Start },
+      // Tag the run with its campaign so the per-campaign Brain tab
+      // (Phase 11) sees only its own runs.
+      campaign_id: campaign?.id ?? null,
     })
     .select('id')
     .single();
@@ -711,7 +722,65 @@ async function run() {
   log('═══ AUTORESEARCH DONE ═══');
 }
 
-run().catch(err => {
+/**
+ * Outer entry point — iterates active campaigns. Each iteration:
+ *   1. setCampaignSlug() so dataPath() resolves to the campaign's dir
+ *   2. resetCampaignCache() so getCampaign() re-reads
+ *   3. runOneCampaign(campaign)
+ *
+ * --campaign=<slug> overrides the iteration to a single campaign
+ * (used by the dashboard's per-campaign refresh button when it spawns
+ * autoresearch on demand). Without it, the cron runs every active
+ * campaign's brain in turn.
+ *
+ * Per-campaign sentinels (data/campaigns/<slug>/.last-autoresearch-run)
+ * mean each campaign self-guards against double-running on the same
+ * calendar day, regardless of how many times the launchd plist fires.
+ */
+async function main(): Promise<void> {
+  const campaignArg = process.argv.find((a) => a.startsWith('--campaign='));
+  const overrideSlug = campaignArg?.split('=')[1]?.trim() || null;
+
+  // Honour an autoresearch-disabled flag on the campaign — useful when
+  // the operator wants the dashboard around but doesn't want the AI brain
+  // designing experiments on this app.
+  let toRun = (await listActiveCampaigns()).filter((c) => c.autoresearch_enabled);
+
+  if (overrideSlug) {
+    const single = toRun.find((c) => c.slug === overrideSlug);
+    if (!single) {
+      log(`[autoresearch] --campaign=${overrideSlug} not found in active+autoresearch_enabled campaigns; exiting.`);
+      return;
+    }
+    toRun = [single];
+  }
+
+  if (toRun.length === 0) {
+    // Defensive fallback: keep the legacy single-campaign behavior so the
+    // cron never silent-no-ops on the first deploy.
+    log('[autoresearch] no campaigns with autoresearch_enabled; falling back to default slug.');
+    setCampaignSlug('minutewise');
+    resetCampaignCache();
+    await runOneCampaign(null);
+    return;
+  }
+
+  log(`[autoresearch] iterating ${toRun.length} campaign(s): ${toRun.map((c) => c.slug).join(', ')}`);
+  for (const c of toRun) {
+    setCampaignSlug(c.slug);
+    resetCampaignCache();
+    try {
+      await runOneCampaign(c);
+    } catch (err) {
+      // One campaign crashing must not abort the others — the launchd
+      // plist fires hourly anyway, but a transient failure here would
+      // otherwise leave a sentinel-less campaign skipped for the day.
+      log(`[autoresearch] campaign ${c.slug} crashed: ${err}`);
+    }
+  }
+}
+
+main().catch(err => {
   console.error('[autoresearch] unexpected:', err);
   process.exit(1);
 });
