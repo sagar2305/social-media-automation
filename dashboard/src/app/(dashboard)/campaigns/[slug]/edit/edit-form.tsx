@@ -203,6 +203,80 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
         </CardContent>
       </Card>
 
+      {/* Flows */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <Section
+            title="Flows"
+            hint="Which of the 3 generation flows run for this campaign, and the weight each pulls in the daily mix. Weights are renormalised to sum to 1 on save."
+          />
+          <div className="space-y-3">
+            <FlowRow
+              label="Photorealistic"
+              hint="Cinematic-photo flow"
+              enabledName="flow_photorealistic_enabled"
+              weightName="flow_photorealistic_weight"
+              defaultEnabled={campaign.flows_enabled?.photorealistic ?? true}
+              defaultWeight={campaign.flow_weights?.photorealistic ?? 0.34}
+            />
+            <FlowRow
+              label="Animated"
+              hint="Rotating animation styles"
+              enabledName="flow_animated_enabled"
+              weightName="flow_animated_weight"
+              defaultEnabled={campaign.flows_enabled?.animated ?? true}
+              defaultWeight={campaign.flow_weights?.animated ?? 0.33}
+            />
+            <FlowRow
+              label="Emoji Overlay"
+              hint="Reaction-bubble narrative arc"
+              enabledName="flow_emoji_overlay_enabled"
+              weightName="flow_emoji_overlay_weight"
+              defaultEnabled={campaign.flows_enabled?.emoji_overlay ?? true}
+              defaultWeight={campaign.flow_weights?.emoji_overlay ?? 0.33}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Post Alerts */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <Section
+            title="Post Alerts"
+            hint="Slack/Discord notifications when a post hits a milestone view count."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Slack webhook URL" hint="https://hooks.slack.com/services/…">
+              <Input
+                name="slack_webhook"
+                type="url"
+                defaultValue={campaign.slack_webhook ?? ""}
+                placeholder="https://hooks.slack.com/services/…"
+              />
+            </Field>
+            <Field label="Discord webhook URL" hint="https://discord.com/api/webhooks/…">
+              <Input
+                name="discord_webhook"
+                type="url"
+                defaultValue={campaign.discord_webhook ?? ""}
+                placeholder="https://discord.com/api/webhooks/…"
+              />
+            </Field>
+          </div>
+          <Field
+            label="Milestone view thresholds"
+            hint="Comma-separated. Alert fires when a post crosses each value once. Defaults: 10000, 50000, 100000."
+          >
+            <Input
+              name="milestone_thresholds"
+              defaultValue={(campaign.milestone_thresholds ?? []).join(", ")}
+              placeholder="10000, 50000, 100000"
+            />
+          </Field>
+        </CardContent>
+      </Card>
+
       {/* AI Brain */}
       <Card>
         <CardContent className="pt-6 space-y-5">
@@ -238,6 +312,41 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
               </Select>
             </Field>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Resources */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <Section
+            title="Resources"
+            hint="One link per line. Use 'Label | https://example.com' to set a custom label, or just paste the URL."
+          />
+          <Field
+            label="External resources"
+            hint="Visible on the campaign Overview link (Phase 12). Investor docs, press kits, etc."
+          >
+            <textarea
+              name="external_resources"
+              rows={3}
+              defaultValue={(campaign.external_resources ?? [])
+                .map((r) => (r.label && r.label !== r.url ? `${r.label} | ${r.url}` : r.url))
+                .join("\n")}
+              placeholder={`Press kit | https://drive.google.com/…\nLanding page | https://minutewise.app`}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+            />
+          </Field>
+          <Field label="Internal resources" hint="Team-only (not exposed on share links).">
+            <textarea
+              name="internal_resources"
+              rows={3}
+              defaultValue={(campaign.internal_resources ?? [])
+                .map((r) => (r.label && r.label !== r.url ? `${r.label} | ${r.url}` : r.url))
+                .join("\n")}
+              placeholder={`Strategy doc | https://notion.so/…\nGallery inspo | https://…`}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+            />
+          </Field>
         </CardContent>
       </Card>
 
@@ -303,6 +412,57 @@ function Field({
       </label>
       {children}
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * One row in the Flows section: an enabled checkbox + a 0.0–1.0 weight
+ * input. The action layer renormalises across all three so the operator
+ * doesn't have to make them sum to exactly 1.
+ */
+function FlowRow({
+  label,
+  hint,
+  enabledName,
+  weightName,
+  defaultEnabled,
+  defaultWeight,
+}: {
+  label: string;
+  hint: string;
+  enabledName: string;
+  weightName: string;
+  defaultEnabled: boolean;
+  defaultWeight: number;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_120px] items-center gap-3 px-3 py-2.5 rounded-md border border-border">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-[11px] text-muted-foreground">{hint}</p>
+      </div>
+      <label className="inline-flex items-center gap-2 cursor-pointer text-xs">
+        <input
+          type="checkbox"
+          name={enabledName}
+          defaultChecked={defaultEnabled}
+          className="h-4 w-4 rounded border-input"
+        />
+        Enabled
+      </label>
+      <div className="flex items-center gap-1.5">
+        <Input
+          name={weightName}
+          type="number"
+          step={0.05}
+          min={0}
+          max={1}
+          defaultValue={defaultWeight.toFixed(2)}
+          className="h-8 text-xs"
+        />
+        <span className="text-[11px] text-muted-foreground">weight</span>
+      </div>
     </div>
   );
 }
