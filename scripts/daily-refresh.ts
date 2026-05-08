@@ -19,8 +19,11 @@ import { runResearch } from './fetch_trends.js';
 import { log } from './api-client.js';
 import { syncToSupabase } from './sync-to-supabase.js';
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
-import { config } from '../config/config.js';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { dataPath } from './lib/campaign-paths.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface RefreshResult {
   phase: string;
@@ -43,7 +46,7 @@ async function timedPhase(
 }
 
 async function appendRefreshLog(results: RefreshResult[]): Promise<void> {
-  const logPath = join(config.paths.memory, 'REFRESH-LOG.md');
+  const logPath = dataPath('REFRESH-LOG.md');
 
   let existing = '';
   try {
@@ -140,6 +143,26 @@ async function dailyRefresh(): Promise<void> {
     await timedPhase('Sync', async () => {
       await syncToSupabase();
       return 'Dashboard data synced';
+    }),
+  );
+
+  // Phase 5: Log rotation. Refresh runs every 6h via launchd, which is the
+  // perfect cadence for keeping cycle-logs/*.log and auto-fix-log.md from
+  // growing unbounded on a long-uptime Mac mini. Spawned as a child process
+  // so a rotation crash can't take down the rest of the refresh.
+  log('\n── Phase 5: Log rotation ──');
+  results.push(
+    await timedPhase('Rotate', async () => {
+      const { spawnSync } = await import('node:child_process');
+      const repoDir = resolve(__dirname, '..');
+      const r = spawnSync('npx', ['tsx', 'scripts/rotate_logs.ts', '--force'], {
+        cwd: repoDir,
+        encoding: 'utf-8',
+      });
+      if (r.status !== 0) throw new Error(`rotate_logs exited ${r.status}: ${r.stderr || r.stdout}`);
+      // Parse "Rotated N file(s); freed K KB"
+      const m = r.stdout?.match(/Rotated (\d+) file\(s\); freed (\d+) KB/);
+      return m ? `${m[1]} files, freed ${m[2]} KB` : 'No rotation needed';
     }),
   );
 

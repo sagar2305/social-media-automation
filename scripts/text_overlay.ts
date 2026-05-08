@@ -1,7 +1,8 @@
 import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { config, FlowType } from '../config/config.js';
 import { log } from './api-client.js';
+import { dataPath, getCampaignSlug } from './lib/campaign-paths.js';
+import { getCampaign } from './lib/campaigns.js';
 
 type HookStyle = 'question' | 'bold_claim' | 'story_opener' | 'stat_lead' | 'contrast';
 
@@ -104,7 +105,7 @@ function parseCsvTemplates(csv: string): CsvTemplate[] {
 // ─── Helpers ───────────────────────────────────────────────────
 
 async function readMemoryFile(filename: string): Promise<string> {
-  try { return await readFile(join(config.paths.memory, filename), 'utf-8'); }
+  try { return await readFile(dataPath(filename), 'utf-8'); }
   catch { return ''; }
 }
 
@@ -438,6 +439,27 @@ async function generateAIContent(
   const trendingNow = await readMemoryFile('TRENDING-NOW.md');
   const account = config.tiktokAccounts[accountIndex];
 
+  // Resolve the active campaign so the prompt is grounded in THIS campaign's
+  // brand, tone, and branded hashtags rather than hardcoded MinuteWise text.
+  // Falls back to MinuteWise defaults if Supabase is unreachable so the
+  // pipeline keeps producing usable output.
+  const campaign = await getCampaign(getCampaignSlug());
+  const brandLine = campaign?.description
+    ? `BRAND: ${campaign.name} — ${campaign.description}`
+    : 'BRAND: MinuteWise — AI note-taker app for students. Records lectures, transcribes, creates notes/quizzes/flashcards.';
+  const styleLine = campaign?.visual_style_prompt
+    ? `VISUAL STYLE: ${campaign.visual_style_prompt}`
+    : '';
+  const toneLine = campaign?.tone_of_voice
+    ? `TONE OF VOICE: ${campaign.tone_of_voice}`
+    : '';
+  const brandedTagsHint = campaign?.branded_hashtags?.length
+    ? `Always include the branded hashtags: ${campaign.branded_hashtags.join(', ')}`
+    : '';
+  const brandMentionHint = campaign?.name
+    ? `At least one slide must naturally mention ${campaign.name} as a solution`
+    : 'At least one slide must naturally mention MinuteWise as a solution';
+
   // Extract top trends (first 500 chars to keep prompt concise)
   const trendSnippet = trendingNow.slice(0, 500);
   const winnerSnippet = formatWinners.slice(0, 400);
@@ -450,10 +472,11 @@ async function generateAIContent(
     contrast: 'Start slide 1 with a "Stop doing X, do Y instead" contrast.',
   };
 
-  const prompt = `You are a TikTok content creator specializing in study tips for students.
-Generate a TikTok slideshow post about a study/education topic.
+  const prompt = `You are a TikTok content creator generating a slideshow post for the ${campaign?.name ?? 'MinuteWise'} campaign.
 
-BRAND: MinuteWise — AI note-taker app for students. Records lectures, transcribes, creates notes/quizzes/flashcards. 100+ languages. Available on iOS App Store.
+${brandLine}
+${styleLine}
+${toneLine}
 
 ACCOUNT: ${account.name} (${account.handle})
 
@@ -469,13 +492,14 @@ ${winnerSnippet}
 SLIDE STRUCTURE RULES:
 - Generate exactly 8 slides
 - Slide 1 = Hook (pattern interrupt, grab attention)
-- Slides 2-3 = Problem (relatable struggle students face)
+- Slides 2-3 = Problem (relatable struggle the audience faces)
 - Slides 4-6 = Tips/Solution (one actionable gold nugget per slide)
 - Slide 7 = Resolution (transformation, proof it works)
-- At least one slide must naturally mention MinuteWise as a solution
+- ${brandMentionHint}
+- ${brandedTagsHint}
 - Keep text concise — designed for TikTok slideshow (viewers swipe quickly)
 - Each line should be punchy, 5-15 words max
-- Study/education niche ONLY
+- Stay strictly within this campaign's topic and audience
 - Do NOT repeat content from previous posts
 
 OUTPUT FORMAT (strict JSON, no markdown):

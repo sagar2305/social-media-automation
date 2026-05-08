@@ -2,6 +2,8 @@ import { readFile, unlink } from 'fs/promises';
 import { log } from './scripts/api-client.js';
 import { config, FlowType, PostingPath } from './config/config.js';
 import { loadAccountsIntoConfig } from './scripts/account_loader.js';
+import { setCampaignSlug, DEFAULT_CAMPAIGN_SLUG } from './scripts/lib/campaign-paths.js';
+import { getCampaign, type Campaign } from './scripts/lib/campaigns.js';
 import {
   startCycleRun,
   reportEvent,
@@ -60,6 +62,23 @@ const BLOTATO_DAILY_ACCOUNT_CAP = 3;
 //   npm run flow2 -- --path=draft          → animated × 3 accounts, saves to TikTok drafts
 //   npm run flow2 -- --path=direct         → animated × 3 accounts, publishes directly
 //   npm run flow2 -- --delay=15            → schedule 15 min after completion
+
+/**
+ * Read --campaign=<slug> from argv and stash it for every downstream helper
+ * via setCampaignSlug(). Called BEFORE parseArgs / loadAccountsIntoConfig
+ * because both depend on the slug being set.
+ */
+function resolveCampaignSlugFromArgs(): string {
+  const args = process.argv.slice(2);
+  let slug = DEFAULT_CAMPAIGN_SLUG;
+  const campaignArg = args.find(a => a.startsWith('--campaign='));
+  if (campaignArg) {
+    const val = campaignArg.split('=')[1]?.trim();
+    if (val) slug = val;
+  }
+  setCampaignSlug(slug);
+  return slug;
+}
 
 function parseArgs(): {
   flows: FlowType[];
@@ -188,12 +207,20 @@ async function runCycle(): Promise<void> {
     log('WARNING: RULES.md not found — running without rules validation');
   }
 
-  // Pull dashboard-managed accounts from Supabase before parseArgs (which
-  // reads config.tiktokAccounts to default the --account filter). On any
-  // failure the loader leaves config.ts values intact, so cycles keep running.
-  await loadAccountsIntoConfig();
+  // 1) Resolve campaign slug FIRST so loadAccountsIntoConfig can scope to it.
+  const campaignSlug = resolveCampaignSlugFromArgs();
+  const campaign: Campaign | null = await getCampaign(campaignSlug);
+  if (!campaign) {
+    log(`[campaign] WARNING: campaign "${campaignSlug}" not found in DB — running with config.ts defaults`);
+  }
 
+  // 2) Load campaign-scoped accounts into config.tiktokAccounts.
+  await loadAccountsIntoConfig(campaign ? campaign.slug : undefined);
+
+  // 3) Now parseArgs sees the right accounts list when computing the default
+  //    accountIndices (= "all loaded accounts" pre-cap).
   const { flows, postingPath, delayMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow } = parseArgs();
+
   const pathLabel = postingPath === 'draft' ? 'UPLOAD (TikTok drafts)' : 'DIRECT_POST (publish)';
   const flowNames = flows.map(f => f === 'photorealistic' ? 'Flow 1' : f === 'animated' ? 'Flow 2' : 'Flow 3');
   const accountNames = accountIndices.map(i => config.tiktokAccounts[i].name);
@@ -201,6 +228,7 @@ async function runCycle(): Promise<void> {
 
   log('╔══════════════════════════════════════════════════╗');
   log(`║  CYCLE: ${flowNames.join(' + ')}`);
+  log(`║  Campaign: ${campaign?.name ?? campaignSlug} (${campaignSlug})`);
   log(`║  ${flows.length} flow(s) × ${accountIndices.length} account(s) × ${postsPerFlow} per-flow = ${totalPosts} posts`);
   log(`║  Accounts: ${accountNames.join(', ')}`);
   log(`║  Path: ${pathLabel}`);
@@ -224,6 +252,7 @@ async function runCycle(): Promise<void> {
     path: pathLabel,
     postsTotal: totalPosts,
     caller: process.env.CYCLE_CALLER ?? 'manual',
+    campaignId: campaign?.id ?? null,
   });
   await reportEvent(runId, 'cycle_start', 'Cycle started',
     `${totalPosts} posts queued (${flowNames.join(' + ')} × ${accountNames.join(', ')})`);

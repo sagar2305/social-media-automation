@@ -29,10 +29,13 @@ let loaded = false;
  * Replace `config.tiktokAccounts` contents with the active set from Supabase.
  * Idempotent — calling more than once just re-fetches.
  *
+ * @param campaignSlug - if provided, only loads accounts belonging to this
+ *                       campaign. If omitted, loads all active accounts
+ *                       across all campaigns (back-compat for legacy callers).
  * @returns the active account count after loading (0 if fallback was used and
  *          config had no entries either)
  */
-export async function loadAccountsIntoConfig(): Promise<number> {
+export async function loadAccountsIntoConfig(campaignSlug?: string): Promise<number> {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     log('[account_loader] no Supabase env — using config.ts fallback');
     return config.tiktokAccounts.length;
@@ -40,12 +43,30 @@ export async function loadAccountsIntoConfig(): Promise<number> {
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-    const { data, error } = await supabase
+
+    // Resolve campaign_id if a slug was passed. Pre-resolve so the accounts
+    // query stays a simple equality filter (no joins through PostgREST).
+    let campaignFilter: string | null = null;
+    if (campaignSlug) {
+      const { data: c } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('slug', campaignSlug)
+        .maybeSingle();
+      if (!c) {
+        log(`[account_loader] campaign "${campaignSlug}" not found in DB — using config.ts fallback`);
+        return config.tiktokAccounts.length;
+      }
+      campaignFilter = c.id;
+    }
+
+    let query = supabase
       .from('accounts')
       .select('id, name, handle, active')
       .eq('active', true)
-      .order('created_at', { ascending: true })
-      .returns<DbAccount[]>();
+      .order('created_at', { ascending: true });
+    if (campaignFilter) query = query.eq('campaign_id', campaignFilter);
+    const { data, error } = await query.returns<DbAccount[]>();
 
     if (error || !data) {
       log(`[account_loader] DB read failed (${error?.message ?? 'no data'}) — using config.ts fallback`);
@@ -65,7 +86,8 @@ export async function loadAccountsIntoConfig(): Promise<number> {
     }
 
     loaded = true;
-    log(`[account_loader] loaded ${data.length} active accounts from DB: ${data.map(a => a.handle).join(', ')}`);
+    const scopeLabel = campaignSlug ? `campaign=${campaignSlug}` : 'all campaigns';
+    log(`[account_loader] loaded ${data.length} active accounts from DB (${scopeLabel}): ${data.map(a => a.handle).join(', ')}`);
     return data.length;
   } catch (err) {
     log(`[account_loader] unexpected error (${err}) — using config.ts fallback`);

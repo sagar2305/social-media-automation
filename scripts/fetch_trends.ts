@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
+import { dataPath } from './lib/campaign-paths.js';
 
 interface OrbitResponse {
   orbit_id: string;
@@ -255,7 +255,6 @@ function updateFormatWinners(outliers: OutlierCreator[], existing: string): stri
 
 export async function runResearch(): Promise<void> {
   log('=== RESEARCH PHASE ===');
-  const memDir = config.paths.memory;
 
   let orbitData: OrbitStatusResponse | null = null;
   let topVideos: Video[] = [];
@@ -290,22 +289,22 @@ export async function runResearch(): Promise<void> {
 
   // Write TRENDING-NOW.md
   const trendingContent = formatTrendingNow(orbitData?.analysis, topVideos, trends, videoDigest);
-  await writeFile(join(memDir, 'TRENDING-NOW.md'), trendingContent);
+  await writeFile(dataPath('TRENDING-NOW.md'), trendingContent);
   log('Updated TRENDING-NOW.md');
 
   // Update HASHTAG-BANK.md
   if (hashtags.length) {
-    const existingHashtags = await readFile(join(memDir, 'HASHTAG-BANK.md'), 'utf-8').catch(() => '');
+    const existingHashtags = await readFile(dataPath('HASHTAG-BANK.md'), 'utf-8').catch(() => '');
     const hashtagContent = formatHashtagBank(hashtags, existingHashtags);
-    await writeFile(join(memDir, 'HASHTAG-BANK.md'), hashtagContent);
+    await writeFile(dataPath('HASHTAG-BANK.md'), hashtagContent);
     log('Updated HASHTAG-BANK.md');
   }
 
   // Update FORMAT-WINNERS.md with outlier data
   if (outliers.length) {
-    const existingFormats = await readFile(join(memDir, 'FORMAT-WINNERS.md'), 'utf-8').catch(() => '');
+    const existingFormats = await readFile(dataPath('FORMAT-WINNERS.md'), 'utf-8').catch(() => '');
     const formatContent = updateFormatWinners(outliers, existingFormats);
-    await writeFile(join(memDir, 'FORMAT-WINNERS.md'), formatContent);
+    await writeFile(dataPath('FORMAT-WINNERS.md'), formatContent);
     log('Updated FORMAT-WINNERS.md');
   }
 

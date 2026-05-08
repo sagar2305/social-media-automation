@@ -1,1 +1,0 @@
-campaigns/minutewise/HASHTAG-BANK.md

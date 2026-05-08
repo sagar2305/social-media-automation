@@ -1,8 +1,7 @@
 import { readFile, writeFile, appendFile } from 'fs/promises';
-import { join } from 'path';
-import { config } from '../config/config.js';
 import { log } from './api-client.js';
 import type { PostMetrics } from './pull_analytics.js';
+import { dataPath } from './lib/campaign-paths.js';
 
 interface ExperimentResult {
   experimentId: string;
@@ -121,7 +120,7 @@ async function evaluateExperiment(experimentLog: string, tracker: string): Promi
 }
 
 async function updateFormatWinners(result: ExperimentResult): Promise<void> {
-  const path = join(config.paths.memory, 'FORMAT-WINNERS.md');
+  const path = dataPath('FORMAT-WINNERS.md');
   let content = await readFile(path, 'utf-8').catch(() => '');
 
   const winnerStyle = result.winner === 'A' ? result.variantA.hookStyle : result.variantB.hookStyle;
@@ -144,7 +143,7 @@ async function updateFormatWinners(result: ExperimentResult): Promise<void> {
 }
 
 async function updateLessonsLearned(result: ExperimentResult): Promise<void> {
-  const path = join(config.paths.memory, 'LESSONS-LEARNED.md');
+  const path = dataPath('LESSONS-LEARNED.md');
   let content = await readFile(path, 'utf-8').catch(() => '');
 
   const winnerStyle = result.winner === 'A' ? result.variantA.hookStyle : result.variantB.hookStyle;
@@ -163,7 +162,7 @@ async function updateLessonsLearned(result: ExperimentResult): Promise<void> {
 }
 
 async function completeExperiment(result: ExperimentResult): Promise<void> {
-  const path = join(config.paths.memory, 'EXPERIMENT-LOG.md');
+  const path = dataPath('EXPERIMENT-LOG.md');
   let content = await readFile(path, 'utf-8').catch(() => '');
 
   const verdictText = result.winner === 'inconclusive'
@@ -202,7 +201,7 @@ async function completeExperiment(result: ExperimentResult): Promise<void> {
 // ─── results.tsv logging ─────────────────────────────────────
 
 async function logToResultsTsv(result: ExperimentResult): Promise<void> {
-  const tsvPath = join(config.paths.memory, 'results.tsv');
+  const tsvPath = dataPath('results.tsv');
   const status = result.winner === 'inconclusive' ? 'inconclusive' : result.winner === 'A' ? 'keep' : 'keep';
   const row = [
     result.experimentId,
@@ -229,7 +228,7 @@ async function logToResultsTsv(result: ExperimentResult): Promise<void> {
 
 async function refreshFormatWinners(tracker: string): Promise<void> {
   const metrics = parseTrackerMetrics(tracker);
-  const path = join(config.paths.memory, 'FORMAT-WINNERS.md');
+  const path = dataPath('FORMAT-WINNERS.md');
   let content = await readFile(path, 'utf-8').catch(() => '');
 
   // Aggregate by hook style + format from all posts with data
@@ -277,8 +276,8 @@ async function refreshFormatWinners(tracker: string): Promise<void> {
 export async function optimize(): Promise<void> {
   log('=== OPTIMIZATION PHASE ===');
 
-  const experimentLog = await readFile(join(config.paths.memory, 'EXPERIMENT-LOG.md'), 'utf-8').catch(() => '');
-  const tracker = await readFile(join(config.paths.memory, 'POST-TRACKER.md'), 'utf-8').catch(() => '');
+  const experimentLog = await readFile(dataPath('EXPERIMENT-LOG.md'), 'utf-8').catch(() => '');
+  const tracker = await readFile(dataPath('POST-TRACKER.md'), 'utf-8').catch(() => '');
 
   // Evaluate active experiment
   const result = await evaluateExperiment(experimentLog, tracker);
@@ -330,7 +329,7 @@ export async function optimize(): Promise<void> {
     const bestStyle = Object.entries(styleCounts).sort((a, b) => b[1].views / b[1].count - a[1].views / a[1].count)[0]?.[0] || 'pending';
 
     // Update lessons-learned dashboard
-    const lessonsPath = join(config.paths.memory, 'LESSONS-LEARNED.md');
+    const lessonsPath = dataPath('LESSONS-LEARNED.md');
     let lessons = await readFile(lessonsPath, 'utf-8').catch(() => '');
     lessons = lessons.replace(
       /## Rolling Dashboard[\s\S]*?(?=\n## [A-Z])/,

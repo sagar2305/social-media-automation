@@ -16,9 +16,9 @@
  */
 
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
+import { dataPath } from './lib/campaign-paths.js';
 
 // ─── Tier Configuration ──────────────────────────────────────
 
@@ -48,7 +48,7 @@ interface TierState {
   creditHistory: Array<{ date: string; tiers: TierName[]; accounts: number; credits: number }>;
 }
 
-const STATE_PATH = join(config.paths.memory, 'tier-state.json');
+const STATE_PATH = dataPath('tier-state.json');
 
 async function loadState(): Promise<TierState> {
   try {

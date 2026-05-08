@@ -43,6 +43,7 @@ export interface StartCycleArgs {
   path: string;
   postsTotal: number;
   caller?: string;
+  campaignId?: string | null;
 }
 
 export interface EventMeta {
@@ -66,6 +67,7 @@ export async function startCycleRun(args: StartCycleArgs): Promise<string | null
         posts_total: args.postsTotal,
         status: 'running',
         current_phase: 'starting',
+        campaign_id: args.campaignId ?? null,
       })
       .select('id')
       .single();

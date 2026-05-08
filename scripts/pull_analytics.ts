@@ -1,5 +1,4 @@
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
 import { runTieredFetch, type ProfileVideo } from './tier_scheduler.js';
@@ -7,6 +6,7 @@ import { classifyError } from './auto_fix/classifier.js';
 import { logClassified } from './auto_fix/audit_logger.js';
 import { maybeNotify } from './auto_fix/notifier.js';
 import { createClient } from '@supabase/supabase-js';
+import { dataPath } from './lib/campaign-paths.js';
 
 // Direct upsert helper so the dashboard sees the EXACT upstream error
 // for each failed post immediately, instead of waiting on the next
@@ -270,7 +270,7 @@ async function checkBlotPostStatus(rows: TrackerRow[]): Promise<number> {
 
 async function writeAccountDashboard(stats: AccountStats[]): Promise<void> {
   const now = new Date().toISOString();
-  const dashPath = join(config.paths.memory, 'ACCOUNT-STATS.md');
+  const dashPath = dataPath('ACCOUNT-STATS.md');
 
   let existing = '';
   try { existing = await readFile(dashPath, 'utf-8'); } catch {}
@@ -410,7 +410,7 @@ function applyTierVideos(
 export async function measurePerformance(): Promise<PostMetrics[]> {
   log('=== ANALYTICS PHASE ===');
 
-  const trackerPath = join(config.paths.memory, 'POST-TRACKER.md');
+  const trackerPath = dataPath('POST-TRACKER.md');
   const trackerContent = await readFile(trackerPath, 'utf-8').catch(() => '');
   const rows = parseTracker(trackerContent);
 

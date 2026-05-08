@@ -1,1 +1,0 @@
-campaigns/minutewise/LESSONS-LEARNED.md

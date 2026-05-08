@@ -1,1 +1,0 @@
-campaigns/minutewise/FORMAT-WINNERS.md
