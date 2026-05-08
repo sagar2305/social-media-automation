@@ -14,6 +14,9 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as dotenvConfig } from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { classifyError } from './auto_fix/classifier.js';
+import { logClassified } from './auto_fix/audit_logger.js';
+import { maybeNotify } from './auto_fix/notifier.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenvConfig({ path: resolve(__dirname, '..', '.env.local'), override: true });
@@ -38,6 +41,7 @@ interface CycleJob {
   skip_research: boolean;
   schedule_offset_hours: number;
   status: string;
+  campaign_id: string | null;
 }
 
 function flowToFlag(flow: string): string {
@@ -47,8 +51,38 @@ function flowToFlag(flow: string): string {
   return flow;
 }
 
-function buildArgs(job: CycleJob): string[] {
+/**
+ * Build the npm-run-cycle CLI args for a job. Honours campaign_id by
+ * appending --campaign=<slug>. Some jobs use label='refresh:quick:<slug>'
+ * (the per-campaign Refresh Now button from Phase 6) — those route to
+ * `npm run refresh:quick -- --campaign=<slug>` instead of a posting cycle.
+ */
+async function buildArgs(job: CycleJob): Promise<string[]> {
+  // Resolve campaign slug if needed (one Supabase round-trip per fired job
+  // — cheap and only happens at fire time, not on every poll).
+  let campaignSlug: string | null = null;
+  if (job.campaign_id) {
+    const { data } = await supabase
+      .from('campaigns')
+      .select('slug')
+      .eq('id', job.campaign_id)
+      .maybeSingle<{ slug: string }>();
+    campaignSlug = data?.slug ?? null;
+  }
+
+  // Refresh-style jobs: label 'refresh:quick:<slug>' triggers
+  // `npm run refresh:quick -- --campaign=<slug>` instead of a posting cycle.
+  // The per-campaign Refresh Now button uses this shape.
+  if (job.label?.startsWith('refresh:quick:')) {
+    const labelSlug = job.label.split(':')[2];
+    const slug = campaignSlug || labelSlug;
+    return slug
+      ? ['run', 'refresh:quick', '--', `--campaign=${slug}`]
+      : ['run', 'refresh:quick'];
+  }
+
   const args: string[] = ['run', 'cycle', '--'];
+  if (campaignSlug) args.push(`--campaign=${campaignSlug}`);
   if (job.flows.length > 0) {
     args.push(`--flow=${job.flows.map(flowToFlag).join(',')}`);
   }
@@ -83,7 +117,7 @@ async function claimJob(job: CycleJob): Promise<boolean> {
 }
 
 async function fireJob(job: CycleJob): Promise<void> {
-  const args = buildArgs(job);
+  const args = await buildArgs(job);
   const dryRun = process.env.SCHEDULER_DRY_RUN === '1';
 
   if (dryRun) {
@@ -117,6 +151,14 @@ async function main() {
     .returns<CycleJob[]>();
 
   if (error) {
+    // Route through auto-fix so transient fetch failures are catalogued
+    // (RETRY tier — quiet) and sustained outages dedup-notify (HUMAN-ONLY).
+    const synthetic = new Error(`[jobs_poller] ${error.message}`);
+    try {
+      const classified = classifyError(synthetic, { source: 'local' });
+      await logClassified(classified, { handled: 'pending' });
+      await maybeNotify(classified);
+    } catch { /* non-fatal */ }
     console.error('[jobs_poller] read failed:', error.message);
     process.exit(2);
   }

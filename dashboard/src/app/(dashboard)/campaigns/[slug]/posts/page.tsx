@@ -216,11 +216,13 @@ export default async function CampaignPostsPage({
                     </TableCell>
                     <TableCell>
                       {post.tiktok_url && post.tiktok_url !== "-" ? (
+                        // No onClick={stopPropagation} here — server components
+                        // can't ship event handlers to the browser. The row
+                        // itself has no click handler, so bubbling is moot.
                         <a
                           href={post.tiktok_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
                           className="text-sm font-medium text-[#16a34a] hover:underline"
                         >
                           View

@@ -16,6 +16,7 @@ import type { Campaign } from "@/lib/types";
 import { CampaignTabs } from "./campaign-tabs";
 import { RefreshNowButton } from "./refresh-now-button";
 import { CampaignShareMenu } from "./share-menu";
+import { RunCycleButton } from "./run-cycle-button";
 import { Image as ImageIcon, Pencil } from "lucide-react";
 import Link from "next/link";
 
@@ -45,7 +46,7 @@ async function getCampaignAndStats(slug: string) {
     .maybeSingle<Campaign>();
   if (!campaign) return null;
 
-  // Posts + accounts counts in parallel
+  // Posts count + active accounts (with handles for the Run Cycle button) in parallel.
   const [postsRes, accountsRes] = await Promise.all([
     sb
       .from("posts")
@@ -53,13 +54,15 @@ async function getCampaignAndStats(slug: string) {
       .eq("campaign_id", campaign.id),
     sb
       .from("accounts")
-      .select("id", { count: "exact", head: true })
+      .select("handle, name")
       .eq("campaign_id", campaign.id)
-      .eq("active", true),
+      .eq("active", true)
+      .order("created_at", { ascending: true }),
   ]);
 
   const postsCount = postsRes.count ?? 0;
-  const accountsCount = accountsRes.count ?? 0;
+  const accountsList = (accountsRes.data ?? []) as { handle: string; name: string }[];
+  const accountsCount = accountsList.length;
 
   // Days remaining + total post target (mirrors /campaigns list math)
   let daysLeft: number | null = null;
@@ -84,7 +87,7 @@ async function getCampaignAndStats(slug: string) {
     postsTargetTotal = accountsCount * campaign.target_posts_per_week * weeks;
   }
 
-  return { campaign, postsCount, accountsCount, daysLeft, postsTargetTotal };
+  return { campaign, postsCount, accountsCount, accountsList, daysLeft, postsTargetTotal };
 }
 
 export default async function CampaignLayout({
@@ -98,7 +101,7 @@ export default async function CampaignLayout({
   const data = await getCampaignAndStats(slug);
   if (!data) notFound();
 
-  const { campaign, postsCount, accountsCount, daysLeft, postsTargetTotal } = data;
+  const { campaign, postsCount, accountsCount, accountsList, daysLeft, postsTargetTotal } = data;
   const progress =
     postsTargetTotal > 0
       ? Math.min(100, (postsCount / postsTargetTotal) * 100)
@@ -179,6 +182,20 @@ export default async function CampaignLayout({
 
         {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Run a posting cycle now — primary action; ships the same
+              cycle_jobs flow as the global /runs page but auto-attaches
+              campaign_id so jobs.poller fires it with --campaign=<slug>. */}
+          <RunCycleButton
+            campaignId={campaign.id}
+            campaignSlug={campaign.slug}
+            campaignName={campaign.name}
+            enabledFlows={campaign.flows_enabled ?? {
+              photorealistic: true,
+              animated: true,
+              emoji_overlay: true,
+            }}
+            campaignAccounts={accountsList}
+          />
           <RefreshNowButton campaignId={campaign.id} campaignSlug={campaign.slug} />
           <Link
             href={`/campaigns/${campaign.slug}/edit`}
