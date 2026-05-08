@@ -5,10 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
-  FileText,
-  Hash,
-  FlaskConical,
-  BarChart3,
   ShieldAlert,
   Settings,
   Clock,
@@ -16,16 +12,17 @@ import {
   Tag,
 } from "lucide-react";
 
+// Sidebar is intentionally minimal: only the cross-cutting / pipeline-level
+// surfaces. Per-campaign views (Posts, Experiments, Formats, Hashtags,
+// AI Brain, Reports) live as tabs inside each /campaigns/[slug] page.
+//
+// Removed entries (still reachable via direct URL — just not in nav):
+//   /posts, /hashtags, /autoresearch, /experiments, /formats
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campaigns", icon: Tag },
   { href: "/runs", label: "Live Runs", icon: Activity },
   { href: "/accounts", label: "Accounts", icon: Users },
-  { href: "/posts", label: "Posts", icon: FileText },
-  { href: "/hashtags", label: "Hashtags", icon: Hash },
-  { href: "/autoresearch", label: "Autoresearch", icon: FlaskConical },
-  { href: "/experiments", label: "Experiments", icon: FlaskConical },
-  { href: "/formats", label: "Formats", icon: BarChart3 },
   { href: "/errors", label: "Errors & Auto-Fix", icon: ShieldAlert },
   { href: "/settings/schedule", label: "Schedule", icon: Clock },
   { href: "/settings", label: "Settings", icon: Settings },
