@@ -246,6 +246,41 @@ async function dailyRefresh(): Promise<void> {
     }),
   );
 
+  // Phase 6: Email digests. Per-campaign recipients + frequency live on
+  // the campaigns row. We send when:
+  //   - daily   → every refresh (6h cadence, but digestSentToday sentinel
+  //               on email_reports_log prevents same-day double-send)
+  //   - weekly  → on Mondays only
+  //   - monthly → on the 1st of the month only
+  // Skipped silently when RESEND_API_KEY is unset (dev / local-only setups).
+  log('\n── Phase 6: Email digests ──');
+  results.push(
+    await timedPhase('Email', async () => {
+      if (!process.env.RESEND_API_KEY) {
+        return 'Skipped (RESEND_API_KEY not set)';
+      }
+      const { sendCampaignDigest } = await import('./lib/email-digest.js');
+      const today = new Date();
+      const isMonday = today.getUTCDay() === 1;
+      const isFirstOfMonth = today.getUTCDate() === 1;
+
+      let sent = 0;
+      let failed = 0;
+      let skipped = 0;
+      for (const c of toRun) {
+        const due =
+          c.email_frequency === 'daily' ||
+          (c.email_frequency === 'weekly' && isMonday) ||
+          (c.email_frequency === 'monthly' && isFirstOfMonth);
+        if (!due) { skipped++; continue; }
+        if (!c.email_recipients?.length) { skipped++; continue; }
+        const result = await sendCampaignDigest({ slug: c.slug, trigger: 'cron' });
+        if (result.ok) sent++; else failed++;
+      }
+      return `${sent} sent, ${skipped} not due, ${failed} failed`;
+    }),
+  );
+
   // Write refresh log
   await appendRefreshLog(results);
 

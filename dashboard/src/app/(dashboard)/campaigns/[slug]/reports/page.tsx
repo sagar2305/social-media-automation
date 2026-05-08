@@ -12,11 +12,40 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
-import { Mail, Calendar, Send, Inbox, BellOff } from "lucide-react";
+import { Mail, Calendar, Inbox, BellOff, CheckCircle2, XCircle, FlaskConical } from "lucide-react";
 import Link from "next/link";
 import type { Campaign } from "@/lib/types";
+import { TestSendButton } from "./test-send-button";
 
 export const revalidate = 60;
+
+interface EmailLogRow {
+  id: string;
+  sent_at: string;
+  recipients: string[];
+  subject: string;
+  status: string;
+  resend_id: string | null;
+  trigger: string;
+  error_message: string | null;
+}
+
+function fmtSentTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function StatusIcon({ status }: { status: string }) {
+  if (status === "sent") return <CheckCircle2 className="h-3.5 w-3.5 text-[#16a34a]" />;
+  if (status === "test") return <FlaskConical className="h-3.5 w-3.5 text-blue-500" />;
+  return <XCircle className="h-3.5 w-3.5 text-destructive" />;
+}
 
 const INCLUDE_LABELS: Record<string, string> = {
   kpis: "KPI summary (videos, views, likes, comments, shares, saves)",
@@ -53,6 +82,17 @@ export default async function CampaignReportsPage({
     .map(([k]) => k);
   const hasRecipients = recipients.length > 0;
 
+  // Sent history — wired up in Phase 16. Empty array if Resend hasn't fired
+  // yet for this campaign, which renders an explanatory empty state.
+  const { data: logs } = await sb
+    .from("email_reports_log")
+    .select("id, sent_at, recipients, subject, status, resend_id, trigger, error_message")
+    .eq("campaign_id", campaign.id)
+    .order("sent_at", { ascending: false })
+    .limit(20)
+    .returns<EmailLogRow[]>();
+  const history = logs ?? [];
+
   return (
     <div className="space-y-5">
       {/* Header card */}
@@ -87,15 +127,7 @@ export default async function CampaignReportsPage({
               >
                 Configure →
               </Link>
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium text-muted-foreground cursor-not-allowed"
-                title="Test send — wired up in Phase 16 (Resend integration)"
-              >
-                <Send className="h-3.5 w-3.5" />
-                Send test
-              </button>
+              <TestSendButton slug={campaign.slug} hasRecipients={hasRecipients} />
             </div>
           </div>
 
@@ -189,34 +221,61 @@ export default async function CampaignReportsPage({
         </CardContent>
       </Card>
 
-      {/* Sent history placeholder */}
+      {/* Sent history */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-base font-semibold">Sent history</p>
-            <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
-              Phase 16
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Email delivery wires up in Phase 16 (Resend integration). Once
-            that lands, every send shows up here with a status (delivered /
-            bounced / opened) and a "View as recipient" link.
-          </p>
+          <p className="text-base font-semibold mb-3">Sent history</p>
 
-          {!hasRecipients && (
-            <div className="mt-4 flex items-start gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
-              <BellOff className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>
-                Add recipient emails on the{" "}
-                <Link
-                  href={`/campaigns/${campaign.slug}/edit`}
-                  className="text-primary hover:underline"
+          {history.length === 0 && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                No digests sent yet. Hit{" "}
+                <strong>Send test</strong> above to ship one immediately, or
+                wait for the cron to fire on the configured frequency.
+              </p>
+              {!hasRecipients && (
+                <div className="mt-4 flex items-start gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
+                  <BellOff className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    Add recipient emails on the{" "}
+                    <Link
+                      href={`/campaigns/${campaign.slug}/edit`}
+                      className="text-primary hover:underline"
+                    >
+                      edit page
+                    </Link>
+                    {" "}so digests can start sending.
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
+          {history.length > 0 && (
+            <div className="space-y-1.5">
+              {history.map((log) => (
+                <div
+                  key={log.id}
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2.5 rounded-md border border-border"
                 >
-                  edit page
-                </Link>
-                {" "}so digests start sending the moment Phase 16 ships.
-              </span>
+                  <StatusIcon status={log.status} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{log.subject}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {log.status === "failed" && log.error_message
+                        ? log.error_message
+                        : `${log.recipients.length} recipient${
+                            log.recipients.length === 1 ? "" : "s"
+                          } · ${log.trigger}${
+                            log.resend_id ? ` · ${log.resend_id.slice(0, 8)}…` : ""
+                          }`}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                    {fmtSentTime(log.sent_at)}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
