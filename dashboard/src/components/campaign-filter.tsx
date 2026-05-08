@@ -16,7 +16,7 @@
  */
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Tag, Check, ChevronDown } from "lucide-react";
 
 const COOKIE_NAME = "active_campaign";
@@ -44,15 +44,65 @@ function setCookie(value: string) {
 
 export function CampaignFilter({ campaigns, activeSlug }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [, startTransition] = useTransition();
 
-  const active = campaigns.find((c) => c.slug === activeSlug) ?? null;
+  // When the user is inside /campaigns/<slug>/*, the URL is the source of
+  // truth for "what campaign am I looking at" — not the cookie. The cookie
+  // applies to global pages (/, /posts, /accounts). Without this, picking
+  // RoastAI from /campaigns/roastai shows MinuteWise as 'active' if the
+  // cookie is stuck on minutewise.
+  const urlSlugMatch = pathname.match(/^\/campaigns\/([^/]+)/);
+  const urlSlug = urlSlugMatch && urlSlugMatch[1] !== "new" ? urlSlugMatch[1] : null;
+  const effectiveActiveSlug = urlSlug ?? activeSlug;
+
+  const active = campaigns.find((c) => c.slug === effectiveActiveSlug) ?? null;
   const label = active ? active.name : "All campaigns";
 
+  /**
+   * What "switch campaign" actually means depends on where you're standing:
+   *
+   *   - On a global page (/, /posts, /accounts): set the cookie + refresh.
+   *     Server components re-read the cookie and re-filter their queries.
+   *
+   *   - On a per-campaign page (/campaigns/<oldslug>/<tab>): swap <oldslug>
+   *     for the picked one in the URL so the user stays on whatever tab
+   *     they were looking at — picking MinuteWise from /campaigns/roastai/
+   *     posts should land them on /campaigns/minutewise/posts. Just
+   *     refreshing the page would leave them stranded on the wrong
+   *     campaign's data because the [slug] segment overrides the cookie
+   *     filter inside that route group.
+   *
+   *   - "All campaigns" while inside /campaigns/<x>/<tab>: jump back to the
+   *     campaign list. There's no meaningful "all campaigns" version of a
+   *     per-campaign view.
+   */
   function pick(slug: string | null) {
     setCookie(slug ?? "");
     setOpen(false);
+
+    // /campaigns/[slug]/(...) — swap the slug segment.
+    const onCampaignDetail = pathname.match(/^\/campaigns\/([^/]+)(\/.*)?$/);
+    if (onCampaignDetail) {
+      const tail = onCampaignDetail[2] ?? "";
+      if (slug) {
+        // If we're on /campaigns/new there is no "old slug" to swap,
+        // and the user picking a campaign while creating is a confusing
+        // mixed-intent state — just go to /campaigns/<slug>.
+        if (onCampaignDetail[1] === "new") {
+          router.push(`/campaigns/${slug}`);
+        } else {
+          router.push(`/campaigns/${slug}${tail}`);
+        }
+      } else {
+        // "All campaigns" → list view.
+        router.push("/campaigns");
+      }
+      return;
+    }
+
+    // Global page → cookie change is enough; just re-render.
     startTransition(() => router.refresh());
   }
 
