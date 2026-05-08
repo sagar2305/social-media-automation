@@ -12,7 +12,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, LayoutGrid, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, LayoutGrid, Calendar as CalendarIcon, Eye, EyeOff } from "lucide-react";
 import type { Campaign, CampaignSummary } from "@/lib/types";
 import { CampaignCards } from "./campaign-cards";
 import { CampaignCalendar } from "./campaign-calendar";
@@ -21,14 +21,17 @@ export const revalidate = 60;
 
 type View = "cards" | "calendar";
 
-async function getCampaignsWithStats(): Promise<CampaignSummary[]> {
+async function getCampaignsWithStats(showInactive: boolean): Promise<CampaignSummary[]> {
   const sb = await createClient();
 
-  const { data: campaigns } = await sb
+  let campaignsQuery = sb
     .from("campaigns")
     .select("*")
-    .order("created_at", { ascending: true })
-    .returns<Campaign[]>();
+    .order("created_at", { ascending: true });
+  // Default hides archived campaigns; the toggle reveals them.
+  if (!showInactive) campaignsQuery = campaignsQuery.neq("status", "archived");
+
+  const { data: campaigns } = await campaignsQuery.returns<Campaign[]>();
   if (!campaigns?.length) return [];
 
   const { data: posts } = await sb
@@ -105,13 +108,21 @@ async function getCampaignsWithStats(): Promise<CampaignSummary[]> {
   });
 }
 
-function ViewToggle({ active }: { active: View }) {
+function buildHref(view: View, showInactive: boolean): string {
+  const params = new URLSearchParams();
+  if (view === "calendar") params.set("view", "calendar");
+  if (showInactive) params.set("inactive", "1");
+  const qs = params.toString();
+  return qs ? `/campaigns?${qs}` : "/campaigns";
+}
+
+function ViewToggle({ active, showInactive }: { active: View; showInactive: boolean }) {
   const tabBase =
     "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors";
   return (
     <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
       <Link
-        href="/campaigns?view=cards"
+        href={buildHref("cards", showInactive)}
         className={`${tabBase} ${
           active === "cards"
             ? "bg-background text-foreground shadow-sm"
@@ -122,7 +133,7 @@ function ViewToggle({ active }: { active: View }) {
         Cards
       </Link>
       <Link
-        href="/campaigns?view=calendar"
+        href={buildHref("calendar", showInactive)}
         className={`${tabBase} ${
           active === "calendar"
             ? "bg-background text-foreground shadow-sm"
@@ -136,14 +147,47 @@ function ViewToggle({ active }: { active: View }) {
   );
 }
 
-export default async function CampaignsPage(props: {
-  searchParams: Promise<{ view?: string }>;
+function ShowInactiveToggle({
+  showInactive,
+  view,
+}: {
+  showInactive: boolean;
+  view: View;
 }) {
-  const { view: viewParam } = await props.searchParams;
-  const view: View = viewParam === "calendar" ? "calendar" : "cards";
+  return (
+    <Link
+      href={buildHref(view, !showInactive)}
+      className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+        showInactive
+          ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/15"
+          : "border-input bg-background text-foreground hover:bg-muted"
+      }`}
+      title={
+        showInactive
+          ? "Click to hide archived campaigns"
+          : "Click to also show archived campaigns"
+      }
+    >
+      {showInactive ? (
+        <Eye className="h-3.5 w-3.5" />
+      ) : (
+        <EyeOff className="h-3.5 w-3.5" />
+      )}
+      {showInactive ? "Showing archived" : "Hide archived"}
+    </Link>
+  );
+}
 
-  const campaigns = await getCampaignsWithStats();
+export default async function CampaignsPage(props: {
+  searchParams: Promise<{ view?: string; inactive?: string }>;
+}) {
+  const { view: viewParam, inactive: inactiveParam } = await props.searchParams;
+  const view: View = viewParam === "calendar" ? "calendar" : "cards";
+  const showInactive = inactiveParam === "1" || inactiveParam === "true";
+
+  const campaigns = await getCampaignsWithStats(showInactive);
   const activeCount = campaigns.filter((c) => c.status === "active").length;
+  const archivedCount = campaigns.filter((c) => c.status === "archived").length;
 
   return (
     <div className="space-y-6">
@@ -153,10 +197,14 @@ export default async function CampaignsPage(props: {
           <p className="text-muted-foreground mt-1">
             {campaigns.length} campaign{campaigns.length === 1 ? "" : "s"} ·{" "}
             {activeCount} active
+            {showInactive && archivedCount > 0 && (
+              <> · {archivedCount} archived</>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <ViewToggle active={view} />
+          <ShowInactiveToggle showInactive={showInactive} view={view} />
+          <ViewToggle active={view} showInactive={showInactive} />
           <Link
             href="/campaigns/new"
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"

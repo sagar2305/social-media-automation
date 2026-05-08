@@ -12,8 +12,10 @@
  */
 
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
+import { Eye, EyeOff } from "lucide-react";
 import type { Campaign } from "@/lib/types";
 import {
   AccountManager,
@@ -162,23 +164,56 @@ async function loadAccountsTab(slug: string) {
 
 export default async function CampaignAccountsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ inactive?: string }>;
 }) {
   const { slug } = await params;
+  const { inactive: inactiveParam } = await searchParams;
+  const showInactive = inactiveParam === "1" || inactiveParam === "true";
+
   const data = await loadAccountsTab(slug);
   if (!data) notFound();
 
   const { campaign, rows, unassigned, otherCampaignAccounts } = data;
+  const visibleRows = showInactive ? rows : rows.filter((r) => r.active);
+  const pausedCount = rows.filter((r) => !r.active).length;
 
   return (
     <Card className="shadow-sm border-0 ring-0">
-      <CardContent className="pt-6">
+      <CardContent className="pt-6 space-y-4">
+        {/* Show-paused toggle. Hidden when there are no paused accounts so
+            we don't clutter the UI with a useless control. */}
+        {pausedCount > 0 && (
+          <div className="flex items-center justify-end">
+            <Link
+              href={`/campaigns/${campaign.slug}/accounts${
+                showInactive ? "" : "?inactive=1"
+              }`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                showInactive
+                  ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/15"
+                  : "border-input bg-background text-foreground hover:bg-muted"
+              }`}
+            >
+              {showInactive ? (
+                <Eye className="h-3.5 w-3.5" />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5" />
+              )}
+              {showInactive
+                ? `Showing ${pausedCount} paused`
+                : `Hide ${pausedCount} paused`}
+            </Link>
+          </div>
+        )}
+
         <AccountManager
           slug={campaign.slug}
           campaignName={campaign.name}
           campaignDefaultTarget={campaign.target_posts_per_week}
-          rows={rows}
+          rows={visibleRows}
           unassigned={unassigned}
           otherCampaignAccounts={otherCampaignAccounts}
         />
