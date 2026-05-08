@@ -13,10 +13,12 @@ import {
   Settings,
   Clock,
   Activity,
+  Tag,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/campaigns", label: "Campaigns", icon: Tag },
   { href: "/runs", label: "Live Runs", icon: Activity },
   { href: "/accounts", label: "Accounts", icon: Users },
   { href: "/posts", label: "Posts", icon: FileText },

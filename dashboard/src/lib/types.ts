@@ -102,3 +102,74 @@ export interface AccountSummary {
   posts: number;
   last_posted: string | null;
 }
+
+// ─── Multi-campaign engine ──────────────────────────────────────────
+
+export interface Campaign {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  cta_image_url: string | null;
+  status: "active" | "paused" | "archived";
+
+  start_date: string | null;
+  end_date: string | null;
+
+  // Content generation
+  visual_style_prompt: string | null;
+  tone_of_voice: string | null;
+  character_consistency: string | null;
+  gallery_inspo_urls: string[];
+
+  // Flows
+  flows_enabled: { photorealistic: boolean; animated: boolean; emoji_overlay: boolean };
+  flow_weights: { photorealistic: number; animated: number; emoji_overlay: number };
+
+  // Hashtags
+  tracked_hashtags: string[];
+  branded_hashtags: string[];
+
+  // Posting goals
+  target_posts_per_week: number;
+
+  // AI Brain
+  autoresearch_enabled: boolean;
+  autoresearch_cadence: "daily" | "every_2_days" | "weekly";
+
+  // Alerts
+  slack_webhook: string | null;
+  discord_webhook: string | null;
+  milestone_thresholds: number[];
+
+  // Email reports
+  email_recipients: string[];
+  email_frequency: "daily" | "weekly" | "monthly";
+  email_include: Record<string, boolean>;
+
+  // Resources
+  external_resources: Array<{ label: string; url: string }>;
+  internal_resources: Array<{ label: string; url: string }>;
+  owner_email: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Aggregated stats for a campaign — computed by joining campaigns with
+ * posts/accounts/cycle_batches at query time. Used on the /campaigns
+ * list cards so each tile can show "73/96 posts · 4.5K views" without
+ * a per-card N+1 fetch.
+ */
+export interface CampaignSummary extends Campaign {
+  account_count: number;
+  posts_count: number;
+  total_views: number;
+  total_likes: number;
+  total_saves: number;
+  avg_save_rate: number;
+  days_left: number | null;
+  posts_target_total: number;
+}
