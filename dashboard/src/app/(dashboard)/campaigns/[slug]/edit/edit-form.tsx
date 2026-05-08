@@ -20,6 +20,7 @@ import {
 import { ArrowLeft, Loader2 } from "lucide-react";
 import type { Campaign } from "@/lib/types";
 import { updateCampaignAction } from "./actions";
+import { DangerZone } from "./danger-zone";
 
 export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
   const router = useRouter();
@@ -380,6 +381,11 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
           </Field>
         </CardContent>
       </Card>
+
+      {/* Danger Zone — Archive (soft, reversible) and Delete (hard,
+          requires typed-name confirm). Sits at the very bottom because
+          it's the most destructive surface on the form. */}
+      <DangerZone slug={campaign.slug} name={campaign.name} status={campaign.status} />
     </form>
   );
 }

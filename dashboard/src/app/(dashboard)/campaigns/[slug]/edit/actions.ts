@@ -157,3 +157,69 @@ export async function updateCampaignAndRedirect(formData: FormData): Promise<voi
   const slug = String(formData.get("slug") ?? "").trim();
   redirect(`/campaigns/${slug}`);
 }
+
+// ─── Danger zone ────────────────────────────────────────────────────
+
+/**
+ * Soft-delete: set campaigns.status = 'archived'. The campaign hides
+ * from the default /campaigns list and the top-bar filter, but every
+ * row in posts/accounts/etc. that references it stays put. Reversible
+ * — the operator can flip status back to 'active' from the same form.
+ */
+export async function archiveCampaign(input: { slug: string }): Promise<Result> {
+  const sb = await createClient();
+  const { error } = await sb
+    .from("campaigns")
+    .update({ status: "archived" })
+    .eq("slug", input.slug);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/campaigns");
+  revalidatePath(`/campaigns/${input.slug}`);
+  return { ok: true };
+}
+
+/**
+ * Hard-delete: removes the campaigns row entirely. FKs are mostly
+ * ON DELETE SET NULL (Phase 1) so:
+ *   - posts, accounts, cycle_batches, experiments, format_rankings,
+ *     autoresearch_runs, share_links → become orphaned
+ *     (campaign_id = NULL). Their data is preserved.
+ *   - email_reports_log → CASCADE deleted (Phase 16). Send history
+ *     for this campaign goes away with the row.
+ *
+ * The local data files at data/campaigns/<slug>/ stay on disk; that's
+ * intentional so the operator can recover them by recreating the
+ * campaign with the same slug if they regret the delete.
+ *
+ * Caller MUST confirm by passing the literal campaign name as
+ * typedName — gates against finger-slip on a button.
+ */
+export async function deleteCampaign(input: {
+  slug: string;
+  typedName: string;
+}): Promise<Result> {
+  const sb = await createClient();
+
+  // Re-read the campaign to compare against typedName server-side.
+  // Don't trust the client's name passed back — the URL slug is the
+  // single source of truth.
+  const { data: campaign } = await sb
+    .from("campaigns")
+    .select("id, name")
+    .eq("slug", input.slug)
+    .maybeSingle<{ id: string; name: string }>();
+  if (!campaign) return { ok: false, error: "Campaign not found" };
+
+  if (input.typedName.trim() !== campaign.name) {
+    return {
+      ok: false,
+      error: `Type the campaign name exactly to confirm: "${campaign.name}"`,
+    };
+  }
+
+  const { error } = await sb.from("campaigns").delete().eq("id", campaign.id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/campaigns");
+  return { ok: true };
+}
