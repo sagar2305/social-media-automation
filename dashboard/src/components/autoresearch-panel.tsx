@@ -15,6 +15,8 @@ import {
   TrendingUp,
   Hash,
   Brain,
+  AlertTriangle,
+  Wrench,
 } from "lucide-react";
 
 export interface TopHook { rank: number; hook: string; avg_views: number; avg_save_rate: number; posts: number; last_used: string | null }
@@ -43,6 +45,10 @@ export interface AutoresearchRun {
   winners_declared: number | null;
   losers_dropped: number | null;
   phase_durations_ms: Record<string, number> | null;
+  // Health diagnosis fields
+  action_type: "experiment" | "strategy_fix" | null;
+  warnings: string[] | null;
+  strategy_notes: string | null;
 }
 
 const POLL_MS = 15_000;
@@ -106,6 +112,35 @@ export function AutoresearchPanel({
         <KPI label="Inconclusive / cancelled" value={summary.dead.toString()} />
       </div>
 
+      {/* Strategy-fix alert — shown above the experiment banner when brain detects a problem */}
+      {active && active.action_type === "strategy_fix" && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="py-4">
+            <div className="flex items-start gap-3">
+              <Wrench className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-red-900">
+                  ⚠️ Brain flagged a strategy problem for @{active.account} — fix needed before next run
+                </p>
+                {active.strategy_notes && (
+                  <p className="text-sm text-red-800 mt-1">{active.strategy_notes}</p>
+                )}
+                {active.warnings && active.warnings.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {active.warnings.map((w, i) => (
+                      <li key={i} className="text-xs text-red-700 flex items-start gap-1.5">
+                        <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Active experiment banner */}
       {active && (
         <Card className="border-emerald-200 bg-emerald-50">
@@ -121,7 +156,7 @@ export function AutoresearchPanel({
                 </p>
                 {active.hypothesis && (
                   <p className="text-xs text-emerald-700 mt-2 italic">
-                    “{active.hypothesis}”
+                    "{active.hypothesis}"
                   </p>
                 )}
                 <p className="text-[11px] text-emerald-700 mt-2">
@@ -158,7 +193,7 @@ export function AutoresearchPanel({
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <OutcomeIcon outcome={r.outcome} />
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                           {r.outcome ?? "pending"}
@@ -166,6 +201,18 @@ export function AutoresearchPanel({
                         {r.source !== "gemini" && (
                           <span className="text-[10px] rounded-full bg-amber-100 text-amber-800 px-1.5 py-0.5 uppercase">
                             {r.source}
+                          </span>
+                        )}
+                        {r.action_type === "strategy_fix" && (
+                          <span className="text-[10px] rounded-full bg-red-100 text-red-700 px-1.5 py-0.5 flex items-center gap-1">
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            fix needed
+                          </span>
+                        )}
+                        {r.warnings && r.warnings.length > 0 && r.action_type !== "strategy_fix" && (
+                          <span className="text-[10px] rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 flex items-center gap-1">
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            {r.warnings.length} warning{r.warnings.length > 1 ? "s" : ""}
                           </span>
                         )}
                       </div>
@@ -212,7 +259,7 @@ export function AutoresearchPanel({
                     <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">
                       Hypothesis
                     </p>
-                    <p className="text-sm italic">“{selected.hypothesis}”</p>
+                    <p className="text-sm italic">"{selected.hypothesis}"</p>
                   </div>
                 )}
 
@@ -515,7 +562,7 @@ function BrainLogDetail({ run }: { run: AutoresearchRun }) {
           {run.account && <span className="text-muted-foreground"> on @{run.account}</span>}
         </p>
         {run.hypothesis && (
-          <p className="text-sm italic text-muted-foreground mt-2">“{run.hypothesis}”</p>
+          <p className="text-sm italic text-muted-foreground mt-2">"{run.hypothesis}"</p>
         )}
       </div>
 
@@ -529,6 +576,26 @@ function BrainLogDetail({ run }: { run: AutoresearchRun }) {
               {i < arr.length - 1 && " · "}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Warnings & strategy fix */}
+      {run.warnings && run.warnings.length > 0 && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-red-800 mb-2 flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Account health warnings
+          </p>
+          <ul className="space-y-1">
+            {run.warnings.map((w, i) => (
+              <li key={i} className="text-xs text-red-700">{w}</li>
+            ))}
+          </ul>
+          {run.strategy_notes && (
+            <p className="text-xs text-red-800 font-medium mt-2 pt-2 border-t border-red-200">
+              Fix: {run.strategy_notes}
+            </p>
+          )}
         </div>
       )}
 

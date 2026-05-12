@@ -1,20 +1,18 @@
 /**
  * /campaigns/[slug]/edit — wrapper for the EditCampaignForm.
  *
- * Loads the campaign server-side, hands it to the client form. Auth is
- * enforced by the (dashboard) layout, so non-authed users hitting this
- * URL will be redirected to /login by the time they reach this point.
+ * Loads the campaign + its payout config server-side, hands them to
+ * the client surfaces. Auth is enforced by the (dashboard) layout.
  *
  * This page is OUTSIDE the layout's tab strip — editing is a focused
- * task and the tabs would just clutter the form. The hero header is
- * also dropped on purpose; the form's own header carries the back-arrow
- * and Save/Cancel actions.
+ * task and the tabs would just clutter the form.
  */
 
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import type { Campaign } from "@/lib/types";
+import type { Campaign, CampaignPayoutConfig } from "@/lib/types";
 import { EditCampaignForm } from "./edit-form";
+import { PayoutConfigEditor } from "./payout-config";
 
 export const revalidate = 0;
 
@@ -32,9 +30,18 @@ export default async function EditCampaignPage({
     .maybeSingle<Campaign>();
   if (!campaign) notFound();
 
+  // The payout config row may not exist yet for a fresh campaign —
+  // PayoutConfigEditor takes null as "no rate card yet, default to mode='none'".
+  const { data: payoutConfig } = await sb
+    .from("campaign_payout_configs")
+    .select("*")
+    .eq("campaign_id", campaign.id)
+    .maybeSingle<CampaignPayoutConfig>();
+
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto space-y-6">
       <EditCampaignForm campaign={campaign} />
+      <PayoutConfigEditor campaignId={campaign.id} initial={payoutConfig ?? null} />
     </div>
   );
 }

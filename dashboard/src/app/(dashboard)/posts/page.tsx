@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { ExportButton } from "@/components/export-button";
 import { PostTrigger } from "@/components/post-trigger";
+import { PostRowTrigger } from "@/components/post-row-trigger";
 import { getActiveCampaignFilter } from "@/lib/campaign-filter";
 
 export const revalidate = 300;
@@ -113,7 +114,7 @@ export default async function PostsPage() {
             </TableHeader>
             <TableBody>
               {allPosts.map((post) => (
-                <TableRow key={post.id}>
+                <PostRowTrigger key={post.id} postId={post.id}>
                   <TableCell className="whitespace-nowrap tabular-nums text-sm">
                     <div>{post.date}</div>
                     {post.account && (
@@ -169,6 +170,8 @@ export default async function PostsPage() {
                   </TableCell>
                   <TableCell>
                     {post.tiktok_url && post.tiktok_url !== "-" ? (
+                      // PostRowTrigger ignores clicks inside <a>, so the View
+                      // link stays a normal new-tab open — no drawer behind it.
                       <a
                         href={post.tiktok_url}
                         target="_blank"
@@ -181,7 +184,7 @@ export default async function PostsPage() {
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </TableCell>
-                </TableRow>
+                </PostRowTrigger>
               ))}
             </TableBody>
           </Table>

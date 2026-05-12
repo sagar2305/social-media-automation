@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,12 @@ export interface ManagedAccount {
   handle: string;
   active: boolean;
   notes: string | null;
+  /**
+   * The campaign this account is attached to (via accounts.campaign_id).
+   * Null when the account exists but isn't routed to any campaign — the
+   * cycle pipeline won't pick it up until it's reassigned.
+   */
+  campaign: { slug: string; name: string } | null;
 }
 
 export function AccountManager({
@@ -72,8 +79,8 @@ export function AccountManager({
         notes: newNotes.trim() || null,
         active: true,
       })
-      .select()
-      .single<ManagedAccount>();
+      .select("id, name, handle, active, notes, campaign:campaign_id(slug, name)")
+      .single();
 
     setBusy(false);
     if (err || !data) {
@@ -81,7 +88,17 @@ export function AccountManager({
       return;
     }
 
-    setAccounts((prev) => [...prev, data]);
+    // Same array-vs-object normalisation as the server-side query —
+    // Postgrest sometimes returns the embedded relationship as an array.
+    type RawRow = Omit<ManagedAccount, "campaign"> & {
+      campaign: { slug: string; name: string } | { slug: string; name: string }[] | null;
+    };
+    const raw = data as RawRow;
+    const normalised: ManagedAccount = {
+      ...raw,
+      campaign: Array.isArray(raw.campaign) ? (raw.campaign[0] ?? null) : raw.campaign,
+    };
+    setAccounts((prev) => [...prev, normalised]);
     resetForm();
     setShowForm(false);
     router.refresh();
@@ -180,6 +197,7 @@ export function AccountManager({
             <TableRow>
               <TableHead>Handle</TableHead>
               <TableHead>Display Name</TableHead>
+              <TableHead>Campaign</TableHead>
               <TableHead>Blotato ID</TableHead>
               <TableHead>Notes</TableHead>
               <TableHead className="text-right">Active</TableHead>
@@ -189,7 +207,7 @@ export function AccountManager({
           <TableBody>
             {accounts.length === 0 && (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 6 : 5} className="text-center text-muted-foreground py-6">
+                <TableCell colSpan={isAdmin ? 7 : 6} className="text-center text-muted-foreground py-6">
                   No managed accounts yet. Click <strong>Add Account</strong> to start.
                 </TableCell>
               </TableRow>
@@ -198,6 +216,21 @@ export function AccountManager({
               <TableRow key={a.id} className={a.active ? "" : "opacity-60"}>
                 <TableCell className="font-medium">@{a.handle}</TableCell>
                 <TableCell className="text-muted-foreground">{a.name}</TableCell>
+                <TableCell>
+                  {a.campaign ? (
+                    <Link
+                      href={`/campaigns/${a.campaign.slug}`}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {a.campaign.name}
+                    </Link>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
+                      Unassigned
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="font-mono text-xs">{a.id}</TableCell>
                 <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{a.notes || "—"}</TableCell>
                 <TableCell className="text-right">

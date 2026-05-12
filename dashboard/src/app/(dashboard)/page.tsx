@@ -252,25 +252,6 @@ export default async function OverviewPage(props: {
         })}
       </div>
 
-      {/* Failed / Not Posted Alert */}
-      {failedPosts.length > 0 && (
-        <Card className="shadow-sm border-0 ring-0 border-l-4 border-l-amber-500">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <p className="text-sm font-semibold">
-                {failedPosts.length} Post{failedPosts.length > 1 ? "s" : ""} Not
-                Posted
-              </p>
-              <span className="text-[11px] text-muted-foreground ml-2">
-                Click any row for details
-              </span>
-            </div>
-            <FailedPostsTable posts={failedPosts} />
-          </CardContent>
-        </Card>
-      )}
-
       {/* Two-column: Chart + Top Content */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         {/* Audience Growth Chart */}
@@ -577,6 +558,28 @@ export default async function OverviewPage(props: {
                 </Link>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Failed / Not Posted Alert — moved to the bottom of the page so it
+          sits below the headline KPIs, charts, and rankings. Operators
+          look at success metrics first; the unposted-attempts diagnostic
+          is a "things to fix" footer rather than a hero block. */}
+      {failedPosts.length > 0 && (
+        <Card className="shadow-sm border-0 ring-0 border-l-4 border-l-amber-500">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <p className="text-sm font-semibold">
+                {failedPosts.length} Post{failedPosts.length > 1 ? "s" : ""} Not
+                Posted
+              </p>
+              <span className="text-[11px] text-muted-foreground ml-2">
+                Click any row for details
+              </span>
+            </div>
+            <FailedPostsTable posts={failedPosts} />
           </CardContent>
         </Card>
       )}

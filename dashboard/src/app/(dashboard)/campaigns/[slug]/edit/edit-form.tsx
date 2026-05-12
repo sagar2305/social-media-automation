@@ -21,6 +21,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import type { Campaign } from "@/lib/types";
 import { updateCampaignAction } from "./actions";
 import { DangerZone } from "./danger-zone";
+import { StyleTraining } from "./style-training";
 
 export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
   const router = useRouter();
@@ -114,7 +115,7 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
             <Field label="Start Date">
               <Input name="start_date" type="date" defaultValue={campaign.start_date ?? ""} />
             </Field>
-            <Field label="End Date">
+            <Field label="End Date (optional)" hint="Leave blank for an open-ended campaign.">
               <Input name="end_date" type="date" defaultValue={campaign.end_date ?? ""} />
             </Field>
           </div>
@@ -208,33 +209,30 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
       <Card>
         <CardContent className="pt-6 space-y-5">
           <Section
-            title="Flows"
-            hint="Which of the 3 generation flows run for this campaign, and the weight each pulls in the daily mix. Weights are renormalised to sum to 1 on save."
+            title="Content Flow"
+            hint="Exactly one flow per campaign. Every cycle and batch uses this flow."
           />
-          <div className="space-y-3">
-            <FlowRow
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <SingleFlowRadio
+              name="primary_flow"
+              value="photorealistic"
               label="Photorealistic"
-              hint="Cinematic-photo flow"
-              enabledName="flow_photorealistic_enabled"
-              weightName="flow_photorealistic_weight"
-              defaultEnabled={campaign.flows_enabled?.photorealistic ?? true}
-              defaultWeight={campaign.flow_weights?.photorealistic ?? 0.34}
+              hint="Cinematic photo-style slides"
+              defaultChecked={resolvePrimaryFlow(campaign.flows_enabled) === "photorealistic"}
             />
-            <FlowRow
+            <SingleFlowRadio
+              name="primary_flow"
+              value="animated"
               label="Animated"
               hint="Rotating animation styles"
-              enabledName="flow_animated_enabled"
-              weightName="flow_animated_weight"
-              defaultEnabled={campaign.flows_enabled?.animated ?? true}
-              defaultWeight={campaign.flow_weights?.animated ?? 0.33}
+              defaultChecked={resolvePrimaryFlow(campaign.flows_enabled) === "animated"}
             />
-            <FlowRow
+            <SingleFlowRadio
+              name="primary_flow"
+              value="emoji_overlay"
               label="Emoji Overlay"
               hint="Reaction-bubble narrative arc"
-              enabledName="flow_emoji_overlay_enabled"
-              weightName="flow_emoji_overlay_weight"
-              defaultEnabled={campaign.flows_enabled?.emoji_overlay ?? true}
-              defaultWeight={campaign.flow_weights?.emoji_overlay ?? 0.33}
+              defaultChecked={resolvePrimaryFlow(campaign.flows_enabled) === "emoji_overlay"}
             />
           </div>
         </CardContent>
@@ -382,6 +380,19 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
         </CardContent>
       </Card>
 
+      {/* Style Training — upload reference images, distil once via
+          Gemini Vision, inject the resulting paragraph into every
+          future cycle's prompts. All buttons here are type="button"
+          and the file input change handler runs a server action
+          directly, so nothing in this section accidentally submits
+          the surrounding <form>. */}
+      <StyleTraining
+        slug={campaign.slug}
+        initialUrls={campaign.training_image_urls ?? []}
+        initialDistillation={campaign.style_distillation}
+        initialDistilledAt={campaign.style_distilled_at}
+      />
+
       {/* Danger Zone — Archive (soft, reversible) and Delete (hard,
           requires typed-name confirm). Sits at the very bottom because
           it's the most destructive surface on the form. */}
@@ -471,4 +482,61 @@ function FlowRow({
       </div>
     </div>
   );
+}
+
+/**
+ * Single-select radio for the simplified flow picker. Mirrors the
+ * FlowRadio on /campaigns/new so the two forms feel identical.
+ */
+function SingleFlowRadio({
+  name,
+  value,
+  label,
+  hint,
+  defaultChecked,
+}: {
+  name: string;
+  value: string;
+  label: string;
+  hint: string;
+  defaultChecked?: boolean;
+}) {
+  return (
+    <label className="flex items-start gap-2.5 rounded-md border border-input bg-background p-3 cursor-pointer hover:bg-muted/40 has-[:checked]:border-primary has-[:checked]:bg-primary/5 transition-colors">
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        defaultChecked={defaultChecked}
+        className="mt-1 h-3.5 w-3.5 shrink-0 accent-primary"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium leading-tight">{label}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">{hint}</p>
+      </div>
+    </label>
+  );
+}
+
+/**
+ * Pick the "primary" flow from the legacy multi-flow jsonb.
+ *   - If exactly one is true → that one.
+ *   - If multiple true → photorealistic (sensible default; mam's
+ *     campaigns are mostly photo-style).
+ *   - If none / null → photorealistic.
+ *
+ * Used by the edit form to seed the radio's default selection — the
+ * underlying DB still has flows_enabled jsonb with 3 booleans, the
+ * UI is the constraint that exactly one ends up true.
+ */
+function resolvePrimaryFlow(
+  flows?: { photorealistic?: boolean; animated?: boolean; emoji_overlay?: boolean } | null,
+): "photorealistic" | "animated" | "emoji_overlay" {
+  if (!flows) return "photorealistic";
+  const enabled: Array<"photorealistic" | "animated" | "emoji_overlay"> = [];
+  if (flows.photorealistic) enabled.push("photorealistic");
+  if (flows.animated) enabled.push("animated");
+  if (flows.emoji_overlay) enabled.push("emoji_overlay");
+  if (enabled.length === 1) return enabled[0];
+  return "photorealistic";
 }

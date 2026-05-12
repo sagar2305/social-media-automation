@@ -11,9 +11,19 @@ export function UserNav() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // getSession() reads from local storage synchronously — no network
+    // round-trip, no auth-token lock acquisition. getUser() does both,
+    // and when two chrome components (UserNav + AvatarLink) mount on
+    // the same page they race for the lock and Supabase logs:
+    //
+    //   "Lock 'lock:sb-...-auth-token' was released because another
+    //    request stole it"
+    //
+    // We only need the email for display chrome — no authorization
+    // decisions hinge on this value. Session-read is the right call.
     const supabase = createBrowserSupabase();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setEmail(user?.email ?? null);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setEmail(session?.user?.email ?? null);
     });
   }, []);
 

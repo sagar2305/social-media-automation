@@ -18,8 +18,7 @@
 import { useState, useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Tag, Check, ChevronDown } from "lucide-react";
-
-const COOKIE_NAME = "active_campaign";
+import { setActiveCampaign } from "@/lib/campaign-filter-actions";
 
 export interface CampaignOption {
   slug: string;
@@ -29,17 +28,6 @@ export interface CampaignOption {
 interface Props {
   campaigns: CampaignOption[];
   activeSlug: string | null;
-}
-
-function setCookie(value: string) {
-  if (value) {
-    // 30 days — long enough that the user doesn't have to re-pick after
-    // a coffee break, short enough that a stale cookie doesn't haunt the
-    // session forever after they archive a campaign.
-    document.cookie = `${COOKIE_NAME}=${encodeURIComponent(value)}; path=/; max-age=${30 * 86400}; samesite=lax`;
-  } else {
-    document.cookie = `${COOKIE_NAME}=; path=/; max-age=0; samesite=lax`;
-  }
 }
 
 export function CampaignFilter({ campaigns, activeSlug }: Props) {
@@ -79,31 +67,36 @@ export function CampaignFilter({ campaigns, activeSlug }: Props) {
    *     per-campaign view.
    */
   function pick(slug: string | null) {
-    setCookie(slug ?? "");
     setOpen(false);
 
-    // /campaigns/[slug]/(...) — swap the slug segment.
+    // /campaigns/[slug]/(...) — swap the slug segment. We also fire
+    // the cookie set in the background so the user's "active" pill
+    // stays in sync after they navigate back out to /accounts etc.
     const onCampaignDetail = pathname.match(/^\/campaigns\/([^/]+)(\/.*)?$/);
     if (onCampaignDetail) {
+      // Fire and forget — we don't await because the URL change is
+      // what the user is here for; the cookie sync is just a UX nicety.
+      void setActiveCampaign(slug);
       const tail = onCampaignDetail[2] ?? "";
       if (slug) {
-        // If we're on /campaigns/new there is no "old slug" to swap,
-        // and the user picking a campaign while creating is a confusing
-        // mixed-intent state — just go to /campaigns/<slug>.
         if (onCampaignDetail[1] === "new") {
           router.push(`/campaigns/${slug}`);
         } else {
           router.push(`/campaigns/${slug}${tail}`);
         }
       } else {
-        // "All campaigns" → list view.
         router.push("/campaigns");
       }
       return;
     }
 
-    // Global page → cookie change is enough; just re-render.
-    startTransition(() => router.refresh());
+    // Global page (/, /posts, /accounts, /payouts, …) → run the
+    // server action which sets the cookie AND revalidatePath()s the
+    // layout. By the time the action resolves the next render is
+    // already fresh — no manual refresh needed.
+    startTransition(async () => {
+      await setActiveCampaign(slug);
+    });
   }
 
   return (

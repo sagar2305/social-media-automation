@@ -94,20 +94,29 @@ export default async function CampaignSchedulePage({
       </Card>
 
       {accounts.length === 0 && (
-        <Card className="shadow-sm border-0 ring-0 border-l-4 border-l-amber-500">
-          <CardContent className="py-3 px-4 text-xs">
-            <p className="font-medium text-foreground">No accounts on this campaign</p>
-            <p className="text-muted-foreground mt-0.5">
-              Add at least one account in the{" "}
+        <Card className="shadow-sm border border-destructive/40 bg-destructive/[0.04]">
+          <CardContent className="py-4 px-4 flex items-start gap-3">
+            <div className="mt-0.5 shrink-0">
+              <div className="h-7 w-7 rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center">
+                <Info className="h-4 w-4 text-destructive" />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-destructive">
+                You can&apos;t create a batch yet — this campaign has no accounts.
+              </p>
+              <p className="text-sm text-foreground/80 mt-1">
+                A scheduled batch posts to this campaign&apos;s accounts only.
+                With zero accounts attached, a batch would have nothing to post
+                to and the cycle will refuse to run.
+              </p>
               <Link
                 href={`/campaigns/${campaign.slug}/accounts`}
-                className="text-primary hover:underline"
+                className="inline-flex items-center mt-3 text-sm font-medium text-destructive hover:text-destructive/80 underline-offset-4 hover:underline"
               >
-                Accounts tab
+                Go to Accounts tab → add an account first
               </Link>
-              {" "}before creating batches — a batch with zero accounts can&apos;t
-              post anything.
-            </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -117,6 +126,13 @@ export default async function CampaignSchedulePage({
         accounts={accounts}
         isAdmin={user?.role === "admin"}
         campaignId={campaign.id}
+        campaignSlug={campaign.slug}
+        campaignFlow={
+          campaign.flows_enabled?.photorealistic ? "photorealistic" :
+          campaign.flows_enabled?.animated ? "animated" :
+          campaign.flows_enabled?.emoji_overlay ? "emoji_overlay" :
+          "photorealistic"
+        }
       />
     </div>
   );

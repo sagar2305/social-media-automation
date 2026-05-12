@@ -20,9 +20,14 @@ import {
 } from "@/components/ui/table";
 import { ExportButton } from "@/components/export-button";
 import { PostTrigger } from "@/components/post-trigger";
+import { PostRowTrigger } from "@/components/post-row-trigger";
+import { PostsAccountFilter, type PostsAccountOption } from "./posts-account-filter";
 import type { Campaign } from "@/lib/types";
 
-export const revalidate = 60;
+// Page is dynamic now that it reads searchParams.account — keeping the
+// previous revalidate=60 alongside searchParams would force unnecessary
+// cache invalidation. dynamic="force-dynamic" is the cleaner signal.
+export const dynamic = "force-dynamic";
 
 interface PostRow {
   id: string;
@@ -63,10 +68,15 @@ function StatusPill({ status }: { status: string | null }) {
 
 export default async function CampaignPostsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { slug } = await params;
+  const sp = await searchParams;
+  const accountFilter = typeof sp.account === "string" ? sp.account : null;
+
   const sb = await createClient();
   const { data: campaign } = await sb
     .from("campaigns")
@@ -75,6 +85,10 @@ export default async function CampaignPostsPage({
     .maybeSingle<Pick<Campaign, "id" | "name" | "slug">>();
   if (!campaign) notFound();
 
+  // One fetch of EVERY post on the campaign so we can derive the
+  // accounts dropdown (which handles posted here, how many each) AND
+  // filter for the table — instead of two queries. Posts on a single
+  // campaign rarely exceed a few thousand; the trade is fine.
   const { data: postsData } = await sb
     .from("posts")
     .select(
@@ -84,17 +98,42 @@ export default async function CampaignPostsPage({
     .order("date", { ascending: false });
 
   const allPosts: PostRow[] = (postsData ?? []) as PostRow[];
-  const published = allPosts.filter((p) => p.status === "published").length;
+
+  // Build the accounts-dropdown options from the actual posts that
+  // exist on this campaign — only handles that have posts here show
+  // up. Sort by count desc so the most-active accounts are at top.
+  const handleCounts = new Map<string, number>();
+  for (const p of allPosts) {
+    const h = p.account;
+    if (!h) continue;
+    handleCounts.set(h, (handleCounts.get(h) ?? 0) + 1);
+  }
+  const accountOptions: PostsAccountOption[] = [...handleCounts.entries()]
+    .map(([handle, count]) => ({ handle, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Apply the account filter for the visible table. We do this in
+  // memory rather than re-querying because we already pulled all
+  // posts to build the dropdown options.
+  const filteredPosts = accountFilter
+    ? allPosts.filter((p) => p.account === accountFilter)
+    : allPosts;
+  const published = filteredPosts.filter((p) => p.status === "published").length;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {allPosts.length} post{allPosts.length === 1 ? "" : "s"} ·{" "}
-          {published} published · {allPosts.length - published} drafts/failed
+          {filteredPosts.length} post{filteredPosts.length === 1 ? "" : "s"} ·{" "}
+          {published} published · {filteredPosts.length - published} drafts/failed
+          {accountFilter && (
+            <>{" "}· filtered to <span className="text-foreground font-medium">@{accountFilter}</span></>
+          )}
         </p>
-        <ExportButton
-          data={allPosts.map((p) => ({
+        <div className="flex items-center gap-3">
+          <PostsAccountFilter accounts={accountOptions} activeHandle={accountFilter} />
+          <ExportButton
+            data={filteredPosts.map((p) => ({
             date: p.date ?? "",
             account: p.account ?? "",
             hook_style: p.hook_style ?? "",
@@ -122,9 +161,10 @@ export default async function CampaignPostsPage({
             { key: "tiktok_url", label: "TikTok URL" },
           ]}
         />
+        </div>
       </div>
 
-      {allPosts.length === 0 && (
+      {filteredPosts.length === 0 && (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <p className="text-base font-medium mb-1">No posts yet</p>
@@ -136,7 +176,7 @@ export default async function CampaignPostsPage({
         </Card>
       )}
 
-      {allPosts.length > 0 && (
+      {filteredPosts.length > 0 && (
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <Table>
@@ -155,8 +195,8 @@ export default async function CampaignPostsPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {allPosts.map((post) => (
-                  <TableRow key={post.id}>
+                {filteredPosts.map((post) => (
+                  <PostRowTrigger key={post.id} postId={post.id}>
                     <TableCell className="whitespace-nowrap tabular-nums text-sm">
                       <div>{post.date}</div>
                       {post.account && (
@@ -216,9 +256,10 @@ export default async function CampaignPostsPage({
                     </TableCell>
                     <TableCell>
                       {post.tiktok_url && post.tiktok_url !== "-" ? (
-                        // No onClick={stopPropagation} here — server components
-                        // can't ship event handlers to the browser. The row
-                        // itself has no click handler, so bubbling is moot.
+                        // The row-level click handler (PostRowTrigger) skips
+                        // clicks whose target is inside an <a>, so the View
+                        // link still opens TikTok cleanly without firing the
+                        // drawer behind it.
                         <a
                           href={post.tiktok_url}
                           target="_blank"
@@ -231,7 +272,7 @@ export default async function CampaignPostsPage({
                         <span className="text-muted-foreground/30">—</span>
                       )}
                     </TableCell>
-                  </TableRow>
+                  </PostRowTrigger>
                 ))}
               </TableBody>
             </Table>

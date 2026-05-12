@@ -22,8 +22,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Upload, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, X, Brain, DollarSign } from "lucide-react";
 import { createCampaignAction } from "./actions";
+import {
+  PayoutConfigFields,
+  DEFAULT_PAYOUT_DRAFT,
+  type PayoutConfigDraft,
+} from "@/components/payout-config-fields";
+
+// Hard cap on training images uploaded at create time. The full 25-image
+// cap from the schema applies on the edit page; in the create form we
+// keep it lower to bound the multipart body size (each file can be up to
+// 10 MB per the bucket policy, so 15 × 10 MB = 150 MB worst case which
+// is why the next.config.ts bodySizeLimit is bumped accordingly). Most
+// real-world reference images are 0.5–2 MB so this is comfortable.
+const MAX_TRAINING_IMAGES_AT_CREATE = 15;
 
 function autoSlugify(s: string): string {
   return s
@@ -42,6 +55,19 @@ export function CampaignForm() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [heroPreview, setHeroPreview] = useState<string | null>(null);
   const [ctaPreview, setCtaPreview] = useState<string | null>(null);
+  // Training images live in component state because they need their own
+  // file input + preview grid + remove buttons. On submit we re-attach
+  // them to the FormData under name="training_images" (the action reads
+  // formData.getAll('training_images')).
+  const [trainingFiles, setTrainingFiles] = useState<File[]>([]);
+  const [trainingPreviews, setTrainingPreviews] = useState<string[]>([]);
+  // Payout config draft. Defaults to mode="none" so users who don't
+  // care about payouts at create time can ignore the section — only
+  // when they switch to a real mode do the validation rules kick in.
+  // The draft is JSON-serialized into FormData on submit; the server
+  // action upserts a campaign_payout_configs row after the campaign
+  // insert lands (so the new row has an id to key by).
+  const [payoutDraft, setPayoutDraft] = useState<PayoutConfigDraft>(DEFAULT_PAYOUT_DRAFT);
 
   // Auto-derive slug from name unless user has typed in the slug box.
   function onNameChange(v: string) {
@@ -62,19 +88,71 @@ export function CampaignForm() {
     setPreview(url);
   }
 
+  function onTrainingFilesAdd(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const slotsLeft = MAX_TRAINING_IMAGES_AT_CREATE - trainingFiles.length;
+    if (slotsLeft <= 0) {
+      setError(
+        `Already at the ${MAX_TRAINING_IMAGES_AT_CREATE}-image limit at create time. ` +
+        `Add the rest on the campaign's Edit page after creation (limit there is 25).`,
+      );
+      return;
+    }
+    const taking = files.slice(0, slotsLeft);
+    const newPreviews = taking.map((f) => URL.createObjectURL(f));
+    setTrainingFiles((prev) => [...prev, ...taking]);
+    setTrainingPreviews((prev) => [...prev, ...newPreviews]);
+    // Allow re-selecting the same files later.
+    e.currentTarget.value = "";
+  }
+
+  function onTrainingFileRemove(idx: number) {
+    setTrainingFiles((prev) => prev.filter((_, i) => i !== idx));
+    setTrainingPreviews((prev) => {
+      // Revoke the object URL we created so the browser can GC it.
+      const u = prev[idx];
+      if (u) URL.revokeObjectURL(u);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
       const fd = new FormData(e.currentTarget);
+      // Append every training-image file under the same key so the
+      // server action reads them with formData.getAll('training_images').
+      // The form's own <input type="file" multiple name="training_images">
+      // is intentionally absent — we rely on component state instead so
+      // we can render previews + remove buttons.
+      for (const f of trainingFiles) {
+        fd.append("training_images", f, f.name);
+      }
+      // Payout config travels as a single JSON blob — the structure
+      // (multipliers + milestones as object arrays) doesn't fit
+      // FormData's flat key/value model cleanly, and the server action
+      // is happy to JSON.parse it once.
+      fd.append("payout_config_json", JSON.stringify(payoutDraft));
       const result = await createCampaignAction(fd);
       if (!result.ok) {
         setError(result.error);
         setSubmitting(false);
         return;
       }
-      router.push(`/campaigns/${result.slug}`);
+      // Partial-success path: the campaign was created but the payout
+      // config didn't save (validation or DB error). Drop the user
+      // straight on the Edit page so they can fix it without hunting,
+      // and alert the reason so it doesn't get missed.
+      if (result.warning) {
+        // eslint-disable-next-line no-alert
+        alert(result.warning);
+        router.push(`/campaigns/${result.slug}/edit`);
+      } else {
+        router.push(`/campaigns/${result.slug}`);
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed");
@@ -203,9 +281,13 @@ export function CampaignForm() {
 
             <div className="space-y-1.5">
               <label className="text-xs font-medium" htmlFor="end_date">
-                End Date
+                End Date{" "}
+                <span className="font-normal text-muted-foreground">(optional)</span>
               </label>
               <Input id="end_date" name="end_date" type="date" />
+              <p className="text-[10px] text-muted-foreground">
+                Leave blank for an open-ended campaign.
+              </p>
             </div>
           </div>
         </CardContent>
@@ -240,6 +322,74 @@ export function CampaignForm() {
         </CardContent>
       </Card>
 
+      {/* Style Training Images — operator's reference set that Gemini
+          Vision will distill into a style paragraph after creation.
+          We accept up to 15 here at create time (full 25 on the edit
+          page) to keep the multipart body within bodySizeLimit. We do
+          NOT auto-distill on submit — the user clicks "Train style"
+          on the edit page once when ready, per their preference for
+          one-time training. */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-base font-semibold flex items-center gap-2">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                Style Training Images <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
+                Up to {MAX_TRAINING_IMAGES_AT_CREATE} reference images that show the visual style
+                you want for this campaign&apos;s posts. After creating the campaign, click
+                <strong> Train style</strong> on its Edit page to have Gemini analyse them once
+                — every future cycle will then generate posts in that style at zero extra cost.
+                You can add more (up to 25 total) on the Edit page later.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-2">
+            {trainingPreviews.map((p, i) => (
+              <div
+                key={i}
+                className="relative aspect-square rounded-md overflow-hidden border border-border/50 bg-muted/30 group"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p} alt="reference" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => onTrainingFileRemove(i)}
+                  className="absolute top-1 right-1 h-6 w-6 rounded-full bg-background/90 border border-border/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-destructive-foreground"
+                  title="Remove"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+
+            {trainingFiles.length < MAX_TRAINING_IMAGES_AT_CREATE && (
+              <label className="aspect-square rounded-md border-2 border-dashed border-border/60 hover:border-primary/60 hover:bg-muted/40 flex flex-col items-center justify-center gap-1 text-muted-foreground cursor-pointer transition-colors text-center px-2">
+                <Upload className="h-5 w-5" />
+                <span className="text-[10px] font-medium">Drop / click to add</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={onTrainingFilesAdd}
+                  disabled={submitting}
+                />
+              </label>
+            )}
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            {trainingFiles.length === 0
+              ? "No reference images selected. You can skip this and add them later on the Edit page."
+              : `${trainingFiles.length} / ${MAX_TRAINING_IMAGES_AT_CREATE} selected — ${trainingFiles.length === MAX_TRAINING_IMAGES_AT_CREATE ? "limit reached for this form. Add the rest on Edit." : `${MAX_TRAINING_IMAGES_AT_CREATE - trainingFiles.length} slots left.`}`}
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Posting goals + branding */}
       <Card>
         <CardContent className="pt-6 space-y-5">
@@ -250,33 +400,20 @@ export function CampaignForm() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium" htmlFor="target_posts_per_week">
-                Target posts / week (per account)
-              </label>
-              <Input
-                id="target_posts_per_week"
-                name="target_posts_per_week"
-                type="number"
-                min={1}
-                max={50}
-                defaultValue={3}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium" htmlFor="owner_email">
-                Owner email{" "}
-                <span className="text-muted-foreground font-normal">(report routing)</span>
-              </label>
-              <Input
-                id="owner_email"
-                name="owner_email"
-                type="email"
-                placeholder="you@example.com"
-              />
-            </div>
+          {/* Target posts/week intentionally removed from campaign
+              creation — defaults to 3 server-side. Adjust later on the
+              campaign edit page if needed. */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" htmlFor="owner_email">
+              Owner email{" "}
+              <span className="text-muted-foreground font-normal">(report routing)</span>
+            </label>
+            <Input
+              id="owner_email"
+              name="owner_email"
+              type="email"
+              placeholder="you@example.com"
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -290,6 +427,44 @@ export function CampaignForm() {
               id="branded_hashtags"
               name="branded_hashtags"
               placeholder="#MinuteWise, #StudyTips, #StudentLife"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Flow selection — exactly one flow per campaign. Cycles and
+          batches for this campaign always use this flow; the operator
+          doesn't pick again later. Stored in flows_enabled jsonb as
+          { thisFlow: true, others: false } so the runner queries
+          stay the same shape they always were. */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <div>
+            <p className="text-base font-semibold">Content Flow</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Pick the one flow this campaign always uses. Every cycle and
+              batch will generate posts using only this flow.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <FlowRadio
+              name="primary_flow"
+              value="photorealistic"
+              label="Photorealistic"
+              hint="Cinematic photo-style slides"
+              defaultChecked
+            />
+            <FlowRadio
+              name="primary_flow"
+              value="animated"
+              label="Animated"
+              hint="Illustrated / Pixar / anime"
+            />
+            <FlowRadio
+              name="primary_flow"
+              value="emoji_overlay"
+              label="Emoji Overlay"
+              hint="Narrative arc + emoji reactions"
             />
           </div>
         </CardContent>
@@ -335,6 +510,38 @@ export function CampaignForm() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/*
+        Payout configuration — same UI as the edit page's payout card,
+        but the parent owns the draft so it submits with the rest of
+        the create payload. Defaults to mode="none" (calculator skips
+        the campaign) so a manager who doesn't care about payouts at
+        create time can ignore this card entirely; switching the
+        Payout model to flat/cpm/hybrid/milestone reveals the relevant
+        fields. The same card is also on the Edit page, so any choice
+        made here is editable later — no need to "lock in" anything.
+      */}
+      <Card>
+        <CardContent className="pt-6 space-y-5">
+          <div>
+            <p className="text-base font-semibold flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              Payout configuration{" "}
+              <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
+              How creators on this campaign get paid. Leave the Payout model on
+              &ldquo;None&rdquo; to skip — you can configure it later from the
+              campaign&apos;s Edit page.
+            </p>
+          </div>
+          <PayoutConfigFields
+            value={payoutDraft}
+            onChange={setPayoutDraft}
+            disabled={submitting}
+          />
         </CardContent>
       </Card>
     </form>
@@ -385,5 +592,41 @@ function FilePicker({
         onChange={onChange}
       />
     </div>
+  );
+}
+
+/**
+ * Single-select radio card for the flow picker. Renders as a clickable
+ * tile so it reads more naturally than a list of plain radio inputs.
+ * Native input keeps the form-data shape simple — `formData.get("primary_flow")`
+ * returns the chosen value on submit.
+ */
+function FlowRadio({
+  name,
+  value,
+  label,
+  hint,
+  defaultChecked,
+}: {
+  name: string;
+  value: string;
+  label: string;
+  hint: string;
+  defaultChecked?: boolean;
+}) {
+  return (
+    <label className="flex items-start gap-2.5 rounded-md border border-input bg-background p-3 cursor-pointer hover:bg-muted/40 has-[:checked]:border-primary has-[:checked]:bg-primary/5 transition-colors">
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        defaultChecked={defaultChecked}
+        className="mt-1 h-3.5 w-3.5 shrink-0 accent-primary"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium leading-tight">{label}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">{hint}</p>
+      </div>
+    </label>
   );
 }

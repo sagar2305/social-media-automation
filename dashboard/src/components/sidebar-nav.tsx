@@ -10,6 +10,9 @@ import {
   Clock,
   Activity,
   Tag,
+  UserPlus,
+  DollarSign,
+  FileText,
 } from "lucide-react";
 
 // Sidebar is intentionally minimal: only the cross-cutting / pipeline-level
@@ -23,7 +26,10 @@ const navItems = [
   { href: "/campaigns", label: "Campaigns", icon: Tag },
   { href: "/runs", label: "Live Runs", icon: Activity },
   { href: "/accounts", label: "Accounts", icon: Users },
+  { href: "/creators", label: "Creators", icon: UserPlus },
+  { href: "/payouts", label: "Payouts", icon: DollarSign },
   { href: "/errors", label: "Errors & Auto-Fix", icon: ShieldAlert },
+  { href: "/logs", label: "Logs", icon: FileText },
   { href: "/settings/schedule", label: "Schedule", icon: Clock },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
