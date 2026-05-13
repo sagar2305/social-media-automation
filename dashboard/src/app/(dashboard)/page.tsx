@@ -7,6 +7,7 @@ import { DateRangeFilter } from "@/components/date-range-filter";
 import { ExportButton } from "@/components/export-button";
 import { FailedPostsTable } from "@/components/failed-posts-table";
 import { getDateFilter } from "@/lib/utils";
+import { getActiveCampaignFilter } from "@/lib/campaign-filter";
 import {
   Eye,
   Heart,
@@ -26,7 +27,7 @@ import {
 
 export const revalidate = 300;
 
-async function getOverviewData(dateFrom: string | null) {
+async function getOverviewData(dateFrom: string | null, campaignId: string | null) {
   const supabase = await createClient();
   let postsQuery = supabase
     .from("posts")
@@ -34,9 +35,21 @@ async function getOverviewData(dateFrom: string | null) {
     .order("date", { ascending: false })
     .limit(500);
 
-  if (dateFrom) {
-    postsQuery = postsQuery.gte("date", dateFrom);
-  }
+  if (dateFrom) postsQuery = postsQuery.gte("date", dateFrom);
+  if (campaignId) postsQuery = postsQuery.eq("campaign_id", campaignId);
+
+  let formatsQuery = supabase
+    .from("format_rankings")
+    .select("*")
+    .order("rank", { ascending: true });
+  if (campaignId) formatsQuery = formatsQuery.eq("campaign_id", campaignId);
+
+  let experimentsQuery = supabase
+    .from("experiments")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(20);
+  if (campaignId) experimentsQuery = experimentsQuery.eq("campaign_id", campaignId);
 
   const [postsRes, accountsRes, formatsRes, experimentsRes] = await Promise.all(
     [
@@ -46,15 +59,8 @@ async function getOverviewData(dateFrom: string | null) {
         .select("*")
         .order("date", { ascending: false })
         .limit(50),
-      supabase
-        .from("format_rankings")
-        .select("*")
-        .order("rank", { ascending: true }),
-      supabase
-        .from("experiments")
-        .select("*")
-        .order("date", { ascending: false })
-        .limit(20),
+      formatsQuery,
+      experimentsQuery,
     ]
   );
 
@@ -74,8 +80,9 @@ export default async function OverviewPage(props: {
     typeof searchParams.range === "string" ? searchParams.range : undefined;
   const dateFrom = getDateFilter(range);
 
+  const activeCampaign = await getActiveCampaignFilter();
   const { posts, accountStats, formatRankings, experiments } =
-    await getOverviewData(dateFrom);
+    await getOverviewData(dateFrom, activeCampaign?.id ?? null);
 
   const publishedPosts = posts.filter((p) => p.status === "published");
 
@@ -188,7 +195,15 @@ export default async function OverviewPage(props: {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
           <p className="text-muted-foreground mt-1">
-            Platform performance snapshot.
+            {activeCampaign ? (
+              <>
+                Filtered to{" "}
+                <span className="text-foreground font-medium">{activeCampaign.name}</span>
+                {" "}— change in the campaign picker top right.
+              </>
+            ) : (
+              "Platform performance snapshot."
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -236,25 +251,6 @@ export default async function OverviewPage(props: {
           );
         })}
       </div>
-
-      {/* Failed / Not Posted Alert */}
-      {failedPosts.length > 0 && (
-        <Card className="shadow-sm border-0 ring-0 border-l-4 border-l-amber-500">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <p className="text-sm font-semibold">
-                {failedPosts.length} Post{failedPosts.length > 1 ? "s" : ""} Not
-                Posted
-              </p>
-              <span className="text-[11px] text-muted-foreground ml-2">
-                Click any row for details
-              </span>
-            </div>
-            <FailedPostsTable posts={failedPosts} />
-          </CardContent>
-        </Card>
-      )}
 
       {/* Two-column: Chart + Top Content */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
@@ -562,6 +558,28 @@ export default async function OverviewPage(props: {
                 </Link>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Failed / Not Posted Alert — moved to the bottom of the page so it
+          sits below the headline KPIs, charts, and rankings. Operators
+          look at success metrics first; the unposted-attempts diagnostic
+          is a "things to fix" footer rather than a hero block. */}
+      {failedPosts.length > 0 && (
+        <Card className="shadow-sm border-0 ring-0 border-l-4 border-l-amber-500">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <p className="text-sm font-semibold">
+                {failedPosts.length} Post{failedPosts.length > 1 ? "s" : ""} Not
+                Posted
+              </p>
+              <span className="text-[11px] text-muted-foreground ml-2">
+                Click any row for details
+              </span>
+            </div>
+            <FailedPostsTable posts={failedPosts} />
           </CardContent>
         </Card>
       )}

@@ -30,13 +30,23 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { config as dotenvConfig } from 'dotenv';
+import { dataPath, setCampaignSlug } from './lib/campaign-paths.js';
+import {
+  listActiveCampaigns,
+  resetCampaignCache,
+  type Campaign,
+} from './lib/campaigns.js';
 
 dotenvConfig({ path: '.env.local', override: true });
 
 // Per-day sentinel — guards against double-running when launchd ticks the
 // plist hourly. First successful run of the calendar day writes today's date
 // here; subsequent ticks within the same day silent-exit.
-const SENTINEL_PATH = 'data/.last-autoresearch-run';
+//
+// Resolved via dataPath() each call so multi-campaign cron loops can set the
+// active campaign between iterations and each campaign gets its own sentinel
+// (data/campaigns/<slug>/.last-autoresearch-run).
+const sentinelPath = (): string => dataPath('.last-autoresearch-run');
 
 function todayLocal(): string {
   const d = new Date();
@@ -50,7 +60,7 @@ function todayLocal(): string {
 
 async function alreadyRanToday(): Promise<boolean> {
   try {
-    const last = (await readFile(SENTINEL_PATH, 'utf-8')).trim();
+    const last = (await readFile(sentinelPath(), 'utf-8')).trim();
     return last === todayLocal();
   } catch {
     return false;
@@ -59,7 +69,7 @@ async function alreadyRanToday(): Promise<boolean> {
 
 async function markRanToday(): Promise<void> {
   try {
-    await writeFile(SENTINEL_PATH, todayLocal() + '\n');
+    await writeFile(sentinelPath(), todayLocal() + '\n');
   } catch {
     // sentinel write failure is non-fatal — at worst we run twice today
   }
@@ -85,6 +95,9 @@ interface Decision {
   flow: FlowName;
   hypothesis: string;
   source: 'gemini' | 'fallback';
+  action_type?: 'experiment' | 'strategy_fix';
+  warnings?: string[];
+  strategy_notes?: string;
   raw?: unknown;
 }
 
@@ -152,42 +165,47 @@ async function askGemini(context: string, targetAccount: string): Promise<Decisi
 }
 
 function buildPrompt(context: string, targetAccount: string): string {
-  return `You are an A/B-test designer for a TikTok content automation system.
+  return `You are the daily brain for a TikTok content automation system. Your job has TWO parts:
 
-Your job: pick today's experiment for a SPECIFIC account. Reply ONLY as JSON.
+**Part 1 — Diagnose account health.** Read the per-account performance data below. Detect problems like:
+- View crashes (>50% drop vs prior week) = possible shadow ban / suppression
+- Overposting (>1.5 posts/day) = TikTok throttles spammy accounts
+- Duplicate hashtag sets = TikTok flags as spam behavior
+- An account stuck below 10 avg views = distribution suppressed
 
-# TODAY'S TARGET ACCOUNT
-The "account" field in your response MUST be exactly: ${targetAccount}
-(The dispatcher rotates accounts day-by-day. Your job is the variable choice.)
+**Part 2 — Design today's experiment.** Based on the diagnosis, either:
+(a) If an account is HEALTHY → pick the least-tested A/B variable for @${targetAccount}
+(b) If @${targetAccount} is SUPPRESSED/unhealthy → set action_type to "strategy_fix" and describe what must change
 
-# Variable priority queue
-Pick the LEAST-tested variable for @${targetAccount}. Within that variable, pick two variants that haven't been compared head-to-head before for this account.
-
+# Variable priority queue (for healthy accounts)
 \`\`\`json
 ${JSON.stringify(VARIABLE_QUEUE, null, 2)}
 \`\`\`
 
 # Hard rules
 - "account" MUST equal: ${targetAccount}
-- Both variants MUST be tested on the SAME account (we already enforce this).
-- The "variable" field MUST be one of the keys in the priority queue above.
-- "variant_a" and "variant_b" MUST both come from the variants array for that variable.
-- "variant_a" and "variant_b" MUST be different.
-- "flow" MUST be one of: photorealistic, animated, emoji_overlay.
+- "variable" MUST be one of the keys above (still required even for strategy_fix)
+- "variant_a" and "variant_b" MUST be different values from that variable's array
+- "flow" MUST be one of: photorealistic, animated, emoji_overlay
 
-# Context (history across all accounts; focus on the @${targetAccount} rows)
+# Context
 ${context}
 
-# Output
-Reply with this exact JSON shape:
+# Output schema
+Reply ONLY with this exact JSON shape:
 {
   "variable": "hook_style",
   "variant_a": "question",
   "variant_b": "bold_claim",
   "account": "${targetAccount}",
-  "flow": "photorealistic",
-  "hypothesis": "<one sentence: why this experiment matters for @${targetAccount}>"
-}`;
+  "flow": "animated",
+  "hypothesis": "<one sentence: why this experiment matters>",
+  "action_type": "experiment" | "strategy_fix",
+  "warnings": ["<list any account health issues detected, e.g. suppression, overposting, duplicate hashtags>"],
+  "strategy_notes": "<if action_type=strategy_fix: specific concrete actions needed, e.g. pause posting 7 days, fix hashtag rotation, reduce to 1 post/day>"
+}
+
+If action_type is "strategy_fix", the variable/variant fields still MUST be valid (they represent the next experiment AFTER the fix is applied).`;
 }
 
 // ─── Pick today's target account by deterministic rotation ────
@@ -254,7 +272,11 @@ function validateDecision(d: Record<string, unknown>, raw: unknown): Decision | 
   if (!account) return null;
   if (!hypothesis) return null;
 
-  return { variable, variant_a, variant_b, account, flow, hypothesis, source: 'gemini', raw };
+  const action_type = String(d.action_type ?? 'experiment').trim() as 'experiment' | 'strategy_fix';
+  const warnings = Array.isArray(d.warnings) ? (d.warnings as unknown[]).map(String) : [];
+  const strategy_notes = d.strategy_notes ? String(d.strategy_notes).trim() : undefined;
+
+  return { variable, variant_a, variant_b, account, flow, hypothesis, source: 'gemini', action_type, warnings, strategy_notes, raw };
 }
 
 // ─── Read recent experiment history ────────────────────────────
@@ -279,7 +301,7 @@ async function readHistory(supabase: SupabaseClient | null): Promise<ExperimentS
     }
   }
   try {
-    const tsv = await readFile('data/results.tsv', 'utf-8');
+    const tsv = await readFile(dataPath('results.tsv'), 'utf-8');
     const lines = tsv.split('\n').slice(1).filter(Boolean);
     return lines.slice(-40).map(line => {
       const cols = line.split('\t');
@@ -297,17 +319,139 @@ async function readHistory(supabase: SupabaseClient | null): Promise<ExperimentS
 
 async function readFormatWinners(): Promise<string> {
   try {
-    return (await readFile('data/FORMAT-WINNERS.md', 'utf-8')).slice(0, 2_000);
+    return (await readFile(dataPath('FORMAT-WINNERS.md'), 'utf-8')).slice(0, 2_000);
   } catch {
     return '(FORMAT-WINNERS.md not found)';
   }
+}
+
+// ─── Account health context ─────────────────────────────────────
+// Parses POST-TRACKER.md and builds a per-account performance summary
+// covering the last 14 days. Gemini needs this to detect suppression,
+// posting frequency abuse, and view trend direction.
+
+interface PostRow {
+  date: string;
+  account: string;
+  views: number | null;
+  hook: string;
+  hashtags: string;
+}
+
+async function buildAccountHealthContext(activeHandles: string[]): Promise<string> {
+  let md: string;
+  try {
+    md = await readFile(dataPath('POST-TRACKER.md'), 'utf-8');
+  } catch {
+    return '(POST-TRACKER.md not found — no account health data)';
+  }
+
+  const rows: PostRow[] = [];
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+
+  for (const line of md.split('\n')) {
+    if (!line.startsWith('|')) continue;
+    if (line.includes('---') || /\|\s*Post ID\s*\|/i.test(line)) continue;
+    const cols = line.split('|').map(c => c.trim()).filter(Boolean);
+    if (cols.length < 11) continue;
+
+    // cols: [postId, date, hook, slides, hashtags, views, likes, saves, comments, shares, saveRate, status, url?]
+    const date = cols[1] ?? '';
+    const hook = cols[2] ?? '';
+    const hashtags = cols[4] ?? '';
+    const viewsRaw = cols[5] ?? '';
+    const statusAndUrl = (cols[11] ?? '') + ' ' + (cols[12] ?? '');
+
+    if (!date.match(/^\d{4}-\d{2}-\d{2}/)) continue;
+    if (new Date(date) < cutoff) continue;
+
+    // Extract account from status/url field
+    let account = '';
+    const handleMatch = statusAndUrl.match(/@([\w.]+)/);
+    if (handleMatch) account = handleMatch[1];
+    if (!account) continue;
+
+    const views = viewsRaw === '-' || viewsRaw === '' ? null : parseInt(viewsRaw);
+    rows.push({ date, account, views, hook, hashtags });
+  }
+
+  if (rows.length === 0) return '(No posts in last 14 days)';
+
+  // Build per-account summary
+  const lines: string[] = ['## Per-Account Performance (last 14 days)\n'];
+
+  for (const handle of activeHandles) {
+    const accountRows = rows.filter(r => r.account === handle);
+    if (accountRows.length === 0) {
+      lines.push(`### @${handle}\n  No posts in last 14 days.\n`);
+      continue;
+    }
+
+    const withViews = accountRows.filter(r => r.views !== null);
+    const recentRows = accountRows.slice(-14); // last 14 posts
+
+    // Split into two 7-day windows
+    const now = Date.now();
+    const sevenDays = 7 * 86_400_000;
+    const last7 = withViews.filter(r => now - new Date(r.date).getTime() < sevenDays);
+    const prev7 = withViews.filter(r => {
+      const age = now - new Date(r.date).getTime();
+      return age >= sevenDays && age < sevenDays * 2;
+    });
+
+    const avg = (arr: PostRow[]) =>
+      arr.length === 0 ? null : Math.round(arr.reduce((s, r) => s + (r.views ?? 0), 0) / arr.length);
+
+    const avgLast7 = avg(last7);
+    const avgPrev7 = avg(prev7);
+
+    let trend = 'unknown';
+    if (avgLast7 !== null && avgPrev7 !== null) {
+      const pct = ((avgLast7 - avgPrev7) / Math.max(avgPrev7, 1)) * 100;
+      if (pct < -50) trend = `CRASHED (${Math.round(pct)}% drop)`;
+      else if (pct < -20) trend = `declining (${Math.round(pct)}%)`;
+      else if (pct > 20) trend = `growing (+${Math.round(pct)}%)`;
+      else trend = 'stable';
+    }
+
+    // Posting frequency
+    const postsLast7Days = accountRows.filter(r => now - new Date(r.date).getTime() < sevenDays).length;
+    const postsPerDay = (postsLast7Days / 7).toFixed(1);
+
+    // Hashtag diversity — count unique hashtag sets in last 10 posts
+    const last10HashtagSets = recentRows.slice(-10).map(r => r.hashtags.trim());
+    const uniqueSets = new Set(last10HashtagSets).size;
+    const hashtagDiversity = last10HashtagSets.length > 0
+      ? `${uniqueSets}/${last10HashtagSets.length} unique sets (${uniqueSets === 1 ? 'IDENTICAL - spam risk' : uniqueSets < 3 ? 'low variety' : 'good variety'})`
+      : 'no data';
+
+    // Recent post list (last 7)
+    const recentList = recentRows.slice(-7).map(r =>
+      `    ${r.date} | ${r.hook} | ${r.views !== null ? r.views + ' views' : 'no data'}`
+    ).join('\n');
+
+    lines.push([
+      `### @${handle}`,
+      `  Posts last 7 days: ${postsLast7Days} (${postsPerDay}/day)`,
+      `  Avg views last 7 days: ${avgLast7 ?? 'no data'}`,
+      `  Avg views prev 7 days: ${avgPrev7 ?? 'no data'}`,
+      `  Trend: ${trend}`,
+      `  Hashtag diversity: ${hashtagDiversity}`,
+      `  Recent posts:`,
+      recentList,
+      '',
+    ].join('\n'));
+  }
+
+  return lines.join('\n');
 }
 
 // Parse the "Format Rankings" markdown table from FORMAT-WINNERS.md
 // into a structured list of the top 6 hooks.
 async function readTopHooksSnapshot(): Promise<unknown[] | null> {
   try {
-    const md = await readFile('data/FORMAT-WINNERS.md', 'utf-8');
+    const md = await readFile(dataPath('FORMAT-WINNERS.md'), 'utf-8');
     const out: { rank: number; hook: string; avg_views: number; avg_save_rate: number; posts: number; last_used: string | null }[] = [];
     const lines = md.split('\n');
     for (const line of lines) {
@@ -331,7 +475,7 @@ async function readTopHooksSnapshot(): Promise<unknown[] | null> {
 
 async function readTopHashtagsSnapshot(): Promise<unknown[] | null> {
   try {
-    const md = await readFile('data/HASHTAG-BANK.md', 'utf-8');
+    const md = await readFile(dataPath('HASHTAG-BANK.md'), 'utf-8');
     // HASHTAG-BANK.md uses `## Section` headers and Markdown tables with
     // columns like: | Hashtag | Video Count | Total Views | Avg Views | ...
     const out: { tag: string; tier: string; line: string }[] = [];
@@ -366,7 +510,7 @@ async function readTopHashtagsSnapshot(): Promise<unknown[] | null> {
 
 async function readTrendingNowSnapshot(): Promise<unknown[] | null> {
   try {
-    const md = await readFile('data/TRENDING-NOW.md', 'utf-8');
+    const md = await readFile(dataPath('TRENDING-NOW.md'), 'utf-8');
     const out: { topic: string }[] = [];
     for (const line of md.split('\n')) {
       const m = line.match(/^[-*]\s+(.+)$/);
@@ -383,21 +527,24 @@ async function readTrendingNowSnapshot(): Promise<unknown[] | null> {
 
 // ─── Main loop body ────────────────────────────────────────────
 
-async function run() {
-  // Per-day guard: launchd ticks the plist hourly so any wake/boot during
-  // the day picks up the work, but we only want to actually do the brain
-  // work once per calendar day. Skip silently if today's already done.
+async function runOneCampaign(campaign: Campaign | null) {
+  // Per-day guard, scoped to this campaign's sentinel
+  // (data/campaigns/<slug>/.last-autoresearch-run). Multi-campaign loops
+  // can therefore re-fire the brain for one campaign without skipping
+  // another that already ran.
   if (await alreadyRanToday()) {
+    log(`[autoresearch] ${campaign?.slug ?? '(default)'} — already ran today, skipping`);
     return;
   }
 
-  log('═══ AUTORESEARCH START ═══');
+  log(`═══ AUTORESEARCH START — ${campaign?.name ?? '(default campaign)'} ═══`);
 
-  // Pull dashboard-managed accounts so account list is current.
-  await loadAccountsIntoConfig();
+  // Load only the accounts on THIS campaign so the brain reasons over
+  // the right account set (suppression detection, target picking, etc.).
+  await loadAccountsIntoConfig(campaign?.slug);
   const activeHandles = config.tiktokAccounts.map(a => a.handle);
   if (activeHandles.length === 0) {
-    log('[autoresearch] no active accounts — exiting');
+    log(`[autoresearch] ${campaign?.slug ?? '(default)'} — no active accounts, skipping`);
     return;
   }
 
@@ -462,8 +609,12 @@ async function run() {
   const topHashtags = await readTopHashtagsSnapshot();
   const trendingNow = await readTrendingNowSnapshot();
 
+  const accountHealth = await buildAccountHealthContext(activeHandles);
+
   const context = [
     `Active accounts: ${activeHandles.join(', ')}`,
+    '',
+    accountHealth,
     '',
     `Recent experiments (last ${history.length}):`,
     history.length === 0
@@ -505,6 +656,12 @@ async function run() {
 
   log(`[autoresearch] decision (${decision.source}): ${decision.variable} | @${decision.account} | ${decision.variant_a} vs ${decision.variant_b}`);
   log(`[autoresearch] hypothesis: ${decision.hypothesis}`);
+  if (decision.action_type === 'strategy_fix') {
+    log(`[autoresearch] ⚠️  STRATEGY FIX NEEDED: ${decision.strategy_notes}`);
+  }
+  if (decision.warnings && decision.warnings.length > 0) {
+    for (const w of decision.warnings) log(`[autoresearch] ⚠️  ${w}`);
+  }
 
   if (!supabase) {
     log('[autoresearch] no Supabase — cannot persist decision');
@@ -531,7 +688,14 @@ async function run() {
       source: decision.source,
       decision_json: decision.raw ?? null,
       outcome: 'recorded',
-      notes: 'Decision recorded; tonight\'s scheduled batches will reflect updated playbook (FORMAT-WINNERS, HASHTAG-BANK, TRENDING-NOW). No cycle_jobs queued.',
+      action_type: decision.action_type ?? 'experiment',
+      warnings: decision.warnings ?? [],
+      strategy_notes: decision.strategy_notes ?? null,
+      notes: [
+        'Decision recorded; tonight\'s scheduled batches will reflect updated playbook.',
+        ...(decision.warnings && decision.warnings.length > 0 ? [`Warnings: ${decision.warnings.join(' | ')}`] : []),
+        ...(decision.strategy_notes ? [`Strategy fix needed: ${decision.strategy_notes}`] : []),
+      ].join('\n'),
       // Snapshot what the brain learned today so the dashboard can render
       // it without re-parsing markdown later.
       posts_measured: postsMeasured,
@@ -541,6 +705,9 @@ async function run() {
       winners_declared: winnersDeclared,
       losers_dropped: losersDropped,
       phase_durations_ms: { ...phaseDurations, hypothesize: Date.now() - phase3Start },
+      // Tag the run with its campaign so the per-campaign Brain tab
+      // (Phase 11) sees only its own runs.
+      campaign_id: campaign?.id ?? null,
     })
     .select('id')
     .single();
@@ -555,7 +722,65 @@ async function run() {
   log('═══ AUTORESEARCH DONE ═══');
 }
 
-run().catch(err => {
+/**
+ * Outer entry point — iterates active campaigns. Each iteration:
+ *   1. setCampaignSlug() so dataPath() resolves to the campaign's dir
+ *   2. resetCampaignCache() so getCampaign() re-reads
+ *   3. runOneCampaign(campaign)
+ *
+ * --campaign=<slug> overrides the iteration to a single campaign
+ * (used by the dashboard's per-campaign refresh button when it spawns
+ * autoresearch on demand). Without it, the cron runs every active
+ * campaign's brain in turn.
+ *
+ * Per-campaign sentinels (data/campaigns/<slug>/.last-autoresearch-run)
+ * mean each campaign self-guards against double-running on the same
+ * calendar day, regardless of how many times the launchd plist fires.
+ */
+async function main(): Promise<void> {
+  const campaignArg = process.argv.find((a) => a.startsWith('--campaign='));
+  const overrideSlug = campaignArg?.split('=')[1]?.trim() || null;
+
+  // Honour an autoresearch-disabled flag on the campaign — useful when
+  // the operator wants the dashboard around but doesn't want the AI brain
+  // designing experiments on this app.
+  let toRun = (await listActiveCampaigns()).filter((c) => c.autoresearch_enabled);
+
+  if (overrideSlug) {
+    const single = toRun.find((c) => c.slug === overrideSlug);
+    if (!single) {
+      log(`[autoresearch] --campaign=${overrideSlug} not found in active+autoresearch_enabled campaigns; exiting.`);
+      return;
+    }
+    toRun = [single];
+  }
+
+  if (toRun.length === 0) {
+    // Defensive fallback: keep the legacy single-campaign behavior so the
+    // cron never silent-no-ops on the first deploy.
+    log('[autoresearch] no campaigns with autoresearch_enabled; falling back to default slug.');
+    setCampaignSlug('minutewise');
+    resetCampaignCache();
+    await runOneCampaign(null);
+    return;
+  }
+
+  log(`[autoresearch] iterating ${toRun.length} campaign(s): ${toRun.map((c) => c.slug).join(', ')}`);
+  for (const c of toRun) {
+    setCampaignSlug(c.slug);
+    resetCampaignCache();
+    try {
+      await runOneCampaign(c);
+    } catch (err) {
+      // One campaign crashing must not abort the others — the launchd
+      // plist fires hourly anyway, but a transient failure here would
+      // otherwise leave a sentinel-less campaign skipped for the day.
+      log(`[autoresearch] campaign ${c.slug} crashed: ${err}`);
+    }
+  }
+}
+
+main().catch(err => {
   console.error('[autoresearch] unexpected:', err);
   process.exit(1);
 });

@@ -24,7 +24,9 @@ import {
   ArrowDown,
   Layers,
   Info,
+  AlertTriangle,
 } from "lucide-react";
+import Link from "next/link";
 import type { ManagedAccount } from "@/components/account-manager";
 
 export interface CycleBatch {
@@ -38,8 +40,20 @@ export interface CycleBatch {
   posts_per_account: number;
   skip_research: boolean;
   schedule_offset_hours: number;
+  /**
+   * Gap (in minutes) between consecutive posts within this batch run.
+   * 0 = all posts go at the same scheduled time (legacy behaviour);
+   * 120 = post N goes 2 hours after post N-1; etc. Applied
+   * post-by-post in main.ts → postAllDrafts before each Blotato submit.
+   */
+  post_interval_minutes: number;
   enabled: boolean;
   last_run_date: string | null;
+  /** Phase 17 multi-campaign — every batch belongs to exactly one
+   *  campaign. Older rows from the pre-multi-campaign era can be null;
+   *  the engine refuses to fire those, and the global /settings/schedule
+   *  surface flags them as orphans for cleanup. */
+  campaign_id: string | null;
 }
 
 const FLOW_OPTIONS = [
@@ -62,6 +76,7 @@ const BLANK_DRAFT: BatchDraft = {
   posts_per_account: 1,
   skip_research: false,
   schedule_offset_hours: 0,
+  post_interval_minutes: 0,
   enabled: true,
 };
 
@@ -74,6 +89,7 @@ interface BatchDraft {
   posts_per_account: number;
   skip_research: boolean;
   schedule_offset_hours: number;
+  post_interval_minutes: number;
   enabled: boolean;
 }
 
@@ -81,11 +97,44 @@ export function BatchManager({
   initial,
   accounts,
   isAdmin,
+  campaignId,
+  campaignSlug,
+  campaignFlow,
 }: {
   initial: CycleBatch[];
   accounts: ManagedAccount[];
   isAdmin: boolean;
+  /**
+   * When set (campaign-scoped Schedule tab), every newly created batch
+   * has its campaign_id pre-populated. Existing batches are not
+   * mutated. The global /settings/schedule call leaves this undefined
+   * which preserves prior behavior.
+   */
+  campaignId?: string | null;
+  /**
+   * Campaign slug — used to link the operator straight to the Accounts
+   * tab when batch creation is blocked because the campaign has zero
+   * accounts attached. Optional so the global /settings/schedule call
+   * (no campaign scope) keeps working.
+   */
+  campaignSlug?: string;
+  /**
+   * The campaign's selected flow (single-flow per campaign). Locks
+   * batch flow selection — every new batch automatically uses this
+   * flow, the operator can't pick something different. Undefined for
+   * the legacy global /settings/schedule call (which can still touch
+   * orphaned batches across campaigns).
+   */
+  campaignFlow?: "photorealistic" | "animated" | "emoji_overlay";
 }) {
+  // Hard guard: a batch can't post if the campaign has zero accounts,
+  // and the engine refuses to run such a cycle (account_loader + main.ts
+  // both fail loudly). Mirror that contract in the UI by blocking
+  // creation entirely when no accounts exist on this campaign.
+  // campaignId is set on the campaign-scoped Schedule tab; the global
+  // /settings/schedule call leaves it undefined and we don't apply the
+  // block there (legacy global mode allows global-scope batches).
+  const accountsBlocked = campaignId != null && accounts.length === 0;
   const router = useRouter();
   const [batches, setBatches] = useState<CycleBatch[]>(initial);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -95,8 +144,17 @@ export function BatchManager({
   const [error, setError] = useState<string | null>(null);
   const [infoOpenId, setInfoOpenId] = useState<string | null>(null);
 
+  // Seed a fresh draft. When the host page provides campaignFlow,
+  // every new batch's flow array starts (and stays) locked to that
+  // single campaign-default flow.
+  function freshDraft(): BatchDraft {
+    return campaignFlow
+      ? { ...BLANK_DRAFT, flows: [campaignFlow] }
+      : { ...BLANK_DRAFT };
+  }
+
   function startCreate() {
-    setDraft({ ...BLANK_DRAFT });
+    setDraft(freshDraft());
     setEditingId(null);
     setCreating(true);
     setError(null);
@@ -112,6 +170,7 @@ export function BatchManager({
       posts_per_account: b.posts_per_account,
       skip_research: b.skip_research,
       schedule_offset_hours: b.schedule_offset_hours,
+      post_interval_minutes: b.post_interval_minutes ?? 0,
       enabled: b.enabled,
     });
     setEditingId(b.id);
@@ -127,18 +186,34 @@ export function BatchManager({
 
   async function handleSave() {
     setError(null);
+    // Belt-and-suspenders for the disabled-button: refuse the save
+    // server-side too, in case anyone manually re-enables the button
+    // via devtools or hits the form via an old tab.
+    if (creating && accountsBlocked) {
+      setError("This campaign has no accounts attached — add an account before creating a batch.");
+      return;
+    }
     if (!draft.label.trim()) { setError("Label is required."); return; }
     if (draft.flows.length === 0) { setError("Pick at least one flow."); return; }
     if (draft.posts_per_account < 1) { setError("Posts per account must be ≥ 1."); return; }
+    // We no longer require explicit account selection. account_handles is
+    // saved empty, which the scheduler interprets as "every active account
+    // on this campaign". Now that accounts are campaign-scoped (no global
+    // pool), that fan-out is exactly what the operator wants by default —
+    // the legacy Phase-17b guard against accidental cross-campaign blast
+    // is moot.
 
     setBusy(true);
     const supabase = createBrowserSupabase();
 
     if (creating) {
       const order_index = batches.length > 0 ? Math.max(...batches.map((b) => b.order_index)) + 1 : 1;
+      const insertPayload = campaignId
+        ? { ...draft, order_index, campaign_id: campaignId }
+        : { ...draft, order_index };
       const { data, error: err } = await supabase
         .from("cycle_batches")
-        .insert({ ...draft, order_index })
+        .insert(insertPayload)
         .select()
         .single<CycleBatch>();
       if (err || !data) { setBusy(false); setError(err?.message ?? "Insert failed"); return; }
@@ -218,12 +293,45 @@ export function BatchManager({
             </p>
           </div>
           {isAdmin && !formOpen && (
-            <Button onClick={startCreate}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Batch
-            </Button>
+            accountsBlocked ? (
+              <Button
+                disabled
+                title="Attach an account to this campaign first"
+                className="opacity-60 cursor-not-allowed"
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                Add Batch
+              </Button>
+            ) : (
+              <Button onClick={startCreate}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Add Batch
+              </Button>
+            )
           )}
         </div>
+
+        {accountsBlocked && (
+          <div className="rounded-lg bg-destructive/10 border border-destructive/40 px-4 py-3 text-sm text-destructive flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold">Cannot create a batch yet.</p>
+              <p className="mt-0.5 text-destructive/90">
+                This campaign has no accounts attached. A scheduled batch posts
+                only to its own campaign&apos;s accounts, so creation is
+                blocked until at least one account is added.
+              </p>
+              {campaignSlug && (
+                <Link
+                  href={`/campaigns/${campaignSlug}/accounts`}
+                  className="inline-block mt-2 font-medium underline-offset-4 hover:underline"
+                >
+                  Add an account →
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive flex items-center justify-between">
@@ -238,11 +346,12 @@ export function BatchManager({
           <BatchForm
             draft={draft}
             setDraft={setDraft}
-            accounts={accounts}
+            campaignAccountCount={accounts.length}
             onSave={handleSave}
             onCancel={cancelForm}
             busy={busy}
             isCreate={creating}
+            campaignFlow={campaignFlow}
           />
         )}
 
@@ -349,8 +458,20 @@ export function BatchManager({
 
               {isInfoOpen && (
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  <TableCell colSpan={9} className="py-4">
-                    <BatchInfoPanel batch={b} />
+                  {/* The wrapper div uses sticky+left:0 to anchor the
+                      panel to the left edge of the visible viewport
+                      regardless of the table's horizontal scroll, plus
+                      a calc-based max-width so the panel never grows
+                      beyond the dashboard content area and pushes the
+                      table even wider. Without this, the colSpan cell
+                      auto-expands to fit the panel's natural width and
+                      the info text overflowed/overlapped its neighbours. */}
+                  <TableCell colSpan={9} className="p-0">
+                    <div className="sticky left-0 w-full">
+                      <div className="px-4 py-4 max-w-[min(64rem,calc(100vw-2rem))]">
+                        <BatchInfoPanel batch={b} />
+                      </div>
+                    </div>
                   </TableCell>
                 </TableRow>
               )}
@@ -371,29 +492,29 @@ export function BatchManager({
 function BatchForm({
   draft,
   setDraft,
-  accounts,
+  campaignAccountCount,
   onSave,
   onCancel,
   busy,
   isCreate,
+  campaignFlow,
 }: {
   draft: BatchDraft;
   setDraft: (d: BatchDraft) => void;
-  accounts: ManagedAccount[];
+  /** Number of accounts on the campaign; used only for the schedule preview's
+   *  total-posts estimate. The batch itself doesn't store this — it gets
+   *  resolved at fire time by the scheduler. */
+  campaignAccountCount: number;
   onSave: () => void;
   onCancel: () => void;
   busy: boolean;
   isCreate: boolean;
+  campaignFlow?: "photorealistic" | "animated" | "emoji_overlay";
 }) {
   function toggleFlow(flow: string) {
     const set = new Set(draft.flows);
     if (set.has(flow)) set.delete(flow); else set.add(flow);
     setDraft({ ...draft, flows: Array.from(set) });
-  }
-  function toggleAccount(handle: string) {
-    const set = new Set(draft.account_handles);
-    if (set.has(handle)) set.delete(handle); else set.add(handle);
-    setDraft({ ...draft, account_handles: Array.from(set) });
   }
 
   return (
@@ -410,59 +531,57 @@ function BatchForm({
           </Field>
         </div>
 
-        <div>
-          <FieldLabel label="Flows" hint="Pick one or more. Multiple flows in one batch run sequentially." />
-          <div className="flex flex-wrap gap-2 mt-1.5">
-            {FLOW_OPTIONS.map((opt) => {
-              const active = draft.flows.includes(opt.value);
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => toggleFlow(opt.value)}
-                  className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                    active
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background border-border/50 hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
+        {/* Flow — locked to the campaign's selected flow when this
+            manager is mounted in campaign scope. Falls back to the
+            multi-flow picker only in the legacy global /settings/schedule
+            view where there's no single campaign to defer to. */}
+        {campaignFlow ? (
+          <div>
+            <FieldLabel
+              label="Flow"
+              hint="Locked to this campaign's flow. To change, edit the campaign."
+            />
+            <div className="mt-1.5 inline-flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-1.5">
+              <span className="text-sm font-medium">{describeFlow(campaignFlow)}</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                campaign default
+              </span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            <FieldLabel label="Flows" hint="No campaign scope — pick one or more for this orphaned batch." />
+            <div className="flex flex-wrap gap-2 mt-1.5">
+              {FLOW_OPTIONS.map((opt) => {
+                const active = draft.flows.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => toggleFlow(opt.value)}
+                    className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                      active
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background border-border/50 hover:bg-muted"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-        <div>
-          <FieldLabel label="Accounts" hint="Empty = all active accounts. Pick a subset to limit this batch." />
-          <div className="flex flex-wrap gap-2 mt-1.5">
-            {accounts.length === 0 && (
-              <p className="text-xs text-muted-foreground">No active accounts. Add some in the Accounts page.</p>
-            )}
-            {accounts.map((a) => {
-              const active = draft.account_handles.includes(a.handle);
-              return (
-                <button
-                  key={a.handle}
-                  type="button"
-                  onClick={() => toggleAccount(a.handle)}
-                  className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                    active
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background border-border/50 hover:bg-muted"
-                  }`}
-                >
-                  @{a.handle}
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-2">
-            {draft.account_handles.length === 0
-              ? "→ Will post to ALL active accounts."
-              : `→ Will post to ${draft.account_handles.length} selected account${draft.account_handles.length !== 1 ? "s" : ""}.`}
-          </p>
-        </div>
+        {/* Accounts: no picker. Batches inherit the campaign's accounts
+            implicitly — account_handles stays empty, and the scheduler
+            expands that to "every active account on this campaign" at
+            fire time. Add/remove accounts from the campaign's Accounts
+            tab if you want to scope which handles the batch hits. */}
+        <p className="text-[11px] text-muted-foreground -mt-2">
+          This batch will post to every active account on this campaign at fire time.
+          Manage accounts on the Accounts tab.
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Posts per account" hint="Generate N posts per account in this batch">
@@ -494,6 +613,63 @@ function BatchForm({
           </Field>
         </div>
 
+        {/* Spacing between posts in this batch. Different from
+            schedule_offset_hours: that shifts ALL posts uniformly,
+            this staggers them. Both compose — offset 2h + interval
+            1h on a 3-post batch → posts at +2h, +3h, +4h. */}
+        <Field
+          label="Spacing between posts"
+          hint="Gap between each post within this batch. 0 = all posts go at the same time."
+        >
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { mins: 0,    label: "Same time" },
+                { mins: 30,   label: "+30 min" },
+                { mins: 60,   label: "+1 hr" },
+                { mins: 120,  label: "+2 hr" },
+                { mins: 180,  label: "+3 hr" },
+                { mins: 240,  label: "+4 hr" },
+                { mins: 360,  label: "+6 hr" },
+              ].map((p) => (
+                <button
+                  key={p.mins}
+                  type="button"
+                  onClick={() => setDraft({ ...draft, post_interval_minutes: p.mins })}
+                  className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                    draft.post_interval_minutes === p.mins
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-input hover:bg-muted/60"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  step={5}
+                  value={draft.post_interval_minutes}
+                  onChange={(e) =>
+                    setDraft({ ...draft, post_interval_minutes: Math.max(0, parseInt(e.target.value) || 0) })
+                  }
+                  className="h-8 w-24 text-xs"
+                />
+                <span className="text-[11px] text-muted-foreground">min</span>
+              </div>
+            </div>
+            <SchedulePreview
+              runTime={draft.run_time}
+              offsetHours={draft.schedule_offset_hours}
+              intervalMinutes={draft.post_interval_minutes}
+              postsPerAccount={draft.posts_per_account}
+              accountCount={Math.max(1, campaignAccountCount)}
+            />
+          </div>
+        </Field>
+
         <div className="flex items-center gap-6 border-t border-border/50 pt-4">
           <Toggle
             label="Skip research"
@@ -511,7 +687,21 @@ function BatchForm({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button>
-          <Button onClick={onSave} disabled={busy}>
+          <Button
+            onClick={onSave}
+            disabled={
+              busy ||
+              !draft.label.trim() ||
+              draft.flows.length === 0
+            }
+            title={
+              draft.flows.length === 0
+                ? "Pick at least one flow first"
+                : !draft.label.trim()
+                ? "Label is required"
+                : undefined
+            }
+          >
             {busy ? "Saving…" : isCreate ? "Add Batch" : "Save Changes"}
           </Button>
         </div>
@@ -619,67 +809,45 @@ function BatchInfoPanel({ batch: b }: { batch: CycleBatch }) {
   const pathSummary = describePath(b.path, b.schedule_offset_hours);
   const nextRun = describeNextRun(b.run_time, b.last_run_date);
 
+  // Each section is rendered as a labelled row in a single column. The
+  // earlier two-column md:grid-cols-2 layout collided when text in one
+  // column overflowed into the next — table-cell auto-sizing made the
+  // gap unreliable. A single vertical column wraps cleanly at any
+  // viewport width and reads top-to-bottom.
   return (
-    <div className="space-y-4 max-w-3xl text-sm min-w-0">
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-          What this batch does
-        </p>
-        <p className="leading-relaxed break-words">
-          At <strong className="font-mono">{b.run_time}</strong>{" "}
-          (in the timezone set above), runs <strong>{flowsList}</strong> for{" "}
-          <strong>{accountSummary}</strong>, generating{" "}
-          <strong>{b.posts_per_account} post{b.posts_per_account === 1 ? "" : "s"} per account per flow</strong>{" "}
-          {b.account_handles.length === 0 ? "" : `(roughly ${totalPosts} post${totalPosts === 1 ? "" : "s"} total per fire)`}
-          . Posts will <strong>{pathSummary}</strong>.
-        </p>
-      </div>
+    <div className="text-sm w-full min-w-0 break-words space-y-4">
+      <Section label="What this batch does">
+        At <strong className="font-mono">{b.run_time}</strong>{" "}
+        (in the timezone set above), runs <strong>{flowsList}</strong> for{" "}
+        <strong>{accountSummary}</strong>, generating{" "}
+        <strong>{b.posts_per_account} post{b.posts_per_account === 1 ? "" : "s"} per account per flow</strong>
+        {b.account_handles.length === 0 ? "" : ` (roughly ${totalPosts} post${totalPosts === 1 ? "" : "s"} total per fire)`}
+        . Posts will <strong>{pathSummary}</strong>.
+      </Section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-            Schedule
-          </p>
-          <p className="leading-relaxed text-muted-foreground break-words">{nextRun}</p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-            Status
-          </p>
-          <p className="leading-relaxed text-muted-foreground break-words">
-            {b.enabled
-              ? "Active — the scheduler will pick this up at the next 5-min tick."
-              : "Paused — won't fire until you toggle it back on."}
-          </p>
-        </div>
-      </div>
+      <Section label="Schedule" muted>{nextRun}</Section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-            Research
-          </p>
-          <p className="leading-relaxed text-muted-foreground break-words">
-            {b.skip_research
-              ? "Skips fresh Virlo trend pull (saves credits). Reuses whatever the previous batch already pulled today."
-              : "Pulls fresh Virlo trends before generating content."}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-            Order
-          </p>
-          <p className="leading-relaxed text-muted-foreground break-words">
-            Position #{b.order_index} in the batch list. Use ↑/↓ to change. Lower numbers fire first when multiple batches are due simultaneously.
-          </p>
-        </div>
-      </div>
+      <Section label="Status" muted>
+        {b.enabled
+          ? "Active — the scheduler will pick this up at the next 5-min tick."
+          : "Paused — won't fire until you toggle it back on."}
+      </Section>
+
+      <Section label="Research" muted>
+        {b.skip_research
+          ? "Skips fresh Virlo trend pull (saves credits). Reuses whatever the previous batch already pulled today."
+          : "Pulls fresh Virlo trends before generating content."}
+      </Section>
+
+      <Section label="Order" muted>
+        Position #{b.order_index} in the batch list. Use ↑/↓ to change. Lower numbers fire first when multiple batches are due simultaneously.
+      </Section>
 
       <div className="border-t border-border/40 pt-3">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
           Equivalent CLI command
         </p>
-        <code className="block bg-background border border-border/40 rounded p-2 text-[11px] font-mono break-all">
+        <code className="block bg-background border border-border/40 rounded p-2 text-[11px] font-mono break-all whitespace-pre-wrap">
           {buildCliPreview(b)}
         </code>
         <p className="text-[11px] text-muted-foreground mt-1">
@@ -690,6 +858,99 @@ function BatchInfoPanel({ batch: b }: { batch: CycleBatch }) {
       {b.last_run_date && (
         <p className="text-[11px] text-muted-foreground border-t border-border/40 pt-3">
           Last run: <span className="font-mono">{b.last_run_date}</span>. The Mac records this date so the same batch won&apos;t double-fire on the same day.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One labelled paragraph in the BatchInfoPanel. Stacks label-above-text
+ * with consistent spacing so all sections line up vertically. `muted`
+ * dims the body text for the secondary metadata sections (Schedule,
+ * Status, Research, Order); the primary "What this batch does" line
+ * uses default foreground colour.
+ */
+function Section({
+  label,
+  children,
+  muted,
+}: {
+  label: string;
+  children: React.ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+        {label}
+      </p>
+      <p className={`leading-relaxed break-words ${muted ? "text-muted-foreground" : ""}`}>
+        {children}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Live "when will each post go live" preview. Computes the same per-
+ * post schedule the runner will produce, so the operator can verify
+ * the spacing before saving. Pure formatting — no side effects.
+ *
+ *   posts_per_account × account_count × accounts shown … but the user
+ *   is staggering per-cycle-run, so we display PER-ACCOUNT timing
+ *   (each account gets the same staggered schedule independently).
+ */
+function SchedulePreview({
+  runTime,
+  offsetHours,
+  intervalMinutes,
+  postsPerAccount,
+  accountCount,
+}: {
+  runTime: string;          // "HH:MM"
+  offsetHours: number;
+  intervalMinutes: number;
+  postsPerAccount: number;
+  accountCount: number;
+}) {
+  if (intervalMinutes === 0 && offsetHours === 0) {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        All {postsPerAccount} post{postsPerAccount === 1 ? "" : "s"} per account go live at {runTime}.
+      </p>
+    );
+  }
+
+  // Build a base date at today + runTime, then add offset + interval
+  // per post. Display-only — no time zone math, the runner handles
+  // that with the schedule.timezone column.
+  const [hh, mm] = runTime.split(":").map((s) => parseInt(s, 10) || 0);
+  const base = new Date();
+  base.setHours(hh, mm, 0, 0);
+  base.setTime(base.getTime() + offsetHours * 3600 * 1000);
+
+  const slots = Array.from({ length: Math.max(1, postsPerAccount) }, (_, i) => {
+    const t = new Date(base.getTime() + i * intervalMinutes * 60 * 1000);
+    return t.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  });
+
+  return (
+    <div className="rounded-md border border-border/40 bg-muted/30 px-3 py-2 text-xs">
+      <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium mb-1">
+        Per-account schedule
+      </p>
+      <p className="font-mono break-words">
+        {slots.map((t, i) => (
+          <span key={i}>
+            {i > 0 && <span className="text-muted-foreground"> → </span>}
+            <span className="font-semibold">{t}</span>
+          </span>
+        ))}
+      </p>
+      {accountCount > 1 && (
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Each of {accountCount} account{accountCount === 1 ? "" : "s"} gets this same staggered schedule independently.
         </p>
       )}
     </div>
@@ -707,5 +968,6 @@ function buildCliPreview(b: CycleBatch): string {
   if (b.posts_per_account > 1) parts.push(`--posts-per-flow=${b.posts_per_account}`);
   if (b.skip_research) parts.push("--skip-research");
   if (b.schedule_offset_hours > 0) parts.push(`--delay=${b.schedule_offset_hours * 60}`);
+  if (b.post_interval_minutes > 0) parts.push(`--post-interval=${b.post_interval_minutes}`);
   return parts.join(" ");
 }

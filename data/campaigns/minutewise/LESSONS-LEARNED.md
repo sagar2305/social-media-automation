@@ -3,8 +3,8 @@
 _Updated: 2026-04-14 · Based on fresh ScrapeCreators data from @yournotetaker (10 posts) + @miniutewise_thomas (10 posts)_
 
 ## Rolling Dashboard
-- 7-day avg save rate: 0.72%
-- 7-day avg views: 144
+- 7-day avg save rate: 0.11%
+- 7-day avg views: 115
 - Best hook style: question
 - Best posting day/time: _analyzing_
 

@@ -43,9 +43,15 @@ export default function LoginPage() {
             MinuteWise
           </h1>
           <p className="text-muted-foreground mt-2">
-            Sign in to your dashboard
+            Staff dashboard sign in
           </p>
         </div>
+        <Link
+          href="/welcome"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          ← Wrong portal? Back to chooser
+        </Link>
 
         <Card>
           <CardContent className="pt-6">

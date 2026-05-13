@@ -1,155 +1,126 @@
+/**
+ * /share/[token] — public, no-login view of a campaign or account set.
+ *
+ * Phase 12: dispatches on share_links.link_type so a single token URL
+ * can render three different presentations:
+ *   - 'dashboard' (default; original behaviour) — KPI grid + Daily Views chart
+ *   - 'gallery'                                 — visual grid of every post
+ *   - 'overview'                                — campaign brief / strategy view
+ *
+ * The link can be scoped two ways:
+ *   - share_links.campaign_id set → filter posts by campaign_id
+ *   - share_links.accounts[]  set → filter posts by account handle
+ * (both can coexist; campaign filter takes precedence when present.)
+ */
+
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import { Card, CardContent } from "@/components/ui/card";
-import { ViewsChart } from "@/components/views-chart";
-import { Badge } from "@/components/ui/badge";
+import type { Campaign } from "@/lib/types";
+import {
+  DashboardView,
+  GalleryView,
+  OverviewView,
+  type SharedPost,
+  type SharedAccountStat,
+} from "./share-views";
 
 export const revalidate = 300;
 
-export default async function SharedDashboardPage(props: {
+interface ShareLinkRow {
+  id: string;
+  token: string;
+  title: string;
+  accounts: string[] | null;
+  campaign_id: string | null;
+  link_type: string | null;
+  expires_at: string | null;
+}
+
+export default async function SharedPage(props: {
   params: Promise<{ token: string }>;
 }) {
   const { token } = await props.params;
-  const supabase = await createClient();
+  const sb = await createClient();
 
-  // Look up the share link
-  const { data: link } = await supabase
+  const { data: link } = await sb
     .from("share_links")
-    .select("*")
+    .select("id, token, title, accounts, campaign_id, link_type, expires_at")
     .eq("token", token)
-    .single();
+    .maybeSingle<ShareLinkRow>();
 
   if (!link) notFound();
 
-  // Check expiry
   if (link.expires_at && new Date(link.expires_at) < new Date()) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <p className="text-muted-foreground text-lg">
-          This shared dashboard link has expired.
+          This shared link has expired.
         </p>
       </div>
     );
   }
 
-  const accountFilter = link.accounts?.length > 0 ? link.accounts : null;
+  // Resolve the campaign first so we can show its brand on the public
+  // header even for legacy links that lack a campaign_id.
+  let campaign: Campaign | null = null;
+  if (link.campaign_id) {
+    const { data } = await sb
+      .from("campaigns")
+      .select("*")
+      .eq("id", link.campaign_id)
+      .maybeSingle<Campaign>();
+    campaign = data ?? null;
+  }
 
-  // Fetch posts
-  let postsQuery = supabase
+  // Build the posts query — campaign filter wins; account filter is a
+  // legacy fallback for share links created before campaigns existed.
+  let postsQuery = sb
     .from("posts")
-    .select("*")
+    .select("id, date, hook_style, account, views, likes, saves, save_rate, tiktok_url, status")
     .eq("status", "published")
     .order("date", { ascending: false })
-    .limit(200);
+    .limit(500);
 
-  if (accountFilter) {
-    postsQuery = postsQuery.in("account", accountFilter);
+  if (link.campaign_id) {
+    postsQuery = postsQuery.eq("campaign_id", link.campaign_id);
+  } else if (link.accounts && link.accounts.length > 0) {
+    postsQuery = postsQuery.in("account", link.accounts);
   }
 
   const [postsRes, statsRes] = await Promise.all([
     postsQuery,
-    supabase
-      .from("account_stats")
-      .select("*")
+    sb.from("account_stats")
+      .select("account, followers, date")
       .order("date", { ascending: false })
       .limit(50),
   ]);
 
-  const posts = postsRes.data ?? [];
-  const stats = statsRes.data ?? [];
+  const posts: SharedPost[] = (postsRes.data ?? []) as SharedPost[];
 
-  // Filter stats by accounts if needed
-  const filteredStats = accountFilter
-    ? stats.filter((s) => accountFilter.includes(s.account))
-    : stats;
-
-  // Aggregate
-  const totalViews = posts.reduce((s, p) => s + (p.views || 0), 0);
-  const totalLikes = posts.reduce((s, p) => s + (p.likes || 0), 0);
-  const totalSaves = posts.reduce((s, p) => s + (p.saves || 0), 0);
-  const avgSaveRate =
-    posts.length > 0
-      ? (
-          posts.reduce((s, p) => s + (Number(p.save_rate) || 0), 0) /
-          posts.length
-        ).toFixed(2)
-      : "0";
-
-  const latestStats = new Map<string, (typeof filteredStats)[0]>();
-  for (const s of filteredStats) {
-    if (!latestStats.has(s.account)) latestStats.set(s.account, s);
+  // Dedupe account stats to the most recent per account handle.
+  const latest = new Map<string, SharedAccountStat>();
+  const accountFilter =
+    link.accounts && link.accounts.length > 0 ? link.accounts : null;
+  for (const s of statsRes.data ?? []) {
+    if (latest.has(s.account)) continue;
+    if (accountFilter && !accountFilter.includes(s.account)) continue;
+    latest.set(s.account, { account: s.account, followers: s.followers ?? 0 });
   }
-  const totalFollowers = Array.from(latestStats.values()).reduce(
-    (s, st) => s + (st.followers || 0),
-    0
-  );
+  const accountStats = Array.from(latest.values());
 
-  // Chart
-  const viewsByDate = new Map<string, number>();
-  for (const p of posts) {
-    if (p.date) {
-      viewsByDate.set(p.date, (viewsByDate.get(p.date) || 0) + (p.views || 0));
-    }
-  }
-  const chartData = Array.from(viewsByDate.entries())
-    .map(([date, views]) => ({ date, views }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const linkType = (link.link_type ?? "dashboard") as
+    | "dashboard"
+    | "gallery"
+    | "overview";
 
-  const kpis = [
-    { label: "Total Views", value: totalViews.toLocaleString() },
-    { label: "Total Likes", value: totalLikes.toLocaleString() },
-    { label: "Total Saves", value: totalSaves.toLocaleString() },
-    { label: "Avg Save %", value: `${avgSaveRate}%` },
-    { label: "Posts", value: String(posts.length) },
-    { label: "Followers", value: totalFollowers.toLocaleString() },
-  ];
+  const props2 = {
+    title: link.title,
+    campaign,
+    posts,
+    accountStats,
+  };
 
-  return (
-    <div className="max-w-6xl mx-auto px-6 py-10 space-y-10">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-lg font-semibold tracking-tight">
-              MinuteWise
-            </span>
-            <Badge variant="secondary">Shared</Badge>
-          </div>
-          <h1 className="text-4xl font-semibold tracking-tight">
-            {link.title}
-          </h1>
-          {accountFilter && (
-            <p className="text-muted-foreground mt-1">
-              {accountFilter.map((a: string) => `@${a}`).join(", ")}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.label}>
-            <CardContent className="pt-5 pb-4">
-              <p className="text-xs text-muted-foreground font-medium">
-                {kpi.label}
-              </p>
-              <p className="text-2xl font-semibold tracking-tight mt-1">
-                {kpi.value}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {chartData.length > 1 && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm font-medium text-muted-foreground mb-4">
-              Views over time
-            </p>
-            <ViewsChart data={chartData} />
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+  if (linkType === "gallery") return <GalleryView {...props2} />;
+  if (linkType === "overview") return <OverviewView {...props2} />;
+  return <DashboardView {...props2} />;
 }

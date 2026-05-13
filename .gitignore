@@ -9,10 +9,13 @@ dist/
 # macOS junk
 .DS_Store
 
-# Generated content (large, regenerated each cycle)
+# Generated content (large, regenerated each cycle).
+# Anchor with a leading slash so the pattern matches ONLY the repo-root
+# `posts/` artifact directory — not arbitrary `posts/` subdirectories
+# (e.g. dashboard/src/app/(dashboard)/posts and campaign sub-tab pages).
 assets/slides/
-posts/
-posts/raw_*.png
+/posts/
+/posts/raw_*.png
 
 # Per-cycle logs (tens of MB over time)
 data/cycle-logs/

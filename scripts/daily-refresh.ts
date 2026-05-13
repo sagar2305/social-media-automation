@@ -18,9 +18,13 @@ import { optimize } from './optimizer.js';
 import { runResearch } from './fetch_trends.js';
 import { log } from './api-client.js';
 import { syncToSupabase } from './sync-to-supabase.js';
-import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
-import { config } from '../config/config.js';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { dataPath, setCampaignSlug } from './lib/campaign-paths.js';
+import { listActiveCampaigns, resetCampaignCache } from './lib/campaigns.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface RefreshResult {
   phase: string;
@@ -43,27 +47,43 @@ async function timedPhase(
 }
 
 async function appendRefreshLog(results: RefreshResult[]): Promise<void> {
-  const logPath = join(config.paths.memory, 'REFRESH-LOG.md');
+  // REFRESH-LOG is pipeline-level (data/REFRESH-LOG.md) — same path
+  // regardless of which campaigns ran in this pass.
+  const logPath = dataPath('REFRESH-LOG.md');
 
   let existing = '';
   try {
     existing = await readFile(logPath, 'utf-8');
   } catch {
-    existing = `# Daily Refresh Log\n\n_Automated daily data updates. Most recent first._\n\n| Date | Analytics | Optimizer | Research | Duration |\n|------|-----------|-----------|----------|----------|\n`;
+    existing = `# Daily Refresh Log\n\n_Automated daily data updates. Most recent first._\n\n| Date | Campaigns | Analytics | Optimizer | Research | Duration |\n|------|-----------|-----------|-----------|----------|----------|\n`;
   }
 
   const date = new Date().toISOString().slice(0, 16).replace('T', ' ');
   const totalMs = results.reduce((s, r) => s + r.durationMs, 0);
   const totalSec = Math.round(totalMs / 1000);
 
-  const statusEmoji = (r: RefreshResult) =>
-    r.status === 'success' ? 'OK' : r.status === 'skipped' ? 'SKIP' : 'FAIL';
+  // Tally per-phase status across all campaigns. Phase name format is
+  // 'Analytics:<slug>' / 'Optimizer:<slug>' / 'Research:<slug>'.
+  const tally = (prefix: string): string => {
+    const matched = results.filter((r) => r.phase.startsWith(`${prefix}:`));
+    if (matched.length === 0) return '—';
+    const ok = matched.filter((r) => r.status === 'success').length;
+    const skip = matched.filter((r) => r.status === 'skipped').length;
+    const fail = matched.filter((r) => r.status === 'failed').length;
+    if (fail === 0 && skip === 0) return `${ok}/${matched.length} OK`;
+    if (ok === matched.length) return `${ok} OK`;
+    return `${ok} OK, ${skip} SKIP, ${fail} FAIL`;
+  };
 
-  const analyticsResult = results.find((r) => r.phase === 'Analytics');
-  const optimizerResult = results.find((r) => r.phase === 'Optimizer');
-  const researchResult = results.find((r) => r.phase === 'Research');
+  // Distinct slugs touched this pass.
+  const slugs = new Set<string>();
+  for (const r of results) {
+    const slug = r.phase.split(':')[1];
+    if (slug) slugs.add(slug);
+  }
+  const slugList = Array.from(slugs).join(', ') || '—';
 
-  const row = `| ${date} | ${statusEmoji(analyticsResult!)} | ${statusEmoji(optimizerResult!)} | ${statusEmoji(researchResult!)} | ${totalSec}s |`;
+  const row = `| ${date} | ${slugList} | ${tally('Analytics')} | ${tally('Optimizer')} | ${tally('Research')} | ${totalSec}s |`;
 
   // Insert after header row
   const headerEnd = existing.indexOf('\n', existing.lastIndexOf('|---'));
@@ -85,8 +105,79 @@ async function appendRefreshLog(results: RefreshResult[]): Promise<void> {
   await writeFile(logPath, existing);
 }
 
+/**
+ * Run analytics + optimizer + (optional) research + sync for a single
+ * campaign. Caller is responsible for calling setCampaignSlug() so all
+ * dataPath() resolution lands in the right campaign directory.
+ */
+async function refreshOneCampaign(
+  campaignName: string,
+  campaignSlug: string,
+  skipResearch: boolean,
+): Promise<RefreshResult[]> {
+  // Make sure data/campaigns/<slug>/ exists — the path helpers don't auto-create.
+  try {
+    await mkdir(dataPath('POST-TRACKER.md').replace(/\/[^/]+$/, ''), { recursive: true });
+  } catch { /* non-fatal */ }
+
+  log(`\n┌──────────────────────────────────────────────────`);
+  log(`│  Campaign: ${campaignName} (${campaignSlug})`);
+  log(`└──────────────────────────────────────────────────`);
+
+  const results: RefreshResult[] = [];
+
+  log('  Phase 1/3: Analytics');
+  results.push(
+    await timedPhase(`Analytics:${campaignSlug}`, async () => {
+      const metrics = await measurePerformance();
+      return `${metrics.length} posts tracked`;
+    }),
+  );
+
+  log('  Phase 2/3: Optimizer');
+  results.push(
+    await timedPhase(`Optimizer:${campaignSlug}`, async () => {
+      await optimize();
+      return 'Experiments evaluated, dashboards updated';
+    }),
+  );
+
+  log('  Phase 3/3: Research');
+  if (skipResearch) {
+    results.push({
+      phase: `Research:${campaignSlug}`,
+      status: 'skipped',
+      detail: '--skip-research flag',
+      durationMs: 0,
+    });
+  } else {
+    results.push(
+      await timedPhase(`Research:${campaignSlug}`, async () => {
+        await runResearch();
+        return 'Trends + hashtags updated';
+      }),
+    );
+  }
+
+  log('  Phase 4: Supabase Sync');
+  results.push(
+    await timedPhase(`Sync:${campaignSlug}`, async () => {
+      await syncToSupabase();
+      return 'Dashboard data synced';
+    }),
+  );
+
+  return results;
+}
+
 async function dailyRefresh(): Promise<void> {
   const skipResearch = process.argv.includes('--skip-research');
+  // Optional override — pass --campaign=<slug> to refresh only ONE campaign
+  // (useful for the dashboard's "Refresh Now" button which targets a single
+  // campaign). Without it, every active campaign gets refreshed.
+  const campaignArg = process.argv.find((a) => a.startsWith('--campaign='));
+  const overrideSlug = campaignArg?.split('=')[1]?.trim() || null;
+
   const startTime = Date.now();
 
   log('╔══════════════════════════════════════════════════╗');
@@ -95,51 +186,98 @@ async function dailyRefresh(): Promise<void> {
   log(`║  Research: ${skipResearch ? 'SKIPPED' : 'ENABLED'}                          ║`);
   log('╚══════════════════════════════════════════════════╝');
 
-  const results: RefreshResult[] = [];
-
-  // Phase 1: Analytics (ACCOUNT-STATS.md + POST-TRACKER.md)
-  log('\n── Phase 1/3: Analytics ──');
-  results.push(
-    await timedPhase('Analytics', async () => {
-      const metrics = await measurePerformance();
-      return `${metrics.length} posts tracked`;
-    }),
-  );
-
-  // Phase 2: Optimizer (FORMAT-WINNERS.md + LESSONS-LEARNED.md + EXPERIMENT-LOG.md)
-  log('\n── Phase 2/3: Optimizer ──');
-  results.push(
-    await timedPhase('Optimizer', async () => {
-      await optimize();
-      return 'Experiments evaluated, dashboards updated';
-    }),
-  );
-
-  // Phase 3: Research (TRENDING-NOW.md + HASHTAG-BANK.md)
-  log('\n── Phase 3/3: Research ──');
-  if (skipResearch) {
-    results.push({
-      phase: 'Research',
-      status: 'skipped',
-      detail: '--skip-research flag',
-      durationMs: 0,
-    });
-    log('Skipped (--skip-research)');
-  } else {
-    results.push(
-      await timedPhase('Research', async () => {
-        await runResearch();
-        return 'Trends + hashtags updated';
-      }),
-    );
+  // Resolve the campaigns list. If --campaign=X was passed and X matches an
+  // active campaign, refresh just that one; otherwise iterate all active.
+  const allActive = await listActiveCampaigns();
+  let toRun = allActive;
+  if (overrideSlug) {
+    toRun = allActive.filter((c) => c.slug === overrideSlug);
+    if (toRun.length === 0) {
+      log(`[!] --campaign=${overrideSlug} not found in active campaigns; refreshing all active instead.`);
+      toRun = allActive;
+    }
   }
 
-  // Phase 4: Sync to Supabase (dashboard)
-  log('\n── Phase 4: Supabase Sync ──');
+  // Defensive fallback: if Supabase is unreachable or no active campaigns,
+  // run a single pass against the default slug (minutewise) so the cron
+  // never silent-no-ops.
+  if (toRun.length === 0) {
+    log('[!] No active campaigns from DB — falling back to default slug.');
+    toRun = [{ slug: 'minutewise', name: 'MinuteWise (fallback)' } as typeof allActive[number]];
+  }
+
+  log(`Campaigns to refresh: ${toRun.map((c) => c.slug).join(', ')}`);
+
+  const results: RefreshResult[] = [];
+  for (const c of toRun) {
+    setCampaignSlug(c.slug);
+    resetCampaignCache(); // keep getCampaign() lookups fresh per iteration
+    try {
+      const perCampaign = await refreshOneCampaign(c.name, c.slug, skipResearch);
+      results.push(...perCampaign);
+    } catch (err) {
+      log(`[!] Campaign ${c.slug} crashed mid-refresh: ${err}`);
+      results.push({
+        phase: `Campaign:${c.slug}`,
+        status: 'failed',
+        detail: String(err).slice(0, 200),
+        durationMs: 0,
+      });
+    }
+  }
+
+  // Phase 5: Log rotation. Refresh runs every 6h via launchd, which is the
+  // perfect cadence for keeping cycle-logs/*.log and auto-fix-log.md from
+  // growing unbounded on a long-uptime Mac mini. Spawned as a child process
+  // so a rotation crash can't take down the rest of the refresh.
+  log('\n── Phase 5: Log rotation ──');
   results.push(
-    await timedPhase('Sync', async () => {
-      await syncToSupabase();
-      return 'Dashboard data synced';
+    await timedPhase('Rotate', async () => {
+      const { spawnSync } = await import('node:child_process');
+      const repoDir = resolve(__dirname, '..');
+      const r = spawnSync('npx', ['tsx', 'scripts/rotate_logs.ts', '--force'], {
+        cwd: repoDir,
+        encoding: 'utf-8',
+      });
+      if (r.status !== 0) throw new Error(`rotate_logs exited ${r.status}: ${r.stderr || r.stdout}`);
+      // Parse "Rotated N file(s); freed K KB"
+      const m = r.stdout?.match(/Rotated (\d+) file\(s\); freed (\d+) KB/);
+      return m ? `${m[1]} files, freed ${m[2]} KB` : 'No rotation needed';
+    }),
+  );
+
+  // Phase 6: Email digests. Per-campaign recipients + frequency live on
+  // the campaigns row. We send when:
+  //   - daily   → every refresh (6h cadence, but digestSentToday sentinel
+  //               on email_reports_log prevents same-day double-send)
+  //   - weekly  → on Mondays only
+  //   - monthly → on the 1st of the month only
+  // Skipped silently when RESEND_API_KEY is unset (dev / local-only setups).
+  log('\n── Phase 6: Email digests ──');
+  results.push(
+    await timedPhase('Email', async () => {
+      if (!process.env.RESEND_API_KEY) {
+        return 'Skipped (RESEND_API_KEY not set)';
+      }
+      const { sendCampaignDigest } = await import('./lib/email-digest.js');
+      const today = new Date();
+      const isMonday = today.getUTCDay() === 1;
+      const isFirstOfMonth = today.getUTCDate() === 1;
+
+      let sent = 0;
+      let failed = 0;
+      let skipped = 0;
+      for (const c of toRun) {
+        const due =
+          c.email_frequency === 'daily' ||
+          (c.email_frequency === 'weekly' && isMonday) ||
+          (c.email_frequency === 'monthly' && isFirstOfMonth);
+        if (!due) { skipped++; continue; }
+        if (!c.email_recipients?.length) { skipped++; continue; }
+        const result = await sendCampaignDigest({ slug: c.slug, trigger: 'cron' });
+        if (result.ok) sent++; else failed++;
+      }
+      return `${sent} sent, ${skipped} not due, ${failed} failed`;
     }),
   );
 

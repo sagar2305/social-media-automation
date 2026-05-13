@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { dataPath } from "./lib/campaign-paths.js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -15,11 +15,11 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // Use the anon key — RLS policies enforce per-table access
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const DATA_DIR = join(import.meta.dirname, "..", "data");
-
+// File reads route through dataPath() so per-campaign markdown ends up in
+// data/campaigns/<slug>/<file>.md and pipeline-level files at data/<file>.md.
 function readFile(name: string): string {
   try {
-    return readFileSync(join(DATA_DIR, name), "utf-8");
+    return readFileSync(dataPath(name), "utf-8");
   } catch {
     console.log(`  Skipping ${name} (not found)`);
     return "";
@@ -77,6 +77,20 @@ async function syncPosts() {
   if (!md) return;
   const rows = parseMarkdownTable(md);
 
+  // POST-TRACKER.md is per-campaign — every row in the file we just read
+  // belongs to the active campaign. Look up its campaign_id once so each
+  // upserted row gets tagged correctly. New posts created via the cycle
+  // already have campaign_id set; this sync just keeps it consistent for
+  // posts that came in via legacy paths.
+  const { getCampaignSlug } = await import("./lib/campaign-paths.js");
+  const slug = getCampaignSlug();
+  const { data: campaignRow } = await supabase
+    .from("campaigns")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  const campaignId: string | null = campaignRow?.id ?? null;
+
   const posts = rows.map((r) => ({
     id: r["Post ID"],
     date: r["Date"] || null,
@@ -93,6 +107,7 @@ async function syncPosts() {
     tiktok_url: r["TikTok URL"] === "-" ? null : r["TikTok URL"] || null,
     account: parseAccount(r["Status"], r["TikTok URL"]) || "yournotetaker",
     flow: null as string | null,
+    campaign_id: campaignId,
   }));
 
   // Try to infer flow from status field
@@ -296,14 +311,27 @@ async function syncAutoFixLog() {
     })
     .filter((e): e is NonNullable<typeof e> => e !== null);
 
-  for (let i = 0; i < events.length; i += 100) {
-    const batch = events.slice(i, i + 100);
+  // Dedupe by the upsert conflict key BEFORE sending. Multiple log rows can
+  // share the same (occurred_at, signature) when several errors fire inside
+  // the same wall-clock second; sending duplicates inside a single upsert
+  // batch makes Postgres throw "ON CONFLICT DO UPDATE command cannot affect
+  // row a second time". Keep the LAST one (most recent in the markdown =
+  // latest action/handled value).
+  const dedupedMap = new Map<string, (typeof events)[number]>();
+  for (const e of events) {
+    dedupedMap.set(`${e.occurred_at}|${e.signature}`, e);
+  }
+  const deduped = Array.from(dedupedMap.values());
+  const collapsed = events.length - deduped.length;
+
+  for (let i = 0; i < deduped.length; i += 100) {
+    const batch = deduped.slice(i, i + 100);
     const { error } = await supabase
       .from("auto_fix_events")
       .upsert(batch, { onConflict: "occurred_at,signature" });
     if (error) console.error("  Auto-fix events upsert error:", error.message);
   }
-  console.log(`  Synced ${events.length} auto-fix events`);
+  console.log(`  Synced ${deduped.length} auto-fix events${collapsed > 0 ? ` (collapsed ${collapsed} same-second duplicates)` : ""}`);
 }
 
 export async function syncToSupabase() {

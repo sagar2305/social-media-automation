@@ -28,7 +28,15 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-background text-foreground">
+      {/* Bitwarden / 1Password / Lastpass inject attributes onto <body>
+          before React hydrates (`bis_register`, `__processed_*`, etc.),
+          which trips the hydration mismatch warning. The mismatch is
+          extension-only — suppressing here doesn't mask app bugs in
+          children, since suppressHydrationWarning is non-recursive. */}
+      <body
+        className="min-h-full bg-background text-foreground"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>

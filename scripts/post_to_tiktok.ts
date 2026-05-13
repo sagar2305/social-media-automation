@@ -1,8 +1,11 @@
 import { readFile, appendFile } from 'fs/promises';
-import { join } from 'path';
 import { config, type PostingPath } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
 import type { PostMetadata } from './text_overlay.js';
+import { classifyError } from './auto_fix/classifier.js';
+import { logClassified } from './auto_fix/audit_logger.js';
+import { maybeNotify } from './auto_fix/notifier.js';
+import { dataPath, campaignCtaPath } from './lib/campaign-paths.js';
 
 // ─── Blotato Types ───────────────────────────────────────────
 
@@ -100,16 +103,17 @@ async function postViaBlotato(
 
 // ─── Post Tracking ───────────────────────────────────────────
 
-async function trackPost(postId: string, metadata: PostMetadata): Promise<void> {
-  const trackerPath = join(config.paths.memory, 'POST-TRACKER.md');
-  const row = `| ${postId} | ${metadata.createdAt.slice(0, 10)} | ${metadata.hookStyle} | ${metadata.format} | ${metadata.hashtags.join(', ')} | - | - | - | - | - | - | draft (${metadata.account}, ${metadata.flow}) | - |`;
+async function trackPost(postId: string, metadata: PostMetadata, postingPath: PostingPath = 'draft'): Promise<void> {
+  const trackerPath = dataPath('POST-TRACKER.md');
+  const statusLabel = postingPath === 'draft' ? 'draft' : 'pending';
+  const row = `| ${postId} | ${metadata.createdAt.slice(0, 10)} | ${metadata.hookStyle} | ${metadata.format} | ${metadata.hashtags.join(', ')} | - | - | - | - | - | - | ${statusLabel} (${metadata.account}, ${metadata.flow}) | - |`;
   await appendFile(trackerPath, row + '\n');
 }
 
 async function updateExperimentLog(metadata: PostMetadata): Promise<void> {
   if (!metadata.experimentId || !metadata.variant) return;
 
-  const logPath = join(config.paths.memory, 'EXPERIMENT-LOG.md');
+  const logPath = dataPath('EXPERIMENT-LOG.md');
   let content = await readFile(logPath, 'utf-8').catch(() => '');
 
   if (metadata.variant === 'A' && !content.includes(`Experiment #${metadata.experimentId}`)) {
@@ -186,7 +190,28 @@ export async function postSlideshow(
 
   if (!postId) throw new Error(`No postId returned for ${account.name}`);
 
-  await trackPost(postId, metadata);
+  await trackPost(postId, metadata, postingPath);
+
+  // Cache the first slide's public URL on the posts row as the post
+  // thumbnail so the dashboard's Top Posts cards + drawer can render
+  // a real first-slide image instead of a placeholder gradient.
+  // Blotato hosts these URLs so TikTok itself can fetch them — they're
+  // public + stable.
+  if (mediaUrls[0]) {
+    try {
+      const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (sbUrl && sbKey) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(sbUrl, sbKey);
+        await sb.from('posts')
+          .update({ thumbnail_url: mediaUrls[0] })
+          .eq('id', postId);
+      }
+    } catch {
+      // Non-fatal — the backfill script can fill this in later via oembed.
+    }
+  }
 
   return { accountName: account.name, integrationId: account.id, postId, flow: metadata.flow };
 }
@@ -229,6 +254,20 @@ export async function postAllDrafts(
       }
     } catch (err) {
       log(`Failed to post to account ${data.accountIndex}: ${err}`);
+      // Surface submit-time failures through the auto-fix system so they
+      // dedup-notify (HUMAN-ONLY tier signatures fire Slack/file alerts) and
+      // appear in the dashboard's auto_fix_events stream. Without this,
+      // submit failures (e.g. "Blotato: no TikTok account found", "No postId
+      // returned") just print to the cycle log and vanish — the dashboard
+      // never knows the cycle silently dropped a post.
+      try {
+        const classified = classifyError(
+          err instanceof Error ? err : new Error(String(err)),
+          { source: 'blotato', url: `${config.blotato.baseUrl}/posts` },
+        );
+        await logClassified(classified, { handled: 'pending' });
+        await maybeNotify(classified);
+      } catch { /* notification path itself failed — non-fatal */ }
     }
   }
 

@@ -1,5 +1,4 @@
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
 import { runTieredFetch, type ProfileVideo } from './tier_scheduler.js';
@@ -7,6 +6,7 @@ import { classifyError } from './auto_fix/classifier.js';
 import { logClassified } from './auto_fix/audit_logger.js';
 import { maybeNotify } from './auto_fix/notifier.js';
 import { createClient } from '@supabase/supabase-js';
+import { dataPath } from './lib/campaign-paths.js';
 
 // Direct upsert helper so the dashboard sees the EXACT upstream error
 // for each failed post immediately, instead of waiting on the next
@@ -21,6 +21,96 @@ async function writePostErrorToSupabase(postId: string, errorMessage: string, er
     error_source: errorSource,
     status: 'error',
   }).eq('id', postId);
+}
+
+// ─── Metrics history snapshots ───────────────────────────────
+//
+// Captures a time-series snapshot of every post's metrics on every
+// pull_analytics run. This is what powers the view-history sparkline
+// chart in the post detail drawer (Phase 7) and any future
+// trend/velocity analysis (e.g. "this post is gaining views faster
+// than average for its account").
+//
+// Dedup rule: only insert if the metrics actually changed since the
+// most recent existing snapshot for that post. Prevents the table
+// from bloating with identical (0,0,0,0,0) rows for posts that have
+// stalled at zero, while still capturing every real movement.
+async function writeMetricsSnapshots(rows: TrackerRow[]): Promise<number> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return 0;
+  const sb = createClient(url, key);
+
+  // Eligibility: skip rows without a real post_id and rows that have never
+  // shown any signal at all (no point storing zero-snapshots for drafts).
+  const numeric = (s: string): number => parseInt(s, 10) || 0;
+  const eligible = rows.filter((r) =>
+    r.postId && r.postId !== '-' && (
+      numeric(r.views) > 0 || numeric(r.likes) > 0 || numeric(r.saves) > 0 ||
+      numeric(r.shares) > 0 || numeric(r.comments) > 0
+    ),
+  );
+  if (!eligible.length) return 0;
+
+  const postIds = eligible.map((r) => r.postId);
+
+  // Pull campaign_id per post so we can denormalise it onto the snapshot
+  // row (lets campaign-wide trend queries skip the join to posts).
+  const { data: postRecords } = await sb
+    .from('posts')
+    .select('id, campaign_id')
+    .in('id', postIds);
+  const campaignByPost = new Map<string, string | null>(
+    (postRecords ?? []).map((p) => [p.id as string, p.campaign_id as string | null]),
+  );
+
+  // Pull most-recent existing snapshot per post for dedup. We fetch ordered
+  // by captured_at DESC and keep the first hit per post_id.
+  const { data: latestSnapshots } = await sb
+    .from('post_metrics_history')
+    .select('post_id, views, likes, saves, shares, comments')
+    .in('post_id', postIds)
+    .order('captured_at', { ascending: false });
+
+  const latestByPost = new Map<string, { views: number; likes: number; saves: number; shares: number; comments: number }>();
+  for (const s of latestSnapshots ?? []) {
+    if (!latestByPost.has(s.post_id)) latestByPost.set(s.post_id, s as { views: number; likes: number; saves: number; shares: number; comments: number });
+  }
+
+  const now = new Date().toISOString();
+  const newRows = eligible
+    .map((r) => ({
+      post_id: r.postId,
+      campaign_id: campaignByPost.get(r.postId) ?? null,
+      captured_at: now,
+      views: numeric(r.views),
+      likes: numeric(r.likes),
+      saves: numeric(r.saves),
+      shares: numeric(r.shares),
+      comments: numeric(r.comments),
+    }))
+    .filter((s) => {
+      const prev = latestByPost.get(s.post_id);
+      if (!prev) return true; // first snapshot for this post — always insert
+      return (
+        s.views !== prev.views ||
+        s.likes !== prev.likes ||
+        s.saves !== prev.saves ||
+        s.shares !== prev.shares ||
+        s.comments !== prev.comments
+      );
+    });
+
+  if (!newRows.length) return 0;
+
+  // Batch inserts — 100 per call keeps statement size well under any limits.
+  for (let i = 0; i < newRows.length; i += 100) {
+    const batch = newRows.slice(i, i + 100);
+    const { error } = await sb.from('post_metrics_history').insert(batch);
+    if (error) log(`  Snapshot insert error: ${error.message}`);
+  }
+
+  return newRows.length;
 }
 
 // ─── Types ────────────────────────────────────────────────────
@@ -161,8 +251,8 @@ async function checkBlotPostStatus(rows: TrackerRow[]): Promise<number> {
         await logClassified(classified, { handled: 'pending' });
         await maybeNotify(classified);
       } else if (data.status === 'in-progress') {
-        // Still processing — mark as in-progress if currently draft
-        if (row.status.includes('draft')) {
+        // Still processing — mark as in-progress if currently draft or pending
+        if (row.status.includes('draft') || row.status.includes('pending')) {
           row.status = 'in-progress';
           updated++;
           log(`  Status: ${row.postId} → in-progress`);
@@ -180,7 +270,7 @@ async function checkBlotPostStatus(rows: TrackerRow[]): Promise<number> {
 
 async function writeAccountDashboard(stats: AccountStats[]): Promise<void> {
   const now = new Date().toISOString();
-  const dashPath = join(config.paths.memory, 'ACCOUNT-STATS.md');
+  const dashPath = dataPath('ACCOUNT-STATS.md');
 
   let existing = '';
   try { existing = await readFile(dashPath, 'utf-8'); } catch {}
@@ -320,7 +410,7 @@ function applyTierVideos(
 export async function measurePerformance(): Promise<PostMetrics[]> {
   log('=== ANALYTICS PHASE ===');
 
-  const trackerPath = join(config.paths.memory, 'POST-TRACKER.md');
+  const trackerPath = dataPath('POST-TRACKER.md');
   const trackerContent = await readFile(trackerPath, 'utf-8').catch(() => '');
   const rows = parseTracker(trackerContent);
 
@@ -351,6 +441,18 @@ export async function measurePerformance(): Promise<PostMetrics[]> {
   // Step 4: Write updated tracker
   await writeFile(trackerPath, serializeTracker(rows));
   log(`Updated POST-TRACKER.md (${rows.length} total posts, ${creditsUsed} credits used, tiers: ${tiersFired.join(',') || 'none'})`);
+
+  // Step 4.5: Capture time-series snapshots into post_metrics_history.
+  // Only inserts where metrics actually changed since the last snapshot,
+  // so the table doesn't bloat with identical zero-rows for stalled posts.
+  // Drives the view-history sparkline in the post detail drawer.
+  try {
+    const snapshotsWritten = await writeMetricsSnapshots(rows);
+    if (snapshotsWritten > 0) log(`Metrics history: +${snapshotsWritten} snapshot(s)`);
+  } catch (err) {
+    // Non-fatal — analytics shouldn't fail because the history sidecar errored.
+    log(`Metrics history write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // Step 5: Account dashboard — update if stats tier fired this run
   if (statsByAccount.size > 0) {
