@@ -7,6 +7,7 @@ import { logClassified } from './auto_fix/audit_logger.js';
 import { maybeNotify } from './auto_fix/notifier.js';
 import { createClient } from '@supabase/supabase-js';
 import { dataPath } from './lib/campaign-paths.js';
+import { recomputePendingPayoutsForAllActiveCampaigns } from './lib/payouts/runner.js';
 
 // Direct upsert helper so the dashboard sees the EXACT upstream error
 // for each failed post immediately, instead of waiting on the next
@@ -474,6 +475,18 @@ export async function measurePerformance(): Promise<PostMetrics[]> {
       }
     }
     if (accountStatsList.length) await writeAccountDashboard(accountStatsList);
+  }
+
+  // Step 6: Refresh creator-payout pending amounts. Cheap query
+  // pattern (one round-trip per campaign + per assignment); fine to
+  // run on every analytics refresh. Idempotent — at most one pending
+  // payout per assignment exists at a time, enforced by the partial
+  // unique index. Non-fatal: payout calculation must never abort the
+  // analytics phase. See scripts/lib/payouts/runner.ts.
+  try {
+    await recomputePendingPayoutsForAllActiveCampaigns(log);
+  } catch (err) {
+    log(`Payout recompute failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   log('=== ANALYTICS COMPLETE ===');
