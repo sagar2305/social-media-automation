@@ -1,4 +1,5 @@
-import { readFile, appendFile } from 'fs/promises';
+import { readFile, appendFile, mkdir } from 'fs/promises';
+import { dirname } from 'path';
 import { config, type PostingPath } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
 import type { PostMetadata } from './text_overlay.js';
@@ -6,6 +7,21 @@ import { classifyError } from './auto_fix/classifier.js';
 import { logClassified } from './auto_fix/audit_logger.js';
 import { maybeNotify } from './auto_fix/notifier.js';
 import { dataPath, campaignCtaPath } from './lib/campaign-paths.js';
+import { reportEvent } from './cycle_reporter.js';
+
+/**
+ * Ensure the directory containing `filePath` exists. The per-campaign
+ * tracker files live under `data/campaigns/<slug>/` — when a campaign
+ * is created via the dashboard the row goes into Supabase but the
+ * filesystem dir is not pre-created (Phase 17 oversight). Without
+ * this, the FIRST post to a brand-new campaign throws ENOENT inside
+ * trackPost, which the post-attempt try/catch swallows — the post
+ * still went out to Blotato but the cycle reports "0 submissions".
+ * mkdir-p is cheap and fully idempotent so we just always run it.
+ */
+async function ensureDir(filePath: string): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+}
 
 // ─── Blotato Types ───────────────────────────────────────────
 
@@ -105,6 +121,7 @@ async function postViaBlotato(
 
 async function trackPost(postId: string, metadata: PostMetadata, postingPath: PostingPath = 'draft'): Promise<void> {
   const trackerPath = dataPath('POST-TRACKER.md');
+  await ensureDir(trackerPath);
   const statusLabel = postingPath === 'draft' ? 'draft' : 'pending';
   const row = `| ${postId} | ${metadata.createdAt.slice(0, 10)} | ${metadata.hookStyle} | ${metadata.format} | ${metadata.hashtags.join(', ')} | - | - | - | - | - | - | ${statusLabel} (${metadata.account}, ${metadata.flow}) | - |`;
   await appendFile(trackerPath, row + '\n');
@@ -139,6 +156,7 @@ async function updateExperimentLog(metadata: PostMetadata): Promise<void> {
     }
 
     const { writeFile } = await import('fs/promises');
+    await ensureDir(logPath);
     await writeFile(logPath, content);
     log(`Created experiment #${metadata.experimentId}`);
   }
@@ -227,15 +245,46 @@ export async function postAllDrafts(
   }[],
   postingPath: PostingPath = 'direct',
   scheduleDate?: Date,
+  /**
+   * Optional cycle_runs.id — when present, per-account submission errors
+   * are written to cycle_events as kind='post_failed' so the dashboard's
+   * Live Runs timeline shows the actual reason instead of the bare
+   * "0 submissions completed" final message. Without this, the only
+   * trace of a submission failure is a row in auto_fix_events that the
+   * operator has to dig into.
+   */
+  runId?: string | null,
+  /**
+   * Stagger interval in minutes. When > 0, post N on each account
+   * is scheduled at:
+   *   scheduleDate + (N-1) * postIntervalMinutes
+   * Indexing is per-account: each account starts its own count from 0,
+   * so multiple accounts run in parallel rather than serially. 0 = all
+   * posts go at scheduleDate (legacy behaviour).
+   */
+  postIntervalMinutes: number = 0,
 ): Promise<PostResult[]> {
   const pathLabel = postingPath === 'draft' ? 'TikTok drafts' : 'direct posts';
   log(`=== POSTING PHASE — ${pathLabel} via Blotato ===`);
 
+  // Track how many posts each account has already had scheduled so we
+  // can stagger by (count × interval) per account independently.
+  const accountPostCount = new Map<number, number>();
   const results: PostResult[] = [];
   let firstExperimentLogged = false;
 
   for (const data of postData) {
     try {
+      // Per-account schedule = base scheduleDate + (postsSoFarOnThisAccount × interval).
+      // When interval = 0 OR scheduleDate is undefined, the base date
+      // is used unchanged (or undefined = no scheduling, legacy path).
+      const slot = accountPostCount.get(data.accountIndex) ?? 0;
+      const perPostSchedule =
+        scheduleDate && postIntervalMinutes > 0
+          ? new Date(scheduleDate.getTime() + slot * postIntervalMinutes * 60 * 1000)
+          : scheduleDate;
+      accountPostCount.set(data.accountIndex, slot + 1);
+
       const result = await postSlideshow(
         data.slidePaths,
         data.caption,
@@ -244,7 +293,7 @@ export async function postAllDrafts(
         data.useCta,
         data.accountIndex,
         postingPath,
-        scheduleDate,
+        perPostSchedule,
       );
       results.push(result);
 
@@ -253,13 +302,27 @@ export async function postAllDrafts(
         firstExperimentLogged = true;
       }
     } catch (err) {
-      log(`Failed to post to account ${data.accountIndex}: ${err}`);
-      // Surface submit-time failures through the auto-fix system so they
-      // dedup-notify (HUMAN-ONLY tier signatures fire Slack/file alerts) and
-      // appear in the dashboard's auto_fix_events stream. Without this,
-      // submit failures (e.g. "Blotato: no TikTok account found", "No postId
-      // returned") just print to the cycle log and vanish — the dashboard
-      // never knows the cycle silently dropped a post.
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const accountLabel = data.metadata.account || `account[${data.accountIndex}]`;
+      log(`Failed to post to ${accountLabel}: ${errMsg}`);
+
+      // Surface to the dashboard timeline (cycle_events). Best-effort —
+      // never blocks the rest of the loop. This is what was missing
+      // when BOTAI's first cycle showed "0 submissions completed" with
+      // no explanation: the ENOENT thrown inside trackPost was caught
+      // here but never written where the operator could see it.
+      if (runId) {
+        try {
+          await reportEvent(runId, 'post_failed', `Post failed → ${accountLabel}`, errMsg, {
+            account: data.metadata.account,
+            flow: data.metadata.flow,
+          });
+        } catch { /* never block the cycle on reporter failure */ }
+      }
+
+      // Also surface through the auto-fix system so signatures dedup-
+      // notify (HUMAN-ONLY tier fires Slack/file alerts) and the
+      // Errors & Auto-Fix page picks them up.
       try {
         const classified = classifyError(
           err instanceof Error ? err : new Error(String(err)),

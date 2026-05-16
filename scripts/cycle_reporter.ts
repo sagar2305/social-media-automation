@@ -33,9 +33,27 @@ export type EventKind =
   | 'post_generated'
   | 'post_submitted'
   | 'post_failed'
+  | 'image_prompt'
   | 'info'
   | 'error'
   | 'cycle_done';
+
+/**
+ * Module-level current-run pointer. main.ts sets it once after
+ * startCycleRun(); downstream helpers (generate_images.ts, etc.) read
+ * it without needing the runId threaded through every function call.
+ *
+ * Safe in our environment: the cycle runs as a single process, one
+ * run at a time. Parallel cycles would need a per-context store —
+ * not the shape we're in.
+ */
+let currentRunId: string | null = null;
+export function setCurrentRunId(runId: string | null): void {
+  currentRunId = runId;
+}
+export function getCurrentRunId(): string | null {
+  return currentRunId;
+}
 
 export interface StartCycleArgs {
   flows: string[];

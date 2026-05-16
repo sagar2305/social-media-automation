@@ -718,8 +718,124 @@ async function runOneCampaign(campaign: Campaign | null) {
   const runId = runRow.id as string;
   log(`[autoresearch] autoresearch_runs id=${runId}`);
   log('[autoresearch] decision recorded — scheduled batches will use the refreshed playbook tonight');
+
+  // ─── CLOSE THE LOOP ─────────────────────────────────────────
+  // Mirror today's decision into EXPERIMENT-LOG.md so the generator
+  // (text_overlay.determineHookStyle) actually executes it. Without
+  // this, the Supabase row is write-only and tonight's batches keep
+  // running on past format-winners alone, ignoring the brain's plan.
+  try {
+    await writeDecisionToExperimentLog(decision, todayLocal());
+  } catch (err) {
+    // Non-fatal — the decision is already recorded in Supabase. Log
+    // so the operator can spot the drift, but don't abort the day.
+    log(`[autoresearch] WARN could not bridge decision into EXPERIMENT-LOG.md: ${err}`);
+  }
+
   await markRanToday();
   log('═══ AUTORESEARCH DONE ═══');
+}
+
+// ─── Phase 3.5: bridge decision → EXPERIMENT-LOG.md ───────────
+//
+// The generator (scripts/text_overlay.ts:determineHookStyle) reads
+// EXPERIMENT-LOG.md and looks for `## Active Experiment` to pull the
+// variant pool from. We write today's decision there in the exact
+// shape that regex expects:
+//   ## Active Experiment
+//   ### Experiment #<ID> — <YYYY-MM-DD>
+//   - **Variant A:** <value> — Post ID: pending
+//   - **Variant B:** <value> — Post ID: pending
+//
+// Experiment IDs use `AR<YYYYMMDD>` (no dashes — the generator's
+// `Experiment #?(\w+)` regex stops at non-word chars) so reruns on
+// the same day are idempotent and don't pile up duplicate blocks.
+//
+// Non-hook_style variables (slide_count, flow_type, …) can't be
+// honored by the current generator without deeper plumbing. For
+// those we record a `## Today's Brain Decision` note instead, which
+// stays out of the Active Experiment slot so we don't feed a numeric
+// value like "6" into HookStyle.
+async function writeDecisionToExperimentLog(decision: Decision, today: string): Promise<void> {
+  const logPath = dataPath('EXPERIMENT-LOG.md');
+  const existing = await readFile(logPath, 'utf-8').catch(() => '# Experiment Log\n');
+
+  const stamp = today.replace(/-/g, '');           // YYYYMMDD
+  const experimentId = `AR${stamp}`;               // e.g. AR20260510
+  const source = decision.source === 'gemini' ? 'gemini' : 'deterministic-fallback';
+
+  // Hook styles recognised by text_overlay (must mirror that enum).
+  const HOOK_STYLES = new Set([
+    'question', 'bold_claim', 'story_opener', 'stat_lead', 'contrast',
+  ]);
+
+  const isHookExperiment =
+    decision.variable === 'hook_style' &&
+    HOOK_STYLES.has(decision.variant_a) &&
+    HOOK_STYLES.has(decision.variant_b) &&
+    decision.variant_a !== decision.variant_b &&
+    decision.action_type !== 'strategy_fix';
+
+  // Always remove any prior Active Experiment / Brain Decision block
+  // from earlier runs so a same-day rerun replaces (not duplicates).
+  let content = existing
+    .replace(/## Active Experiment[s]?\n[\s\S]*?(?=\n## |$)/, '')
+    .replace(/## Today's Brain Decision\n[\s\S]*?(?=\n## |$)/, '');
+
+  let block: string;
+  if (isHookExperiment) {
+    block = [
+      `## Active Experiment`,
+      ``,
+      `### Experiment #${experimentId} — ${today} (Autoresearch-designed)`,
+      `- **Account focus:** @${decision.account} (rotation target — generator applies to all accounts)`,
+      `- **Variable:** hook_style`,
+      `- **Variant A:** ${decision.variant_a} — Post ID: pending`,
+      `- **Variant B:** ${decision.variant_b} — Post ID: pending`,
+      `- **Flow:** ${decision.flow}`,
+      `- **Source:** ${source}`,
+      `- **Hypothesis:** ${decision.hypothesis}`,
+      `- **Started:** ${today}`,
+      `- **Status:** IN PROGRESS — waiting for tonight's batches to post variants`,
+      ``,
+    ].join('\n');
+    log(`[autoresearch] bridged hook_style experiment ${experimentId} → EXPERIMENT-LOG.md (${decision.variant_a} vs ${decision.variant_b})`);
+  } else {
+    // For non-hook variables OR strategy_fix days, surface the
+    // decision but keep the Active Experiment slot empty so the
+    // generator falls back to FORMAT-WINNERS instead of casting a
+    // numeric/non-hook value to HookStyle.
+    block = [
+      `## Active Experiment`,
+      `_None — today's decision is a ${decision.variable} test (not yet wired into the generator)._`,
+      ``,
+      `## Today's Brain Decision`,
+      ``,
+      `- **Date:** ${today}`,
+      `- **Account focus:** @${decision.account}`,
+      `- **Variable:** ${decision.variable}`,
+      `- **Variant A:** ${decision.variant_a}`,
+      `- **Variant B:** ${decision.variant_b}`,
+      `- **Flow:** ${decision.flow}`,
+      `- **Source:** ${source}`,
+      `- **Action:** ${decision.action_type ?? 'experiment'}`,
+      `- **Hypothesis:** ${decision.hypothesis}`,
+      decision.strategy_notes ? `- **Strategy notes:** ${decision.strategy_notes}` : '',
+      ``,
+    ].filter(Boolean).join('\n');
+    log(`[autoresearch] decision variable=${decision.variable} not wired to generator — logged as Brain Decision note`);
+  }
+
+  // Place the new block immediately before "## Completed Experiments"
+  // if present, otherwise append. Preserves prior history intact.
+  const completedHeader = /^## Completed Experiments?/m;
+  if (completedHeader.test(content)) {
+    content = content.replace(completedHeader, `${block}\n## Completed Experiments`);
+  } else {
+    content = `${content.replace(/\s+$/, '')}\n\n${block}`;
+  }
+
+  await writeFile(logPath, content);
 }
 
 /**

@@ -3,6 +3,9 @@ import { join } from 'path';
 import { config, FlowType } from '../config/config.js';
 import { log } from './api-client.js';
 import type { GeneratedContent } from './text_overlay.js';
+import { getCampaignSlug } from './lib/campaign-paths.js';
+import { getCampaign, type Campaign } from './lib/campaigns.js';
+import { reportEvent, getCurrentRunId } from './cycle_reporter.js';
 
 interface GeminiImageResponse {
   predictions?: { bytesBase64Encoded: string; mimeType: string }[];
@@ -158,12 +161,12 @@ export const ANIMATION_STYLES = [
   { name: 'Paper Cutout', prompt: 'Paper cutout animation style like South Park, layered paper textures, flat construction paper characters, simple shapes' },
   { name: 'Retro Pixel Art', prompt: '8-bit/16-bit retro pixel art style, game aesthetic, pixelated characters, limited color palette, nostalgic' },
   { name: 'Anime/Manga', prompt: 'Japanese anime style, expressive big eyes, dynamic poses, vibrant saturated colors, manga-inspired linework' },
-  { name: 'Chalk/Blackboard', prompt: 'Drawn on chalkboard with chalk textures, green/black board background, white and colored chalk lines, classroom feel' },
+  { name: 'Chalk/Blackboard', prompt: 'Drawn on chalkboard with chalk textures, deep green or black board background, white and colored chalk lines, hand-rendered look' },
   { name: 'Storybook', prompt: 'Children\'s storybook illustration style, warm hand-drawn feel, soft rounded characters, cozy whimsical atmosphere' },
   { name: 'Pop Art', prompt: 'Andy Warhol pop art style, bold colors, halftone dots, comic book aesthetic, high contrast, Ben-Day dots' },
   { name: 'Minimalist Line Art', prompt: 'Clean single-line drawing style, elegant minimal lines, white background, sparse color accents, sophisticated' },
   { name: 'Neon/Cyberpunk', prompt: 'Neon cyberpunk style, glowing neon outlines on dark backgrounds, electric blue and pink colors, futuristic' },
-  { name: 'Sketch/Pencil', prompt: 'Hand-drawn pencil sketch style, graphite textures, cross-hatching, notebook paper feel, raw and authentic' },
+  { name: 'Sketch/Pencil', prompt: 'Hand-drawn pencil sketch style, graphite textures, cross-hatching, paper grain, raw and authentic' },
   { name: 'Isometric', prompt: 'Isometric illustration style, 3/4 top-down view, clean geometry, bright colors, infographic-like precision' },
   { name: 'Collage Art', prompt: 'Mixed media collage art style, torn paper textures, magazine cutouts, layered compositions, eclectic and trendy' },
   { name: 'Gouache Paint', prompt: 'Gouache painting style, opaque matte colors, visible brush strokes, muted warm palette, artisanal craft feel' },
@@ -198,6 +201,13 @@ const ANIMATED_CHARACTERS = [
   { gender: 'male', description: 'A boy with spiky hair, wearing a red varsity jacket with white sleeves' },
 ];
 
+// Legacy study-themed scene pool. ONLY consulted when no campaign is
+// loaded (Supabase down at cycle start) — back-compat for the original
+// MinuteWise install. For every loaded campaign, scenes come from
+// `resolveCampaignScenes` below, which prefers the operator-set
+// visual_style_prompt and otherwise derives scenes from the campaign's
+// description so a comedy/roast brand gets comedy/roast scenes (not
+// libraries with notebooks).
 const STUDY_SCENES = [
   'studying at a wooden desk in a cozy library with warm lamp light',
   'sitting in a modern dorm room with fairy lights and books',
@@ -206,6 +216,120 @@ const STUDY_SCENES = [
   'sitting on a bed with textbooks spread around, focused',
   'at a study desk with headphones on, surrounded by sticky notes',
 ];
+
+// Cache of derived scenes per campaign slug. Populated lazily on the
+// first cycle that touches the campaign and reused for all posts in
+// the same process — keeps Gemini calls cheap (one per cycle per
+// campaign). Cleared between processes since this is module-level
+// state in a short-lived `npm run cycle` invocation.
+const sceneBankCache = new Map<string, string[]>();
+
+/**
+ * Resolve the scene bank for the active campaign.
+ *
+ * Resolution order:
+ *   1. campaign.visual_style_prompt set        → use it as a single scene
+ *      (operator wrote explicit visual instructions; treat them as
+ *      verbatim style. All posts in the cycle share this look — that's
+ *      a feature: campaign visual consistency.)
+ *   2. campaign loaded with a description      → derive 6 scenes via Gemini
+ *      from description + tone_of_voice. Cached per slug.
+ *   3. no campaign loaded                      → STUDY_SCENES fallback.
+ *
+ * Returns a list of scene descriptions sized like STUDY_SCENES so the
+ * existing `scenes[(accountIndex + ts) % scenes.length]` indexing keeps
+ * giving each post a different background within the same campaign vibe.
+ */
+async function resolveCampaignScenes(campaign: Campaign | null): Promise<string[]> {
+  if (!campaign) return STUDY_SCENES;
+
+  if (campaign.visual_style_prompt && campaign.visual_style_prompt.trim()) {
+    log(`[campaign] using visual_style_prompt verbatim as the scene for "${campaign.slug}"`);
+    return [campaign.visual_style_prompt.trim()];
+  }
+
+  if (sceneBankCache.has(campaign.slug)) {
+    return sceneBankCache.get(campaign.slug)!;
+  }
+
+  // No explicit visual style — ask Gemini to derive scenes from the
+  // campaign's description + tone. Cheap call, one per cycle per
+  // campaign. If it fails for any reason we fall back to a single
+  // generic scene built from the description, then ultimately to
+  // STUDY_SCENES — never block the cycle.
+  if (!campaign.description) {
+    // Campaign exists but the operator hasn't told us what it's about.
+    // Don't fall through to STUDY_SCENES — that's exactly the leakage
+    // the multi-campaign refactor is fixing. Use a brand-agnostic
+    // generic-modern scene set so a misconfigured Campaign 3 produces
+    // clean visuals (instead of MinuteWise-tinted ones) and emits a
+    // loud warning so the operator notices and fills in the field.
+    const genericScenes = [
+      'a clean, modern interior with natural daylight, minimalist styling',
+      'a warm-toned cafe corner with soft ambient light, casual atmosphere',
+      'a bright urban apartment with plants and contemporary furniture',
+      'a cozy wood-and-textile space with golden hour light through a window',
+      'a stylish co-working space with neutral palette and soft shadows',
+      'an airy room with pastel walls, simple props, editorial photography vibe',
+    ];
+    log(`[campaign] WARNING: "${campaign.slug}" has no description and no visual_style_prompt set — using a generic scene bank. Fill in the campaign's Description or Visual Style on the dashboard's Edit page so its visuals reflect its brand.`);
+    sceneBankCache.set(campaign.slug, genericScenes);
+    return genericScenes;
+  }
+
+  const tone = campaign.tone_of_voice ?? '';
+  // Distilled-from-training-images style guide (Phase 17c). When the
+  // operator uploaded references and trained the brain, this paragraph
+  // is the highest-signal description of how images should look for
+  // this campaign — we feed it into scene derivation too so the
+  // generated scenes match the trained aesthetic, not just the
+  // description alone.
+  const styleGuide = campaign.style_distillation ?? '';
+  const derivePrompt = `You are designing TikTok slideshow visuals for the "${campaign.name}" brand.
+
+BRAND: ${campaign.description}
+${tone ? `TONE: ${tone}` : ''}
+${styleGuide ? `STYLE GUIDE (from trained reference images — match this look): ${styleGuide}` : ''}
+
+Suggest 6 visually distinct SCENE descriptions that fit this brand's vibe. Each scene must:
+- Be a single sentence describing the BACKGROUND ENVIRONMENT a character is in (NOT what the character is doing).
+- Be specific enough that an image-gen model can reproduce it (lighting, props, location).
+- Match the brand's mood — do NOT default to study/library/classroom/notebook scenes unless the brand description explicitly calls for them.
+- Vary across the 6 (different rooms, lighting, vibes) so 6 posts in a cycle don't look identical.
+
+Return strict JSON: { "scenes": ["...", "...", "...", "...", "...", "..."] }. No prose.`;
+
+  try {
+    const url = `${config.gemini.baseUrl}/models/gemini-2.5-flash:generateContent?key=${config.gemini.apiKey}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: derivePrompt }] }],
+        generationConfig: { responseMimeType: 'application/json' },
+      }),
+    });
+    if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+    const data = await resp.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parsed = JSON.parse(text);
+    const scenes = Array.isArray(parsed.scenes) ? parsed.scenes.filter((s: unknown) => typeof s === 'string' && s.trim()) : [];
+    if (scenes.length >= 3) {
+      log(`[campaign] derived ${scenes.length} scenes for "${campaign.slug}" from description`);
+      sceneBankCache.set(campaign.slug, scenes);
+      return scenes;
+    }
+    log(`[campaign] Gemini returned <3 scenes for "${campaign.slug}", using description-as-scene fallback`);
+  } catch (err) {
+    log(`[campaign] scene derivation failed for "${campaign.slug}" (${err}); using description-as-scene fallback`);
+  }
+
+  // Fallback: use the description itself as a single scene description.
+  // Better than STUDY_SCENES for non-study campaigns.
+  const fallback = [`a setting that visually expresses: ${campaign.description}`];
+  sceneBankCache.set(campaign.slug, fallback);
+  return fallback;
+}
 
 // ─── Prompt Builders (with consistent font enforcement) ────────
 
@@ -217,13 +341,14 @@ function buildPhotorealisticPrompt(
   slideRole: string,
   slideNumber: number,
   totalSlides: number,
+  brandName: string,
 ): string {
   let expression = 'focused and determined';
   if (slideRole === 'hook') expression = 'looking directly at camera with a confident smirk';
   if (slideRole === 'knowledge_gap') expression = 'surprised, eyebrows raised, mouth slightly open';
   if (slideRole === 'minutewise') expression = 'smiling while looking at phone screen';
   if (slideRole === 'emotional') expression = 'genuinely happy, slight smile, relaxed';
-  if (slideRole === 'cta') expression = 'warm friendly smile, holding up a phone showing the MinuteWise app on screen, inviting gesture toward viewer';
+  if (slideRole === 'cta') expression = `warm friendly smile, holding up a phone showing the ${brandName} app on screen, inviting gesture toward viewer`;
 
   return `Create a photorealistic, cinematic image for a TikTok slideshow background. This is slide ${slideNumber} of ${totalSlides} — ALL slides must look like they belong together.
 
@@ -254,13 +379,16 @@ function buildAnimatedPrompt(
   animStyle: string,
   slideNumber: number,
   totalSlides: number,
+  brandName: string,
 ): string {
-  let expression = 'focused and studying';
+  // Neutral default — was "focused and studying" which biased every
+  // animated post toward a study character regardless of campaign.
+  let expression = 'engaged and expressive, fits the slide vibe';
   if (slideRole === 'hook') expression = 'looking excited and energetic, pointing at viewer';
   if (slideRole === 'knowledge_gap') expression = 'curious, head tilted, thinking pose';
   if (slideRole === 'minutewise') expression = 'happily holding up a phone showing an app';
   if (slideRole === 'emotional') expression = 'proud, confident pose, thumbs up';
-  if (slideRole === 'cta') expression = 'warm friendly smile, holding up a phone showing the MinuteWise app on screen, inviting gesture toward viewer';
+  if (slideRole === 'cta') expression = `warm friendly smile, holding up a phone showing the ${brandName} app on screen, inviting gesture toward viewer`;
 
   return `Create an animated image in ${animStyle} for a TikTok slideshow background. This is slide ${slideNumber} of ${totalSlides} — ALL slides must look like they belong together.
 
@@ -289,18 +417,25 @@ Style rules:
 // Illustrated characters with expressive emotions matching the narrative arc
 // Background decided by AI based on topic — no fixed scene list
 
-const EMOJI_FLOW_EXPRESSIONS: Record<string, string> = {
-  hook: 'curious look, raised eyebrow, leaning forward with interest, wide eyes',
-  problem: 'frustrated expression, head in hands, slouched posture, biting lip, anime-style sweat drops for stress',
-  tip: 'focused and excited, pointing up in an "aha" moment, eyes lit up with sparkle, determined expression',
-  resolution: 'confident smile, arms crossed proudly, standing tall, triumphant pose, anime-style sparkle eyes',
-  cta: 'warm friendly smile, holding up a phone showing the MinuteWise app on screen, inviting welcoming gesture toward the viewer',
-  // Fallbacks for legacy roles
-  knowledge_gap: 'surprised expression, eyebrows raised, mouth slightly open',
-  value: 'focused and attentive, taking notes, nodding',
-  minutewise: 'happily holding up a phone showing an app, excited',
-  emotional: 'genuinely happy, slight smile, relaxed and satisfied',
-};
+// brandName is interpolated into the cta expression at call time; the
+// rest of the expressions are brand-agnostic. Previously the cta key
+// was a static "MinuteWise app on screen" string — that bled MinuteWise
+// branding into other campaigns' Flow 3 posts when the CTA-image
+// fallback path was used.
+function emojiFlowExpression(role: string, brandName: string): string {
+  switch (role) {
+    case 'hook':         return 'curious look, raised eyebrow, leaning forward with interest, wide eyes';
+    case 'problem':      return 'frustrated expression, head in hands, slouched posture, biting lip, anime-style sweat drops for stress';
+    case 'tip':          return 'focused and excited, pointing up in an "aha" moment, eyes lit up with sparkle, determined expression';
+    case 'resolution':   return 'confident smile, arms crossed proudly, standing tall, triumphant pose, anime-style sparkle eyes';
+    case 'cta':          return `warm friendly smile, holding up a phone showing the ${brandName} app on screen, inviting welcoming gesture toward the viewer`;
+    case 'knowledge_gap':return 'surprised expression, eyebrows raised, mouth slightly open';
+    case 'value':        return 'focused and attentive, nodding';
+    case 'minutewise':   return 'happily holding up a phone showing an app, excited';
+    case 'emotional':    return 'genuinely happy, slight smile, relaxed and satisfied';
+    default:             return 'focused and attentive, nodding';
+  }
+}
 
 function buildEmojiOverlayPrompt(
   character: string,
@@ -309,8 +444,9 @@ function buildEmojiOverlayPrompt(
   totalSlides: number,
   topic: string,
   animStyle: string,
+  brandName: string,
 ): string {
-  const expression = EMOJI_FLOW_EXPRESSIONS[slideRole] || 'focused and attentive';
+  const expression = emojiFlowExpression(slideRole, brandName);
 
   return `Create an illustrated/animated image in ${animStyle} for a TikTok slideshow. This is slide ${slideNumber} of ${totalSlides} — ALL slides must look like they belong to the same story.
 
@@ -323,7 +459,7 @@ NARRATIVE ROLE: This is a "${slideRole}" slide — the character's emotion and b
 ANIMATION STYLE (must be IDENTICAL in every slide): ${animStyle}
 — Same rendering technique, same line weight, same color treatment, same lighting style in EVERY slide.
 
-SCENE: The AI should decide the background environment based on the topic "${topic}". Choose a setting that naturally fits (e.g., cozy library for study tips, modern dorm for student life, bright classroom for learning hacks). Keep the SAME environment, same room, same color temperature across all slides. Only subtle progression allowed.
+SCENE: The AI should decide the background environment based on the topic "${topic}" and the brand's vibe. Pick a setting that naturally fits THIS topic — do NOT default to study/library/classroom unless the topic is clearly about studying. Keep the SAME environment, same room, same color temperature across all slides. Only subtle progression allowed.
 
 IMPORTANT: Do NOT include any text, words, letters, emojis, or typography on the image. Clean image only — text and emoji overlays added separately.
 
@@ -341,33 +477,44 @@ Style rules:
 - 3:4 aspect ratio (portrait, taller than wide) for mobile viewing`;
 }
 
-// ─── CTA Slide 9 Prompt (Rule 46: generated in matching style) ──
-
+// ─── CTA Slide Prompt (Rule 46: generated in matching style) ──
+//
+// IMPORTANT: this prompt is only invoked when the campaign DOES NOT
+// have a cta_image_url uploaded. If the operator uploaded a CTA image
+// when creating the campaign in the dashboard, generateSlidesForPost
+// short-circuits and uses that exact image as the final slide — Gemini
+// is never called. This function is the fallback render path.
+//
+// All "Minutewise" substrings now interpolate the campaign's name so
+// RoastAI's CTA shows a "RoastAI" phone, MinuteWise's CTA shows a
+// "Minutewise" phone, etc. The previous hardcoded "Minutewise" string
+// painted MinuteWise branding onto every campaign's posts — Phase 17 bug.
 function buildCtaSlidePrompt(
   character: string,
   flow: string,
   animStyle: string | null,
   scene: string,
   totalSlides: number,
+  brandName: string,
 ): string {
   const styleDesc = flow === 'photorealistic'
     ? 'Photorealistic, cinematic quality — shot on Arri Alexa or Sony A7. Cinematic color grading, shallow depth of field.'
     : `${animStyle} — fully commit to this animation style. Warm, colorful, visually engaging.`;
 
-  return `Create an image for a TikTok slideshow. This is the FINAL slide (${totalSlides} of ${totalSlides}) — a call-to-action showing the Minutewise app.
+  return `Create an image for a TikTok slideshow. This is the FINAL slide (${totalSlides} of ${totalSlides}) — a call-to-action showing the ${brandName} app.
 
-SCENE: ${character}, happily holding a mobile phone. The phone screen clearly displays the "Minutewise" app — show the app name "Minutewise" written on the phone screen in a clean modern UI with a note-taking interface. The character has a warm, inviting smile and is gesturing toward the phone as if recommending the app to the viewer.
+SCENE: ${character}, happily holding a mobile phone. The phone screen clearly displays the "${brandName}" app — show the app name "${brandName}" written on the phone screen in a clean modern UI. The character has a warm, inviting smile and is gesturing toward the phone as if recommending the app to the viewer.
 
 STYLE: ${styleDesc} — MUST match the exact same style, color grading, and aesthetic as slides 1-${totalSlides - 1}. This slide must feel like it belongs in the same slideshow.
 
 CRITICAL REQUIREMENTS:
-- The phone screen MUST show the word "Minutewise" as the app name — this is the key branding element
-- The phone should show a clean, modern note-taking app interface with the Minutewise name visible
+- The phone screen MUST show the word "${brandName}" as the app name — this is the key branding element
+- The phone should show a clean, modern app interface with the ${brandName} name visible
 - Character must look CONSISTENT with the previous slides (same design, outfit, face)
 - Warm, inviting mood — the character is recommending this app
 - Leave upper 60-70% of the image for text overlay (TikTok safe zone)
 - 3:4 aspect ratio (portrait, taller than wide) for mobile viewing
-- NO other text besides "Minutewise" on the phone screen`;
+- NO other text besides "${brandName}" on the phone screen`;
 }
 
 // ─── Image Generation (gemini-2.5-flash-image) ────────────────
@@ -438,6 +585,38 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
   const slidesDir = config.paths.slides;
   await mkdir(slidesDir, { recursive: true });
 
+  // Load the active campaign once for the whole post — brandName and the
+  // optional cta_image_url both come from this row. If Supabase is
+  // unreachable we get null and fall back to "Minutewise" for the brand
+  // name (legacy behavior). The non-null branch is what makes RoastAI
+  // posts actually look like RoastAI posts.
+  const campaignSlug = getCampaignSlug();
+  let campaign: Campaign | null = null;
+  try {
+    campaign = await getCampaign(campaignSlug);
+  } catch (err) {
+    log(`[campaign] could not load "${campaignSlug}" for image generation: ${err}`);
+  }
+  const brandName = campaign?.name ?? 'Minutewise';
+  const ctaImageUrl = campaign?.cta_image_url ?? null;
+  if (ctaImageUrl) {
+    log(`[campaign] CTA slide will use uploaded image from campaign "${campaignSlug}" (${ctaImageUrl}) — Gemini CTA generation skipped`);
+  }
+
+  // Style distillation (Phase 17c) — operator-trained paragraph that
+  // gets appended to EVERY image prompt below. When the operator
+  // uploaded reference images and clicked "Train style" on the edit
+  // page, Gemini Vision wrote this paragraph into
+  // campaigns.style_distillation. It's the single highest-signal
+  // visual instruction we have — stronger than scenes (derived) or
+  // animation styles (generic). Empty string when no training has
+  // happened, in which case the prompts still work via the existing
+  // scene + character + animation-style scaffolding.
+  const styleGuide = campaign?.style_distillation ?? '';
+  if (styleGuide) {
+    log(`[campaign] applying trained style distillation (${styleGuide.length} chars) to every image prompt`);
+  }
+
   // ── Step 1: Prepare and spell-check ALL text first (4 passes) ──
   log('=== PREPARING SLIDE TEXT (4-pass spell check) ===');
   let preparedTexts: string[] = [];
@@ -456,9 +635,16 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
   }
 
   // ── Step 2: Pick consistent character + scene ──
+  // Scenes are now CAMPAIGN-DERIVED (from visual_style_prompt or
+  // description). Without this, every post used STUDY_SCENES — that's
+  // why RoastAI posts looked like study posts visually even though the
+  // captions were about roasts. resolveCampaignScenes caches per-slug
+  // so the Gemini derivation only runs once per cycle.
   const characters = flow === 'photorealistic' ? PHOTO_CHARACTERS : ANIMATED_CHARACTERS;
   const character = characters[(accountIndex + Date.now()) % characters.length];
-  const scene = STUDY_SCENES[(accountIndex + Math.floor(Date.now() / 1000)) % STUDY_SCENES.length];
+  const scenes = await resolveCampaignScenes(campaign);
+  const scene = scenes[(accountIndex + Math.floor(Date.now() / 1000)) % scenes.length];
+  log(`Scene: "${scene.slice(0, 80)}${scene.length > 80 ? '…' : ''}"`);
 
   let animStyle: typeof ANIMATION_STYLES[number] | null = null;
   if (flow === 'animated' || flow === 'emoji_overlay') {
@@ -475,30 +661,88 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
   const rawPaths: string[] = [];
   const finalPaths: string[] = [];
   const totalSlides = content.slides.length;
+  // Slide indices whose final image should be the CTA upload verbatim
+  // (no Gemini, no text overlay). Tracked here so Step 4 can skip them.
+  const ctaImageSlides = new Set<number>();
 
   for (let i = 0; i < totalSlides; i++) {
     const slide = content.slides[i];
     const isCtaSlide9 = i === totalSlides - 1 && slide.role === 'cta';
 
+    // Short-circuit: if the campaign uploaded a CTA image, use it
+    // verbatim as the final slide. Skip Gemini entirely. Skip the text
+    // overlay too — the operator's design is already done.
+    if (isCtaSlide9 && ctaImageUrl) {
+      log(`Slide ${i + 1}/${totalSlides} [cta] — using uploaded campaign CTA image`);
+      try {
+        const resp = await fetch(ctaImageUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${ctaImageUrl}`);
+        const buf = Buffer.from(await resp.arrayBuffer());
+        const rawPath = join(slidesDir, `raw_${timestamp}_a${accountIndex}_${i + 1}.png`);
+        await writeFile(rawPath, buf);
+        rawPaths.push(rawPath);
+        ctaImageSlides.add(i);
+        log(`  Uploaded CTA image saved (${(buf.length / 1024).toFixed(0)}KB)`);
+        continue;
+      } catch (err) {
+        log(`  WARNING: failed to use uploaded CTA image (${err}); falling back to Gemini-rendered CTA with brandName="${brandName}"`);
+        // Fall through to Gemini-rendered CTA below.
+      }
+    }
+
     let prompt: string;
     if (isCtaSlide9) {
-      // Rule 46: CTA slide generated in matching style with Minutewise on phone
+      // Rule 46: CTA slide generated in matching style with brandName on phone
       prompt = buildCtaSlidePrompt(
         character.description,
         flow,
         animStyle?.prompt || null,
         scene,
         totalSlides,
+        brandName,
       );
     } else if (flow === 'photorealistic') {
-      prompt = buildPhotorealisticPrompt(character.description, scene, slide.role, i + 1, totalSlides);
+      prompt = buildPhotorealisticPrompt(character.description, scene, slide.role, i + 1, totalSlides, brandName);
     } else if (flow === 'emoji_overlay') {
-      prompt = buildEmojiOverlayPrompt(character.description, slide.role, i + 1, totalSlides, content.title, animStyle!.prompt);
+      prompt = buildEmojiOverlayPrompt(character.description, slide.role, i + 1, totalSlides, content.title, animStyle!.prompt, brandName);
     } else {
-      prompt = buildAnimatedPrompt(character.description, scene, slide.role, animStyle!.prompt, i + 1, totalSlides);
+      prompt = buildAnimatedPrompt(character.description, scene, slide.role, animStyle!.prompt, i + 1, totalSlides, brandName);
+    }
+
+    // Phase 17c: append the trained style distillation to EVERY image
+    // prompt regardless of flow. The distillation is the operator's
+    // ground-truth "this is how my brand looks" paragraph derived from
+    // their uploaded reference images. Putting it at the END of the
+    // prompt makes it the most recent / most-weighted instruction the
+    // model sees. Empty string when no training has happened.
+    if (styleGuide) {
+      prompt += `\n\nSTYLE GUIDE (must match — derived from this brand's reference images):\n${styleGuide}\n\nApply this style to the scene above. Do NOT copy any specific imagery from the reference description; produce new content that LOOKS like it belongs to the same brand.`;
     }
 
     log(`Generating slide ${i + 1}/${totalSlides} [${slide.role}]${isCtaSlide9 ? ' (style-matching CTA)' : ''} (clean image)...`);
+
+    // Surface the FINAL prompt (after styleGuide append, after flow-
+    // specific scaffolding) to the dashboard's Live Runs timeline.
+    // Non-fatal — reportEvent swallows errors internally so a logging
+    // glitch never aborts a cycle. The message body holds the full
+    // text; metadata holds the indexes for filtering/UI grouping.
+    await reportEvent(
+      getCurrentRunId(),
+      'image_prompt',
+      `Slide ${i + 1}/${totalSlides} prompt · ${slide.role}${isCtaSlide9 ? ' (CTA)' : ''}`,
+      prompt,
+      {
+        flow,
+        metadata: {
+          slide_index: i + 1,
+          slide_role: slide.role,
+          total_slides: totalSlides,
+          account_index: accountIndex,
+          is_cta: isCtaSlide9,
+          prompt_length: prompt.length,
+        },
+      },
+    );
 
     try {
       const imageBuffer = await generateImage(prompt);
@@ -517,10 +761,27 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
   const { exec } = await import('child_process');
   const { promisify } = await import('util');
   const execAsync = promisify(exec);
+  const { copyFile } = await import('node:fs/promises');
 
   for (let i = 0; i < totalSlides; i++) {
     const rawPath = rawPaths[i];
     const finalPath = join(slidesDir, `slide_${timestamp}_a${accountIndex}_${i + 1}.png`);
+
+    // CTA-image slides are already finished designs from the operator
+    // — no text overlay, no spell-check pass. Just copy raw → final.
+    if (ctaImageSlides.has(i)) {
+      try {
+        await copyFile(rawPath, finalPath);
+        finalPaths.push(finalPath);
+        log(`  Slide ${i + 1}: uploaded CTA image used verbatim (no overlay)`);
+      } catch (err) {
+        log(`  ERROR copying uploaded CTA image: ${err}`);
+        throw err;
+      }
+      await unlink(rawPath).catch(() => {});
+      continue;
+    }
+
     const textLines = preparedTexts[i].split('\n');
     const textJson = JSON.stringify(textLines);
 
