@@ -14,6 +14,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase";
+import { assertRole } from "@/lib/auth";
 import type { PayoutWithJoins } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,18 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(req: NextRequest) {
+  // Payouts export contains every creator's legal name, email, country,
+  // amounts, and processor refs — admin-only. Without this guard any
+  // signed-in user (including a creator viewing their own dashboard)
+  // could GET this route and dump the entire table. RLS would normally
+  // be the second line of defence, but the join on `creator:creator_id`
+  // pulls fields that may not be RLS-restricted to the requester, so we
+  // gate at the route level too.
+  const auth = await assertRole("admin");
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: 403 });
+  }
+
   const params = req.nextUrl.searchParams;
   const from = params.get("from"); // ISO date YYYY-MM-DD
   const to = params.get("to");
