@@ -39,6 +39,12 @@ interface CreatorRowAgg extends Creator {
   posts_last_7d: number;
   last_posted_at: string | null;  // YYYY-MM-DD or null
   activity: ActivityStatus;
+  /**
+   * The resolved TikTok handles this creator owns (across all
+   * campaigns). Derived from owned_account_ids → accounts.handle.
+   * Empty array for UGC creators or anyone never assigned a handle.
+   */
+  owned_handles: string[];
 }
 
 async function loadCreators(): Promise<CreatorRowAgg[]> {
@@ -51,10 +57,15 @@ async function loadCreators(): Promise<CreatorRowAgg[]> {
 
   if (!creators || creators.length === 0) return [];
 
-  // Pull payouts AND posts in parallel — one round-trip each. Posts
-  // table stays under a few thousand rows in our setup; if it ever
-  // explodes we'll move this to a SQL view with per-creator counts.
-  const [{ data: payouts }, { data: posts }] = await Promise.all([
+  // Pull payouts, posts, AND accounts in parallel — one round-trip
+  // each. Posts + accounts both stay small (few dozen rows in our
+  // setup); when they balloon we'll move to a SQL view.
+  //
+  // The accounts query is global rather than scoped per creator because
+  // owned_account_ids is a denormalised array on the creators row;
+  // resolving id→handle in JS after one bulk SELECT is faster than
+  // N small queries.
+  const [{ data: payouts }, { data: posts }, { data: accounts }] = await Promise.all([
     sb.from("payouts")
       .select("creator_id, campaign_id, status, amount_cents")
       .returns<Array<{ creator_id: string; campaign_id: string; status: string; amount_cents: number }>>(),
@@ -62,7 +73,11 @@ async function loadCreators(): Promise<CreatorRowAgg[]> {
       .select("creator_id, date")
       .not("creator_id", "is", null)
       .returns<Array<{ creator_id: string | null; date: string | null }>>(),
+    sb.from("accounts")
+      .select("id, handle")
+      .returns<Array<{ id: string; handle: string }>>(),
   ]);
+  const handleById = new Map((accounts ?? []).map((a) => [a.id, a.handle]));
 
   const aggMap = new Map<string, {
     earned: number; pending: number; approved: number; paid: number; campaigns: Set<string>;
@@ -112,6 +127,12 @@ async function loadCreators(): Promise<CreatorRowAgg[]> {
     else if (a.posts_today > 0) activity = "active_today";
     else if (a.posts_last_7d > 0) activity = "active_week";
     else activity = "idle";
+    // Resolve owned_account_ids → handles, dropping any ids the
+    // accounts table doesn't recognise (stale references from a
+    // deleted account stay in the array; we just don't surface them).
+    const owned_handles = (c.owned_account_ids ?? [])
+      .map((id) => handleById.get(id))
+      .filter((h): h is string => !!h);
     return {
       ...c,
       total_earned_cents: a.earned,
@@ -124,6 +145,7 @@ async function loadCreators(): Promise<CreatorRowAgg[]> {
       posts_last_7d: a.posts_last_7d,
       last_posted_at: a.last_posted_at,
       activity,
+      owned_handles,
     };
   });
 }
@@ -281,10 +303,23 @@ export default async function CreatorsPage({
                         <span className="text-[10px] uppercase tracking-wider text-amber-600">{c.status}</span>
                       )}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
                       {c.email}
                       {c.country && <> · {c.country}</>}
                       {c.campaign_count > 0 && <> · {c.campaign_count} campaign{c.campaign_count === 1 ? "" : "s"}</>}
+                      {c.owned_handles.length > 0 && (
+                        <>
+                          {" · "}
+                          <span className="text-foreground/80 font-medium">
+                            owns {c.owned_handles.length} account{c.owned_handles.length === 1 ? "" : "s"}
+                          </span>
+                          {" — "}
+                          <span title={c.owned_handles.map((h) => `@${h}`).join(", ")}>
+                            {c.owned_handles.slice(0, 3).map((h) => `@${h}`).join(", ")}
+                            {c.owned_handles.length > 3 && ` +${c.owned_handles.length - 3} more`}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-4 shrink-0">

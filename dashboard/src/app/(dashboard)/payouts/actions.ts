@@ -116,6 +116,135 @@ export async function updateCreator(input: { id: string } & Partial<Creator>): P
   return { ok: true };
 }
 
+/**
+ * Replace the campaign-scoped subset of a creator's owned_account_ids
+ * in one atomic update.
+ *
+ * Use case: on /campaigns/<slug>/creators the operator wants to say
+ * "these 6 of the campaign's 30 accounts belong to Maya". We can't
+ * just overwrite `owned_account_ids` because that would also wipe
+ * any accounts Maya owns on OTHER campaigns. So:
+ *
+ *   1. Load the creator's current owned_account_ids.
+ *   2. Compute `keep` = current set MINUS the ids of accounts on THIS
+ *      campaign (i.e. all the accounts Maya owns on other campaigns
+ *      stay untouched).
+ *   3. Validate every incoming accountId actually has campaign_id =
+ *      campaignId — otherwise the caller could smuggle in someone
+ *      else's account.
+ *   4. Strip any incoming accountIds out of every OTHER creator's
+ *      array, so one account never has two owners. This is the
+ *      one-owner invariant — easy to forget if the caller doesn't.
+ *   5. Write the new value: `keep ∪ incoming`.
+ *
+ * Returns the number of other creators that lost an account in the
+ * shuffle (for a confirmation toast like "Reassigned 2 accounts from
+ * Thomas to Maya").
+ */
+export async function setCreatorCampaignAccounts(input: {
+  creatorId: string;
+  campaignId: string;
+  accountIds: string[];
+}): Promise<Result<{ ownsNow: number; reassignedFrom: number }>> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
+  const sb = await createClient();
+
+  // 1. Pull every account belonging to this campaign + every creator
+  //    who currently owns any of those accounts. Two cheap queries,
+  //    bounded by campaign size (low double digits in practice).
+  const [accountsRes, creatorsRes] = await Promise.all([
+    sb.from("accounts")
+      .select("id")
+      .eq("campaign_id", input.campaignId)
+      .returns<Array<{ id: string }>>(),
+    // Pull all creators — we need to scan their owned_account_ids
+    // arrays for collisions on the incoming ids. At creator-roster
+    // sizes (10–50) this is faster than a clever Postgres array-overlap
+    // query and easier to reason about.
+    sb.from("creators")
+      .select("id, owned_account_ids")
+      .returns<Array<{ id: string; owned_account_ids: string[] | null }>>(),
+  ]);
+
+  const campaignAccountIds = new Set((accountsRes.data ?? []).map((a) => a.id));
+  const incoming = new Set(input.accountIds);
+
+  // 2. Validation — every incoming id must be on this campaign. Refuse
+  //    silently-buggy clients that try to assign cross-campaign.
+  for (const id of incoming) {
+    if (!campaignAccountIds.has(id)) {
+      return {
+        ok: false,
+        error: `Account ${id} isn't on this campaign — can't assign it here.`,
+      };
+    }
+  }
+
+  const allCreators = creatorsRes.data ?? [];
+  const target = allCreators.find((c) => c.id === input.creatorId);
+  if (!target) return { ok: false, error: "Creator not found." };
+
+  // 3. Update the target creator: keep everything they own that's NOT
+  //    on this campaign, then add the new selection. This is the
+  //    "campaign-scoped replace" — preserves their ownership on
+  //    every other campaign exactly.
+  const targetCurrent = target.owned_account_ids ?? [];
+  const keep = targetCurrent.filter((id) => !campaignAccountIds.has(id));
+  const newTargetOwned = [...keep, ...input.accountIds];
+
+  // 4. Strip incoming ids from every OTHER creator. One-owner invariant.
+  //    Count how many creators got changed so we can surface it.
+  let reassignedFrom = 0;
+  const otherUpdates: Array<{ id: string; owned_account_ids: string[] }> = [];
+  for (const c of allCreators) {
+    if (c.id === input.creatorId) continue;
+    const current = c.owned_account_ids ?? [];
+    const filtered = current.filter((id) => !incoming.has(id));
+    if (filtered.length !== current.length) {
+      otherUpdates.push({ id: c.id, owned_account_ids: filtered });
+      reassignedFrom += 1;
+    }
+  }
+
+  // 5. Apply writes. Supabase doesn't have transactions in the JS
+  //    client, so this isn't strictly atomic — but the worst case is
+  //    a partial update that leaves an account briefly orphaned in a
+  //    creator's array, fixable by a re-save. We do the target FIRST
+  //    so the chosen creator is always correct, then sweep the rest.
+  const now = new Date().toISOString();
+  const { error: targetErr } = await sb
+    .from("creators")
+    .update({ owned_account_ids: newTargetOwned, updated_at: now })
+    .eq("id", input.creatorId);
+  if (targetErr) return { ok: false, error: `target update: ${targetErr.message}` };
+
+  for (const u of otherUpdates) {
+    const { error } = await sb
+      .from("creators")
+      .update({ owned_account_ids: u.owned_account_ids, updated_at: now })
+      .eq("id", u.id);
+    if (error) {
+      // Don't bail — we already committed the target. Just surface a
+      // partial-success warning. Operator can re-save to fix.
+      return {
+        ok: false,
+        error: `partial success — target updated, but another creator's array (${u.id}) failed: ${error.message}`,
+      };
+    }
+  }
+
+  revalidatePath("/accounts");
+  revalidatePath("/creators");
+  revalidatePath(`/creators/${input.creatorId}`);
+  revalidatePath(`/campaigns`);
+
+  return {
+    ok: true,
+    data: { ownsNow: input.accountIds.length, reassignedFrom },
+  };
+}
+
 export async function archiveCreator(input: { id: string }): Promise<Result> {
   const auth = await assertRole("admin");
   if (!auth.ok) return auth;
@@ -332,7 +461,7 @@ interface ReassignInput {
   expectedPosts: number;
 }
 
-export async function reassignAssignment(input: ReassignInput): Promise<Result<{ newAssignmentId: string; remaining: number; expectedPosts: number; createdCreatorId?: string; accountsMoved: number }>> {
+export async function reassignAssignment(input: ReassignInput): Promise<Result<{ newAssignmentId: string; remaining: number; expectedPosts: number; createdCreatorId?: string; accountsMoved: number; merged: boolean }>> {
   const auth = await assertRole("admin");
   if (!auth.ok) return auth;
   const sb = await createClient();
@@ -416,19 +545,32 @@ export async function reassignAssignment(input: ReassignInput): Promise<Result<{
     return { ok: false, error: "Cannot reassign to an archived creator." };
   }
 
-  // Guard: the new creator can't already have an assignment on this
-  // campaign (the unique(creator_id, campaign_id) index would reject
-  // the insert anyway — fail visibly with a friendly message instead).
+  // Look up whether the new creator already has an assignment on this
+  // campaign. If yes, we take the MERGE path — close the old creator's
+  // assignment and bump the existing assignment's expected_posts target
+  // by the operator-supplied amount. If no, we take the original NEW
+  // path — create a fresh assignment row. Either way, account ownership
+  // is moved the same way (Step 3 below).
+  //
+  // The unique(creator_id, campaign_id) index means we can't have two
+  // assignments for the same creator-campaign pair, which is why merge
+  // is the only sensible behaviour when picking an on-campaign creator.
   const { data: existingAssignment } = await sb
     .from("assignments")
-    .select("id, status")
+    .select("id, status, expected_posts")
     .eq("creator_id", newCreatorId)
     .eq("campaign_id", old.campaign_id)
-    .maybeSingle<{ id: string; status: string }>();
-  if (existingAssignment) {
+    .maybeSingle<{ id: string; status: string; expected_posts: number }>();
+  const mergeMode = !!existingAssignment;
+  if (mergeMode && existingAssignment!.status === "completed") {
+    // Re-opening a completed assignment is a different operation
+    // (probably a mistake) — block it explicitly so we don't silently
+    // resurrect old work.
     return {
       ok: false,
-      error: `That creator is already on this campaign (status: ${existingAssignment.status}). Pick someone else.`,
+      error:
+        `That creator's previous assignment on this campaign is marked completed. ` +
+        `Pick a different creator, or unarchive the assignment first.`,
     };
   }
 
@@ -486,7 +628,15 @@ export async function reassignAssignment(input: ReassignInput): Promise<Result<{
 
   const accountsToMove = (campaignAccountsRes.data ?? []).map((a) => a.id);
 
-  if (accountsToMove.length === 0) {
+  // Gate the zero-accounts case differently per mode:
+  //   - new-assignment mode: refusing makes sense — spinning up a
+  //     fresh assignment with literally nothing to work on is a
+  //     pointless row.
+  //   - merge mode: 0 accounts is fine. The operator is saying
+  //     "this creator is leaving, absorb their commitment into an
+  //     existing campaign-mate" — that's a legitimate close-out even
+  //     when no account ownership actually moves.
+  if (accountsToMove.length === 0 && !mergeMode) {
     return {
       ok: false,
       error:
@@ -510,34 +660,67 @@ export async function reassignAssignment(input: ReassignInput): Promise<Result<{
     .eq("id", old.id);
   if (closeErr) return { ok: false, error: `Failed closing original assignment: ${closeErr.message}` };
 
-  // 2. Open the new assignment with the operator-provided target.
-  //    Same rate override + multipliers — operator can edit later if
-  //    the new creator deserves a different deal. Expected_posts comes
-  //    from the dialog (defaults to remaining when >0, otherwise the
-  //    operator types in a fresh target).
-  const { data: newAssignment, error: createErr } = await sb
-    .from("assignments")
-    .insert({
-      creator_id: newCreatorId,
-      campaign_id: old.campaign_id,
-      rate_override_cents: old.rate_override_cents,
-      expected_posts: newExpectedPosts,
-      applied_multipliers: old.applied_multipliers ?? [],
-      status: "active",
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (createErr || !newAssignment) {
-    // Best-effort rollback: re-open the old assignment so the operator
-    // isn't left with a half-finished reassignment. This won't restore
-    // the pre-cap expected_posts perfectly (we'd need to remember it),
-    // but flipping status back to 'active' is the important bit.
-    await sb
+  // 2. Land the new assignment.
+  //
+  //    NEW mode  → insert a fresh assignments row for the new creator
+  //                with the operator-supplied target.
+  //    MERGE mode → bump the existing assignment's expected_posts by
+  //                 input.expectedPosts (additive — the operator is
+  //                 saying "they need to deliver this many MORE posts
+  //                 to absorb the leaving creator's work"). We don't
+  //                 touch rate_override or multipliers because the
+  //                 existing assignment already has the operator's
+  //                 chosen deal for that creator.
+  let newAssignmentId: string;
+  let resultingExpectedPosts: number;
+  if (mergeMode) {
+    resultingExpectedPosts = existingAssignment!.expected_posts + newExpectedPosts;
+    const { error: mergeErr } = await sb
       .from("assignments")
-      .update({ status: old.status, expected_posts: old.expected_posts, completed_at: null })
-      .eq("id", old.id);
-    return { ok: false, error: `Failed creating new assignment: ${createErr?.message ?? "unknown"}` };
+      .update({
+        expected_posts: resultingExpectedPosts,
+        // If the assignment was paused/declined and the operator's
+        // picking them now, reactivate it. Active/accepted stay as-is.
+        status: existingAssignment!.status === "active" || existingAssignment!.status === "accepted"
+          ? existingAssignment!.status
+          : "active",
+        updated_at: nowIso,
+      })
+      .eq("id", existingAssignment!.id);
+    if (mergeErr) {
+      // Roll back the old-assignment close so the operator can retry.
+      await sb
+        .from("assignments")
+        .update({ status: old.status, expected_posts: old.expected_posts, completed_at: null })
+        .eq("id", old.id);
+      return { ok: false, error: `Failed merging into existing assignment: ${mergeErr.message}` };
+    }
+    newAssignmentId = existingAssignment!.id;
+  } else {
+    const { data: newAssignment, error: createErr } = await sb
+      .from("assignments")
+      .insert({
+        creator_id: newCreatorId,
+        campaign_id: old.campaign_id,
+        rate_override_cents: old.rate_override_cents,
+        expected_posts: newExpectedPosts,
+        applied_multipliers: old.applied_multipliers ?? [],
+        status: "active",
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (createErr || !newAssignment) {
+      // Best-effort rollback: re-open the old assignment so the operator
+      // isn't left with a half-finished reassignment.
+      await sb
+        .from("assignments")
+        .update({ status: old.status, expected_posts: old.expected_posts, completed_at: null })
+        .eq("id", old.id);
+      return { ok: false, error: `Failed creating new assignment: ${createErr?.message ?? "unknown"}` };
+    }
+    newAssignmentId = newAssignment.id;
+    resultingExpectedPosts = newExpectedPosts;
   }
 
   // 3. Move account ownership: strip campaign-scoped account ids out
@@ -561,8 +744,11 @@ export async function reassignAssignment(input: ReassignInput): Promise<Result<{
         .eq("id", newCreatorId)).error;
 
   if (moveOldErr || moveNewErr) {
-    // Rollback the assignment swap AND any partial creator-row updates
-    // so the operator can retry from a consistent state.
+    // Rollback any partial creator-row updates so the operator can
+    // retry from a consistent state. Only delete the new assignment
+    // row when we INSERTED it — in merge mode the assignment already
+    // existed and just got its target bumped, so we restore the prior
+    // expected_posts instead of deleting.
     await sb
       .from("creators")
       .update({ owned_account_ids: oldOwned, updated_at: nowIso })
@@ -571,10 +757,17 @@ export async function reassignAssignment(input: ReassignInput): Promise<Result<{
       .from("creators")
       .update({ owned_account_ids: newOwned, updated_at: nowIso })
       .eq("id", newCreatorId);
-    await sb
-      .from("assignments")
-      .delete()
-      .eq("id", newAssignment.id);
+    if (mergeMode) {
+      await sb
+        .from("assignments")
+        .update({ expected_posts: existingAssignment!.expected_posts, updated_at: nowIso })
+        .eq("id", newAssignmentId);
+    } else {
+      await sb
+        .from("assignments")
+        .delete()
+        .eq("id", newAssignmentId);
+    }
     await sb
       .from("assignments")
       .update({ status: old.status, expected_posts: old.expected_posts, completed_at: null })
@@ -610,11 +803,12 @@ export async function reassignAssignment(input: ReassignInput): Promise<Result<{
   return {
     ok: true,
     data: {
-      newAssignmentId: newAssignment.id,
+      newAssignmentId,
       remaining,
-      expectedPosts: newExpectedPosts,
+      expectedPosts: resultingExpectedPosts,
       createdCreatorId,
       accountsMoved: accountsToMove.length,
+      merged: mergeMode,
     },
   };
 }
