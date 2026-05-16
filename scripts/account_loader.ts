@@ -74,7 +74,26 @@ export async function loadAccountsIntoConfig(campaignSlug?: string): Promise<num
     }
 
     if (data.length === 0) {
-      log('[account_loader] DB has zero active accounts — using config.ts fallback');
+      // CRITICAL: when a specific campaign was requested but it has zero
+      // accounts attached, we MUST NOT fall back to config.tiktokAccounts.
+      // That fallback contains the legacy MinuteWise account list, so a
+      // freshly created campaign without accounts (e.g. BOTAI before any
+      // accounts were assigned) would silently post on MinuteWise's
+      // accounts — exactly the cross-campaign leakage we're closing.
+      //
+      // Empty the config list so any caller that doesn't check the
+      // returned count still produces zero posts, and surface a clear
+      // log line so the operator sees what happened.
+      if (campaignSlug) {
+        config.tiktokAccounts.length = 0;
+        log(`[account_loader] ERROR: campaign "${campaignSlug}" has zero active accounts attached. NOT falling back to the global config — that would post on a different campaign's accounts. Attach an account to this campaign on /campaigns/${campaignSlug}/accounts and re-run.`);
+        loaded = true; // we did successfully read from DB; the result was just empty
+        return 0;
+      }
+      // No campaign scope — legacy "global" call. Falling back to
+      // config.ts is OK here because there's no campaign whose accounts
+      // we'd be confusing it with.
+      log('[account_loader] DB has zero active accounts (no campaign scope) — using config.ts fallback');
       return config.tiktokAccounts.length;
     }
 

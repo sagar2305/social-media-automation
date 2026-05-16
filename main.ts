@@ -8,6 +8,7 @@ import {
   startCycleRun,
   reportEvent,
   setCurrentPhase,
+  setCurrentRunId,
   bumpPostCounters,
   endCycleRun,
 } from './scripts/cycle_reporter.js';
@@ -64,26 +65,92 @@ const BLOTATO_DAILY_ACCOUNT_CAP = 3;
 //   npm run flow2 -- --delay=15            → schedule 15 min after completion
 
 /**
- * Read --campaign=<slug> from argv and stash it for every downstream helper
- * via setCampaignSlug(). Called BEFORE parseArgs / loadAccountsIntoConfig
+ * Resolve the campaign slug for this cycle and stash it for every downstream
+ * helper via setCampaignSlug(). Called BEFORE parseArgs / loadAccountsIntoConfig
  * because both depend on the slug being set.
+ *
+ * Resolution order:
+ *   1. --campaign=<slug> on the CLI                     (explicit, always wins)
+ *   2. exactly 1 active campaign in DB                   (implicit, with warning)
+ *   3. otherwise → REFUSE to run (process.exit(2))
+ *
+ * Why no silent default to DEFAULT_CAMPAIGN_SLUG anymore: a scheduler bug
+ * (Phase 17) once dropped the --campaign flag when firing a RoastAI batch,
+ * and main.ts cheerfully fell back to "minutewise" — so a RoastAI scheduled
+ * cycle silently posted MinuteWise content. Hard-failing on multiple active
+ * campaigns means any future caller that forgets the flag gets caught at the
+ * door instead of producing content for the wrong campaign.
+ *
+ * The DEFAULT_CAMPAIGN_SLUG is still used as a last-resort fallback when
+ * Supabase is unreachable (the cycle has to be able to run with the local
+ * config.ts even if the DB is down). That branch logs prominently so it
+ * doesn't go unnoticed.
  */
-function resolveCampaignSlugFromArgs(): string {
+async function resolveCampaignSlugFromArgs(): Promise<string> {
   const args = process.argv.slice(2);
-  let slug = DEFAULT_CAMPAIGN_SLUG;
   const campaignArg = args.find(a => a.startsWith('--campaign='));
   if (campaignArg) {
     const val = campaignArg.split('=')[1]?.trim();
-    if (val) slug = val;
+    if (val) {
+      setCampaignSlug(val);
+      return val;
+    }
   }
+
+  // No --campaign passed — fall through to the smart implicit resolver.
+  const slug = await pickImplicitCampaignSlug();
   setCampaignSlug(slug);
   return slug;
+}
+
+/**
+ * Pick a campaign when no --campaign flag was passed. Returns the slug or
+ * exits the process with a clear error message; never returns silently with
+ * the wrong scope.
+ */
+async function pickImplicitCampaignSlug(): Promise<string> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      log(`[campaign] WARNING: Supabase env missing — using "${DEFAULT_CAMPAIGN_SLUG}" without active-campaign check`);
+      return DEFAULT_CAMPAIGN_SLUG;
+    }
+    const sb = createClient(url, key);
+    const { data, error } = await sb.from('campaigns').select('slug').eq('status', 'active');
+    if (error) {
+      log(`[campaign] WARNING: could not list active campaigns (${error.message}) — using "${DEFAULT_CAMPAIGN_SLUG}"`);
+      return DEFAULT_CAMPAIGN_SLUG;
+    }
+    const slugs = (data ?? []).map(c => c.slug as string);
+    if (slugs.length === 0) {
+      log(`[campaign] WARNING: no active campaigns in DB — using "${DEFAULT_CAMPAIGN_SLUG}"`);
+      return DEFAULT_CAMPAIGN_SLUG;
+    }
+    if (slugs.length === 1) {
+      log(`[campaign] no --campaign flag; exactly 1 active campaign in DB — using "${slugs[0]}"`);
+      return slugs[0];
+    }
+    // Multiple active campaigns + no flag → REFUSE. This is the loophole
+    // closer: silent default to MinuteWise was producing wrong-campaign
+    // content. Better to fail loudly than post to the wrong audience.
+    log(`[campaign] ERROR: no --campaign flag passed and ${slugs.length} active campaigns exist (${slugs.join(', ')}).`);
+    log('[campaign] Refusing to run — a cycle with no campaign scope would silently produce content for the wrong campaign.');
+    log('[campaign] Re-run with --campaign=<slug>, or pause all but one campaign in the dashboard.');
+    process.exit(2);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`[campaign] WARNING: implicit-campaign lookup failed (${msg}) — using "${DEFAULT_CAMPAIGN_SLUG}"`);
+    return DEFAULT_CAMPAIGN_SLUG;
+  }
 }
 
 function parseArgs(): {
   flows: FlowType[];
   postingPath: PostingPath;
   delayMinutes: number;
+  postIntervalMinutes: number;
   scheduledAt: Date | undefined;
   skipResearch: boolean;
   accountIndices: number[];
@@ -124,6 +191,16 @@ function parseArgs(): {
   const delayArg = args.find(a => a.startsWith('--delay='));
   if (delayArg) {
     delayMinutes = parseInt(delayArg.split('=')[1]) || 0;
+  }
+
+  // Per-post spacing in minutes. When > 0, post N is scheduled
+  //   first_post_time + (N-1) * postIntervalMinutes
+  // so a 3-post batch with --post-interval=120 lands at +0, +2h, +4h.
+  // 0 = legacy behaviour (all posts at the same time).
+  let postIntervalMinutes = 0;
+  const intervalArg = args.find(a => a.startsWith('--post-interval='));
+  if (intervalArg) {
+    postIntervalMinutes = Math.max(0, parseInt(intervalArg.split('=')[1]) || 0);
   }
 
   // Absolute scheduled time (overrides delay) — ISO string or millis-since-epoch
@@ -187,7 +264,7 @@ function parseArgs(): {
     postsPerFlow = Math.max(1, n);
   }
 
-  return { flows, postingPath, delayMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow };
+  return { flows, postingPath, delayMinutes, postIntervalMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow };
 }
 
 async function cleanup(filePaths: string[]): Promise<void> {
@@ -208,18 +285,66 @@ async function runCycle(): Promise<void> {
   }
 
   // 1) Resolve campaign slug FIRST so loadAccountsIntoConfig can scope to it.
-  const campaignSlug = resolveCampaignSlugFromArgs();
+  //    Async because it may hit Supabase to enforce the "no silent fallback
+  //    when multiple campaigns exist" rule (see resolveCampaignSlugFromArgs).
+  const campaignSlug = await resolveCampaignSlugFromArgs();
   const campaign: Campaign | null = await getCampaign(campaignSlug);
   if (!campaign) {
     log(`[campaign] WARNING: campaign "${campaignSlug}" not found in DB — running with config.ts defaults`);
   }
 
   // 2) Load campaign-scoped accounts into config.tiktokAccounts.
-  await loadAccountsIntoConfig(campaign ? campaign.slug : undefined);
+  const accountCount = await loadAccountsIntoConfig(campaign ? campaign.slug : undefined);
+
+  // 2b) HARD GUARD — refuse to start a cycle for a real campaign that has
+  //     no accounts attached. account_loader already empties the config
+  //     list rather than falling back to MinuteWise's accounts, but we
+  //     also write a failed cycle_runs row here so the dashboard's Live
+  //     Runs panel surfaces this as a visible error instead of the
+  //     process appearing to silently no-op. The error_text field gives
+  //     the operator a one-click explanation of what to fix.
+  if (campaign && accountCount === 0) {
+    const errMsg =
+      `Campaign "${campaign.name}" (${campaign.slug}) has no accounts attached. ` +
+      `A campaign cycle posts only to that campaign's accounts, so there is nothing to post to. ` +
+      `Open /campaigns/${campaign.slug}/accounts and attach at least one account, then re-run.`;
+    log('');
+    log('╔══════════════════════════════════════════════════════════════════╗');
+    log(`║  REFUSING TO RUN: campaign "${campaign.slug}" has no accounts.`);
+    log('║');
+    log('║  A campaign cycle posts to that campaign\'s accounts only. There');
+    log('║  are zero accounts attached to this campaign right now, so there');
+    log('║  is nothing to post to.');
+    log('║');
+    log(`║  Fix: open /campaigns/${campaign.slug}/accounts on the dashboard,`);
+    log('║  attach at least one account, and re-run.');
+    log('╚══════════════════════════════════════════════════════════════════╝');
+    // Best-effort: write a failed cycle_runs row so the dashboard's
+    // Live Runs panel can show what happened. Wrapped in try/catch
+    // because telemetry must never block the actual exit.
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && key) {
+        const sb = createClient(url, key);
+        const now = new Date().toISOString();
+        await sb.from('cycle_runs').insert({
+          status: 'failed',
+          started_at: now,
+          ended_at: now,
+          caller: process.env.CYCLE_CALLER ?? 'manual',
+          campaign_id: campaign.id,
+          error_text: errMsg,
+        });
+      }
+    } catch { /* non-fatal */ }
+    process.exit(2);
+  }
 
   // 3) Now parseArgs sees the right accounts list when computing the default
   //    accountIndices (= "all loaded accounts" pre-cap).
-  const { flows, postingPath, delayMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow } = parseArgs();
+  const { flows, postingPath, delayMinutes, postIntervalMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow } = parseArgs();
 
   const pathLabel = postingPath === 'draft' ? 'UPLOAD (TikTok drafts)' : 'DIRECT_POST (publish)';
   const flowNames = flows.map(f => f === 'photorealistic' ? 'Flow 1' : f === 'animated' ? 'Flow 2' : 'Flow 3');
@@ -254,6 +379,9 @@ async function runCycle(): Promise<void> {
     caller: process.env.CYCLE_CALLER ?? 'manual',
     campaignId: campaign?.id ?? null,
   });
+  // Stash for downstream helpers (generate_images.ts logs prompts via
+  // this). Set even when runId is null so callers don't fail.
+  setCurrentRunId(runId);
   await reportEvent(runId, 'cycle_start', 'Cycle started',
     `${totalPosts} posts queued (${flowNames.join(' + ')} × ${accountNames.join(', ')})`);
 
@@ -423,7 +551,12 @@ async function runCycle(): Promise<void> {
   await setCurrentPhase(runId, 'posting');
   await reportEvent(runId, 'phase_start', 'Posting', `Submitting ${allPostData.length} posts to Blotato (${pathLabel})`);
 
-  const results = await postAllDrafts(allPostData, postingPath, scheduleDate);
+  // Pass runId so per-account submit failures show up on the Live Runs
+  // timeline (kind='post_failed') instead of silently disappearing into
+  // auto_fix_events. This is what made BOTAI's first cycle look like a
+  // mystery "0 submissions completed" — the actual ENOENT error was
+  // captured but invisible to the operator without DB digging.
+  const results = await postAllDrafts(allPostData, postingPath, scheduleDate, runId, postIntervalMinutes);
 
   // Bookkeeping: update each archive's meta.json with its new Blotato postId
   // and mark the original tracker row as retried if this was a retry.

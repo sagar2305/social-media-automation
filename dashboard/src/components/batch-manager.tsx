@@ -196,12 +196,20 @@ export function BatchManager({
     if (!draft.label.trim()) { setError("Label is required."); return; }
     if (draft.flows.length === 0) { setError("Pick at least one flow."); return; }
     if (draft.posts_per_account < 1) { setError("Posts per account must be ≥ 1."); return; }
-    // We no longer require explicit account selection. account_handles is
-    // saved empty, which the scheduler interprets as "every active account
-    // on this campaign". Now that accounts are campaign-scoped (no global
-    // pool), that fan-out is exactly what the operator wants by default —
-    // the legacy Phase-17b guard against accidental cross-campaign blast
-    // is moot.
+    // Snapshot the campaign's currently active accounts into the batch
+    // at save time. The scheduler (scripts/scheduler_tick.ts) REFUSES
+    // to fire batches with empty account_handles — the legacy "empty
+    // = all active" fallback was removed to prevent stale rows /
+    // direct-SQL inserts from silently fanning out across the campaign.
+    // We mirror that contract here so new batches always have their
+    // target accounts written down explicitly. Editing the list later
+    // is supported on edits (draft.account_handles is preserved).
+    // For the global /settings/schedule call (no campaignId), there's
+    // no campaign to derive accounts from — leave the existing draft
+    // value alone and let the operator pick later.
+    const accountHandles = campaignId && draft.account_handles.length === 0
+      ? accounts.map((a) => a.handle)
+      : draft.account_handles;
 
     setBusy(true);
     const supabase = createBrowserSupabase();
@@ -209,8 +217,8 @@ export function BatchManager({
     if (creating) {
       const order_index = batches.length > 0 ? Math.max(...batches.map((b) => b.order_index)) + 1 : 1;
       const insertPayload = campaignId
-        ? { ...draft, order_index, campaign_id: campaignId }
-        : { ...draft, order_index };
+        ? { ...draft, account_handles: accountHandles, order_index, campaign_id: campaignId }
+        : { ...draft, account_handles: accountHandles, order_index };
       const { data, error: err } = await supabase
         .from("cycle_batches")
         .insert(insertPayload)
@@ -221,7 +229,7 @@ export function BatchManager({
     } else if (editingId) {
       const { data, error: err } = await supabase
         .from("cycle_batches")
-        .update({ ...draft, updated_at: new Date().toISOString() })
+        .update({ ...draft, account_handles: accountHandles, updated_at: new Date().toISOString() })
         .eq("id", editingId)
         .select()
         .single<CycleBatch>();
@@ -236,13 +244,19 @@ export function BatchManager({
 
   async function handleToggle(b: CycleBatch) {
     setBusy(true);
+    setError(null);
     const supabase = createBrowserSupabase();
-    await supabase
+    // Honour the Supabase error: if the update silently fails (RLS,
+    // network, stale row), flipping local state shows the operator a
+    // "Enabled" pill while the scheduler still skips the batch. Surface
+    // the error and DON'T mutate UI state on failure.
+    const { error: err } = await supabase
       .from("cycle_batches")
       .update({ enabled: !b.enabled, updated_at: new Date().toISOString() })
       .eq("id", b.id);
-    setBatches((prev) => prev.map((x) => (x.id === b.id ? { ...x, enabled: !b.enabled } : x)));
     setBusy(false);
+    if (err) { setError(`Toggle failed: ${err.message}`); return; }
+    setBatches((prev) => prev.map((x) => (x.id === b.id ? { ...x, enabled: !b.enabled } : x)));
     router.refresh();
   }
 
@@ -263,17 +277,26 @@ export function BatchManager({
     if (swapIdx < 0 || swapIdx >= batches.length) return;
     const other = batches[swapIdx];
     setBusy(true);
+    setError(null);
     const supabase = createBrowserSupabase();
-    await Promise.all([
+    // Two updates run in parallel; both must succeed or we revert
+    // entirely. A partial success would leave the two rows with
+    // duplicate order_index values, which silently corrupts the sort
+    // order on every subsequent page load.
+    const [r1, r2] = await Promise.all([
       supabase.from("cycle_batches").update({ order_index: other.order_index }).eq("id", b.id),
       supabase.from("cycle_batches").update({ order_index: b.order_index }).eq("id", other.id),
     ]);
+    setBusy(false);
+    if (r1.error || r2.error) {
+      setError(`Reorder failed: ${(r1.error ?? r2.error)?.message}. Refresh the page to resync.`);
+      return;
+    }
     const next = [...batches];
     next[idx] = { ...other, order_index: b.order_index };
     next[swapIdx] = { ...b, order_index: other.order_index };
     next.sort((a, b) => a.order_index - b.order_index);
     setBatches(next);
-    setBusy(false);
     router.refresh();
   }
 
@@ -573,14 +596,18 @@ function BatchForm({
           </div>
         )}
 
-        {/* Accounts: no picker. Batches inherit the campaign's accounts
-            implicitly — account_handles stays empty, and the scheduler
-            expands that to "every active account on this campaign" at
-            fire time. Add/remove accounts from the campaign's Accounts
-            tab if you want to scope which handles the batch hits. */}
+        {/* Accounts: no picker. On save we snapshot the campaign's
+            currently active accounts into account_handles (see
+            handleSave). The scheduler refuses to fire batches with
+            empty account_handles, so the snapshot is mandatory. To
+            change which accounts a batch posts to, change the
+            campaign's active accounts on the Accounts tab and edit-
+            save this batch — the save re-snapshots. */}
         <p className="text-[11px] text-muted-foreground -mt-2">
-          This batch will post to every active account on this campaign at fire time.
-          Manage accounts on the Accounts tab.
+          {isCreate
+            ? `This batch will post to the ${campaignAccountCount} active account${campaignAccountCount === 1 ? "" : "s"} on this campaign at save time.`
+            : `Saving re-snapshots the campaign's current ${campaignAccountCount} active account${campaignAccountCount === 1 ? "" : "s"} into this batch.`}
+          {" "}Manage accounts on the Accounts tab.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

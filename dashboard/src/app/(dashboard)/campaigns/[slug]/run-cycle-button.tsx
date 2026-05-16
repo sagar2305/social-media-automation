@@ -30,6 +30,12 @@ interface Props {
   campaignId: string;
   campaignSlug: string;
   campaignName: string;
+  /**
+   * Current campaign status. When != 'active', the button is replaced
+   * with a disabled pill — defense in depth on top of the engine's
+   * pause-guard (cycle_jobs_poller.ts refuses non-active campaigns).
+   */
+  campaignStatus: "active" | "paused" | "archived";
   enabledFlows: { photorealistic: boolean; animated: boolean; emoji_overlay: boolean };
   campaignAccounts: { handle: string; name: string }[];
 }
@@ -53,6 +59,7 @@ export function RunCycleButton({
   campaignId,
   campaignSlug,
   campaignName,
+  campaignStatus,
   enabledFlows,
   campaignAccounts,
 }: Props) {
@@ -74,9 +81,15 @@ export function RunCycleButton({
   // text[] — same shape, just always size 1 now.
   const [flows] = useState<string[]>([campaignFlow]);
   const [path, setPath] = useState<"direct" | "draft">("draft");
-  // Account selection was removed: cycles now always run against every
-  // active account on the campaign. account_handles is sent empty to
-  // cycle_jobs and the engine expands that to the campaign's accounts.
+  // Account selection was removed: cycles always run against every
+  // active account on the campaign. We snapshot the campaign's active
+  // accounts (resolved server-side by the layout's getCampaignAndStats
+  // query — accounts WHERE campaign_id = X AND active = true) into
+  // cycle_jobs.account_handles at submit time. The engine's poller
+  // (cycle_jobs_poller.ts) REJECTS jobs with empty account_handles to
+  // prevent stale rows / direct-SQL inserts from silently fanning out
+  // to every account, so sending the snapshot here is mandatory — not
+  // a convenience.
   const [postsPerAccount, setPostsPerAccount] = useState(1);
   const [skipResearch, setSkipResearch] = useState(false);
   // Hours of GAP between consecutive posts when posts_per_account > 1.
@@ -147,13 +160,26 @@ export function RunCycleButton({
     const sb = createBrowserSupabase();
     const { data: { user } } = await sb.auth.getUser();
     const label = `${campaignName} — manual${flows.length === 1 ? ` ${flows[0]}` : ` ${flows.length} flows`}`;
+    // Snapshot the campaign's active accounts at click time. The list
+    // comes from the server-rendered layout (refreshed on every page
+    // load), so newly-added accounts get picked up the next time the
+    // operator opens the campaign page. The engine's poller refuses
+    // jobs with an empty array, so guard here too — should be
+    // unreachable because the button is disabled when noAccounts, but
+    // belt-and-braces in case of a race or stale tab.
+    const handles = campaignAccounts.map((a) => a.handle);
+    if (handles.length === 0) {
+      setBusy(false);
+      setError("This campaign has no active accounts to run on. Add one on the Accounts tab first.");
+      return;
+    }
     const { data, error: err } = await sb
       .from("cycle_jobs")
       .insert({
         label,
         flows,
         path,
-        account_handles: [],                     // empty = all active on this campaign (engine expands at run time)
+        account_handles: handles,
         posts_per_account: postsPerAccount,
         skip_research: skipResearch,
         schedule_offset_hours: 0,                            // uniform delay not exposed here
@@ -188,15 +214,27 @@ export function RunCycleButton({
     );
   }
 
-  // Hard guard — engine refuses to run a cycle for a campaign with zero
-  // accounts (account_loader.ts no-fallback + main.ts process.exit(2)),
-  // so render the button as disabled with a tooltip pointing the
-  // operator at the Accounts tab. Mirrors the BatchManager block.
+  // Hard guards — engine refuses to fire on (a) campaigns with zero
+  // accounts, or (b) campaigns whose status is paused/archived. Reflect
+  // both states at the UI layer so the operator never clicks a button
+  // that's silently going to be rejected on the Mac side. The pause
+  // guard takes priority — a paused campaign with zero accounts should
+  // surface "paused" first because that's the higher-level state.
+  const isInactive = campaignStatus !== "active";
   const noAccounts = campaignAccounts.length === 0;
 
   return (
     <>
-      {noAccounts ? (
+      {isInactive ? (
+        <a
+          href={`/campaigns/${campaignSlug}/edit`}
+          title={`Campaign is ${campaignStatus} — flip status back to active to resume cycles`}
+          className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors"
+        >
+          <AlertCircle className="h-3.5 w-3.5" />
+          Campaign is {campaignStatus}
+        </a>
+      ) : noAccounts ? (
         <a
           href={`/campaigns/${campaignSlug}/accounts`}
           title="Attach an account to this campaign first"

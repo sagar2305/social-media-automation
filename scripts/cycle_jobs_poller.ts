@@ -40,6 +40,7 @@ interface CycleJob {
   posts_per_account: number;
   skip_research: boolean;
   schedule_offset_hours: number;
+  post_interval_minutes: number;
   status: string;
   campaign_id: string | null;
 }
@@ -58,16 +59,34 @@ function flowToFlag(flow: string): string {
  * `npm run refresh:quick -- --campaign=<slug>` instead of a posting cycle.
  */
 async function buildArgs(job: CycleJob): Promise<string[]> {
-  // Resolve campaign slug if needed (one Supabase round-trip per fired job
-  // — cheap and only happens at fire time, not on every poll).
+  // Resolve campaign slug + status if needed (one Supabase round-trip per
+  // fired job — cheap and only happens at fire time, not on every poll).
+  // status is pulled alongside slug so the pause/archive guard below can
+  // run without a second query.
   let campaignSlug: string | null = null;
+  let campaignStatus: 'active' | 'paused' | 'archived' | null = null;
   if (job.campaign_id) {
     const { data } = await supabase
       .from('campaigns')
-      .select('slug')
+      .select('slug, status')
       .eq('id', job.campaign_id)
-      .maybeSingle<{ slug: string }>();
+      .maybeSingle<{ slug: string; status: 'active' | 'paused' | 'archived' }>();
     campaignSlug = data?.slug ?? null;
+    campaignStatus = data?.status ?? null;
+  }
+
+  // Pause/archive guard: refuse to fire a manual Run cycle on a campaign
+  // the operator has paused or archived. The dashboard also blocks the
+  // button when status != 'active' (defense in depth), but a stale tab
+  // or a direct-SQL insert could still queue a job here. Throwing makes
+  // the calling claim/finish loop mark the job 'failed' with this error
+  // text — the operator sees it on /runs and knows what to fix.
+  if (job.campaign_id && campaignStatus && campaignStatus !== 'active') {
+    throw new Error(
+      `cycle_jobs row ${job.id} targets campaign "${campaignSlug ?? job.campaign_id}" ` +
+      `which is currently ${campaignStatus}. Flip status back to 'active' on the ` +
+      `campaign Edit page if you want to resume cycles.`,
+    );
   }
 
   // Refresh-style jobs: label 'refresh:quick:<slug>' triggers
@@ -79,6 +98,21 @@ async function buildArgs(job: CycleJob): Promise<string[]> {
     return slug
       ? ['run', 'refresh:quick', '--', `--campaign=${slug}`]
       : ['run', 'refresh:quick'];
+  }
+
+  // Hard guard: campaign-scoped jobs MUST list accounts explicitly.
+  // The legacy "empty = all active" semantics let a job posted from
+  // outside the dashboard (direct SQL insert, old client tab, etc.)
+  // fan out to every account on the campaign. Phase 17b removed the
+  // fallback in the dashboard's Run cycle dialog, and we mirror the
+  // rule on the engine side too. The poller will mark this job
+  // failed via the calling claim/finish loop.
+  if (job.campaign_id && job.account_handles.length === 0) {
+    throw new Error(
+      `cycle_jobs row ${job.id} has campaign_id=${job.campaign_id} but account_handles is empty. ` +
+      `Every campaign-scoped job must list its target accounts explicitly. ` +
+      `Re-queue the job from the dashboard's Run cycle dialog with at least one account selected.`,
+    );
   }
 
   const args: string[] = ['run', 'cycle', '--'];
@@ -96,6 +130,9 @@ async function buildArgs(job: CycleJob): Promise<string[]> {
   if (job.skip_research) args.push('--skip-research');
   if (job.schedule_offset_hours > 0) {
     args.push(`--delay=${job.schedule_offset_hours * 60}`);
+  }
+  if (job.post_interval_minutes && job.post_interval_minutes > 0) {
+    args.push(`--post-interval=${job.post_interval_minutes}`);
   }
   return args;
 }
