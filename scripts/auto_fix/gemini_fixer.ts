@@ -15,8 +15,35 @@
  */
 
 import { readFile, writeFile } from 'fs/promises';
+import { resolve, relative, sep, isAbsolute } from 'node:path';
 import { applyPropose, type ProposeCandidate } from './propose_executor.js';
 import type { ClassifiedError } from './classifier.js';
+
+// Repo root for path-traversal validation. Resolved once at module load;
+// every Gemini-returned file path must normalize to a child of this
+// directory or it is refused. propose_executor's snapshot + tsc gates
+// catch logical errors after the fact, but a malicious/garbled model
+// output that points at /etc/passwd or ../../../home/user/.ssh/ has to
+// be stopped at the write boundary itself.
+const REPO_ROOT = resolve(process.cwd());
+
+function assertPathInsideRepo(p: string): string {
+  if (isAbsolute(p)) {
+    // Caller MAY pass an absolute path that already lives inside the
+    // repo (rare but valid). Allow only if it resolves under REPO_ROOT.
+    const rel = relative(REPO_ROOT, p);
+    if (rel === '' || rel.startsWith(`..${sep}`) || rel === '..') {
+      throw new Error(`[gemini_fixer] refusing path outside repo: ${p}`);
+    }
+    return p;
+  }
+  const abs = resolve(REPO_ROOT, p);
+  const rel = relative(REPO_ROOT, abs);
+  if (rel === '' || rel.startsWith(`..${sep}`) || rel === '..') {
+    throw new Error(`[gemini_fixer] refusing path that escapes repo: ${p}`);
+  }
+  return abs;
+}
 
 // ─── Config ───────────────────────────────────────────────────
 
@@ -202,12 +229,22 @@ Return JSON matching this schema exactly:
   // snapshot → verify → diff → human-review pipeline as any PROPOSE fix).
   const proposable: ClassifiedError = { ...classified, tier: 'PROPOSE' };
 
+  // Validate every path BEFORE building the candidate so a bad path
+  // aborts the whole proposal rather than half-applying a fix. If
+  // assertPathInsideRepo throws, the error bubbles up and the gemini_fixer
+  // log path catches it — no partial writes, no proposal staged.
+  const safePaths = fix.files.map((f) => ({
+    abs: assertPathInsideRepo(f.path),
+    newContent: f.newContent,
+    original: f.path,
+  }));
+
   const candidate: ProposeCandidate = {
-    files: fix.files.map((f) => f.path),
+    files: safePaths.map((f) => f.original),
     description: `[AI] ${fix.description}`,
     apply: async () => {
-      for (const f of fix.files) {
-        await writeFile(f.path, f.newContent, 'utf-8');
+      for (const f of safePaths) {
+        await writeFile(f.abs, f.newContent, 'utf-8');
       }
     },
   };

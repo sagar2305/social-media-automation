@@ -54,8 +54,22 @@ export async function loadAccountsIntoConfig(campaignSlug?: string): Promise<num
         .eq('slug', campaignSlug)
         .maybeSingle();
       if (!c) {
-        log(`[account_loader] campaign "${campaignSlug}" not found in DB — using config.ts fallback`);
-        return config.tiktokAccounts.length;
+        // CRITICAL: same no-fallback guard as the zero-accounts branch
+        // below. If a campaign slug was requested but doesn't exist in
+        // the DB, we must NOT fall back to config.tiktokAccounts —
+        // that's the legacy MinuteWise account list, so a typo or
+        // race-with-create would silently post to MinuteWise. Empty
+        // the config so any caller that doesn't check the count still
+        // produces zero posts, and log loudly.
+        config.tiktokAccounts.length = 0;
+        log(
+          `[account_loader] ERROR: campaign "${campaignSlug}" not found in DB. ` +
+          `NOT falling back to the global config — that would post on a ` +
+          `different campaign's accounts. Check the slug or create the ` +
+          `campaign at /campaigns/new and re-run.`,
+        );
+        loaded = true; // we successfully reached the DB; the result was just absent
+        return 0;
       }
       campaignFilter = c.id;
     }

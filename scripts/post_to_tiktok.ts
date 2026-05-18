@@ -176,7 +176,13 @@ export async function postSlideshow(
   metadata: PostMetadata,
   useCta: boolean,
   accountIndex: number,
-  postingPath: PostingPath = 'direct',
+  // Default deliberately 'draft' — accidentally calling this without
+  // an explicit postingPath arg should never live-post to TikTok. Direct
+  // posts always require an explicit '--path=direct' from the operator
+  // (main.ts forwards the CLI flag through to here). Flipping the
+  // default is behavior-neutral for existing callers (they all pass it
+  // explicitly) but adds a safety net for any future caller that forgets.
+  postingPath: PostingPath = 'draft',
   scheduleDate?: Date,
 ): Promise<PostResult> {
   const account = config.tiktokAccounts[accountIndex];
@@ -243,7 +249,13 @@ export async function postAllDrafts(
     useCta: boolean;
     accountIndex: number;
   }[],
-  postingPath: PostingPath = 'direct',
+  // Default deliberately 'draft' — accidentally calling this without
+  // an explicit postingPath arg should never live-post to TikTok. Direct
+  // posts always require an explicit '--path=direct' from the operator
+  // (main.ts forwards the CLI flag through to here). Flipping the
+  // default is behavior-neutral for existing callers (they all pass it
+  // explicitly) but adds a safety net for any future caller that forgets.
+  postingPath: PostingPath = 'draft',
   scheduleDate?: Date,
   /**
    * Optional cycle_runs.id — when present, per-account submission errors

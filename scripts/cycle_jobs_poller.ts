@@ -66,13 +66,31 @@ async function buildArgs(job: CycleJob): Promise<string[]> {
   let campaignSlug: string | null = null;
   let campaignStatus: 'active' | 'paused' | 'archived' | null = null;
   if (job.campaign_id) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('campaigns')
       .select('slug, status')
       .eq('id', job.campaign_id)
       .maybeSingle<{ slug: string; status: 'active' | 'paused' | 'archived' }>();
-    campaignSlug = data?.slug ?? null;
-    campaignStatus = data?.status ?? null;
+    // Fail fast on query errors or missing/sluggless rows. Without these
+    // guards, a campaign_id referencing a deleted/archived-and-purged row
+    // (or a transient Supabase failure) would fall through with
+    // campaignSlug=null, and below we'd spawn `npm run cycle` WITHOUT a
+    // --campaign flag — the legacy global path that posts to MinuteWise.
+    // Throwing here makes the claim/finish loop mark the job 'failed'
+    // with the exact reason so the operator sees it on /runs.
+    if (error) {
+      throw new Error(
+        `cycle_jobs row ${job.id}: failed to resolve campaign ${job.campaign_id} — ${error.message}`,
+      );
+    }
+    if (!data?.slug) {
+      throw new Error(
+        `cycle_jobs row ${job.id} references missing or sluggless campaign_id=${job.campaign_id}. ` +
+        `Refusing to spawn without --campaign — that would post to the legacy MinuteWise accounts.`,
+      );
+    }
+    campaignSlug = data.slug;
+    campaignStatus = data.status ?? null;
   }
 
   // Pause/archive guard: refuse to fire a manual Run cycle on a campaign
