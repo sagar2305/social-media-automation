@@ -86,7 +86,6 @@ function RequestRow({ req }: { req: PendingAccountRequest }) {
   const router = useRouter();
   const [showApprove, setShowApprove] = useState(false);
   const [blotatoId, setBlotatoId] = useState("");
-  const [displayName, setDisplayName] = useState(req.display_name ?? "");
   const [rejectReason, setRejectReason] = useState("");
   const [showReject, setShowReject] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +136,11 @@ function RequestRow({ req }: { req: PendingAccountRequest }) {
       const r = await approveCreatorAccountRequest({
         requestId: req.id,
         blotato_id: blotatoId,
-        display_name: displayName || null,
+        // Use the creator's submitted display name as-is — they
+        // already told us what to call this handle when they filed
+        // the request, so the admin doesn't have to re-type it.
+        // Server falls back to "@handle" when this is null.
+        display_name: req.display_name,
       });
       if (!r.ok) { setError(r.error); return; }
       router.refresh();
@@ -309,27 +312,22 @@ function RequestRow({ req }: { req: PendingAccountRequest }) {
       {showApprove && (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 space-y-3">
           <p className="text-xs font-medium">Approve and create the managed account</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium">Blotato account id *</label>
-              <Input
-                value={blotatoId}
-                onChange={(e) => setBlotatoId(e.target.value)}
-                placeholder="cmmxd7lo605... or 37043"
-                className="font-mono text-xs"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                From my.blotato.com after you&apos;ve set up the connection.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium">Display name</label>
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={`@${req.handle}`}
-              />
-            </div>
+          <p className="text-[11px] text-muted-foreground">
+            The handle <span className="font-mono font-medium text-foreground">@{req.handle}</span>
+            {req.display_name && <> (display: <span className="font-medium text-foreground">{req.display_name}</span>)</>}
+            {" "}is already on file from {req.creator_name}&apos;s request — you only need to paste the Blotato id.
+          </p>
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium">Blotato account id *</label>
+            <Input
+              value={blotatoId}
+              onChange={(e) => setBlotatoId(e.target.value)}
+              placeholder="cmmxd7lo605... or 37043"
+              className="font-mono text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              From my.blotato.com after you&apos;ve set up the connection.
+            </p>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => { setShowApprove(false); setError(null); }} disabled={busy}>

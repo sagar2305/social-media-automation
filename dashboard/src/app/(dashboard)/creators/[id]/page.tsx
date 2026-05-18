@@ -78,6 +78,29 @@ async function load(id: string) {
 
   if (!creator) return null;
 
+  // Resolve owned_account_ids → account rows (with their campaign) so
+  // we can render a real "Owned accounts" panel on the profile.
+  // Cheap: at most a few dozen ids per creator. Skipped entirely when
+  // the array is empty so UGC creators don't trigger a wasted query.
+  const ownedIds = creator.owned_account_ids ?? [];
+  type OwnedAccount = {
+    id: string;
+    handle: string;
+    name: string | null;
+    active: boolean;
+    campaign: { slug: string; name: string } | { slug: string; name: string }[] | null;
+  };
+  let ownedAccountsRaw: OwnedAccount[] = [];
+  if (ownedIds.length > 0) {
+    const { data } = await sb
+      .from("accounts")
+      .select("id, handle, name, active, campaign:campaign_id(slug, name)")
+      .in("id", ownedIds)
+      .order("handle")
+      .returns<OwnedAccount[]>();
+    ownedAccountsRaw = data ?? [];
+  }
+
   const safeAssignments = (assignments ?? []).map((a) => {
     const campRaw = a.campaign;
     const campaign = Array.isArray(campRaw) ? campRaw[0] : campRaw;
@@ -135,9 +158,29 @@ async function load(id: string) {
     cur.comments += p.comments ?? 0;
     perAccount.set(h, cur);
   }
-  const accountBreakdown = [...perAccount.values()].sort((a, b) => b.views - a.views);
+  // `perAccount` is still used below to merge post stats into each
+  // owned-account row — we just no longer surface the full
+  // accounts-they-post-on breakdown on the profile.
 
-  return { creator, assignmentRows, payouts: safePayouts, allPosts, accountBreakdown };
+  // Flatten the campaign join (Supabase returns it as object|array)
+  // and merge the post-stats so each owned account row can show its
+  // own contribution without a second lookup at render time.
+  const ownedAccounts = ownedAccountsRaw.map((a) => {
+    const camp = Array.isArray(a.campaign) ? a.campaign[0] : a.campaign;
+    const stats = perAccount.get(a.handle);
+    return {
+      id: a.id,
+      handle: a.handle,
+      name: a.name,
+      active: a.active,
+      campaign_slug: camp?.slug ?? null,
+      campaign_name: camp?.name ?? null,
+      posts: stats?.posts ?? 0,
+      views: stats?.views ?? 0,
+    };
+  });
+
+  return { creator, assignmentRows, payouts: safePayouts, allPosts, ownedAccounts };
 }
 
 function fmtUsd(cents: number, currency: string = "USD"): string {
@@ -149,7 +192,7 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
   const { id } = await params;
   const data = await load(id);
   if (!data) notFound();
-  const { creator, assignmentRows, payouts, allPosts, accountBreakdown } = data;
+  const { creator, assignmentRows, payouts, allPosts, ownedAccounts } = data;
 
   // Earnings card numbers — across ALL of this creator's campaigns.
   const pending = payouts.filter((p) => p.status === "pending").reduce((s, p) => s + p.amount_cents, 0);
@@ -273,41 +316,72 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
         </CardContent>
       </Card>
 
-      {/* Accounts this creator's posts have gone out on — derived from
-          posts.account, grouped by handle, sorted by views. Always
-          rendered so the empty case is explicitly visible. */}
+      {/* Owned accounts — the ownership relationship straight from
+          creators.owned_account_ids. Shown for every creator type
+          so the operator can answer "what does this person own?"
+          at a glance. Post-stats (views + count) on each row are
+          merged in from the perAccount aggregation above. */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-baseline justify-between mb-3">
-            <p className="text-base font-semibold">Accounts they post on</p>
-            <p className="text-xs text-muted-foreground">
-              {accountBreakdown.length === 0
-                ? "none yet"
-                : `${accountBreakdown.length} handle${accountBreakdown.length === 1 ? "" : "s"}`}
+            <div>
+              <p className="text-base font-semibold">Owned accounts</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Handles this creator owns. Future posts on these auto-attribute to them.
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground shrink-0">
+              {ownedAccounts.length === 0
+                ? "none assigned"
+                : `${ownedAccounts.length} handle${ownedAccounts.length === 1 ? "" : "s"}`}
             </p>
           </div>
-          {accountBreakdown.length === 0 ? (
+          {ownedAccounts.length === 0 ? (
             <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-center text-xs text-muted-foreground">
-              No posts attributed to {creator.display_name || creator.legal_name} yet.
-              {creator.kind === "team_member"
-                ? " Posts on their owned accounts will auto-tag once the runner ticks."
-                : " Tag a post to them from /posts → click row → Tag creator."}
+              {creator.kind === "team_member" ? (
+                <>
+                  No accounts assigned yet. Assign them from a campaign&apos;s{" "}
+                  <span className="font-medium text-foreground">Creators</span> tab
+                  &rsaquo; the row&apos;s <span className="font-medium text-foreground">Accounts</span> button.
+                </>
+              ) : (
+                "UGC creators don't typically own accounts. Their posts are tagged manually via the post detail drawer."
+              )}
             </div>
           ) : (
             <div className="divide-y divide-border/60">
-              {accountBreakdown.map((a) => (
-                <div key={a.handle} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">@{a.handle}</p>
+              {ownedAccounts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <span className="font-mono">@{a.handle}</span>
+                      {!a.active && (
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground rounded-full bg-muted px-1.5 py-0.5">
+                          paused
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {a.posts} post{a.posts === 1 ? "" : "s"} · {a.views.toLocaleString("en-US")} views · {a.likes.toLocaleString("en-US")} likes
+                      {a.name ? `${a.name} · ` : ""}
+                      {a.campaign_slug ? (
+                        <Link
+                          href={`/campaigns/${a.campaign_slug}`}
+                          className="hover:underline"
+                        >
+                          {a.campaign_name}
+                        </Link>
+                      ) : (
+                        <span className="italic">unassigned to a campaign</span>
+                      )}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold tabular-nums">
-                      {a.views > 0 ? `${(((a.likes + a.saves + a.comments + a.shares) / a.views) * 100).toFixed(1)}%` : "—"}
+                      {a.views > 0 ? a.views.toLocaleString("en-US") : "—"}
                     </p>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">engagement</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {a.posts > 0 ? `${a.posts} post${a.posts === 1 ? "" : "s"}` : "no posts yet"}
+                    </p>
                   </div>
                 </div>
               ))}

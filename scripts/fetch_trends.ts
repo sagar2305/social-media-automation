@@ -1,7 +1,8 @@
 import { readFile, writeFile } from 'fs/promises';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
-import { dataPath } from './lib/campaign-paths.js';
+import { dataPath, getCampaignSlug } from './lib/campaign-paths.js';
+import { getCampaign } from './lib/campaigns.js';
 
 interface OrbitResponse {
   orbit_id: string;
@@ -193,7 +194,12 @@ function formatTrendingNow(
   return lines.join('\n');
 }
 
-function formatHashtagBank(hashtags: HashtagData[], existing: string): string {
+function formatHashtagBank(
+  hashtags: HashtagData[],
+  existing: string,
+  brandedHashtags: string[] | null = null,
+  trackedHashtags: string[] | null = null,
+): string {
   const lines: string[] = [
     '# Hashtag Bank',
     '',
@@ -211,15 +217,34 @@ function formatHashtagBank(hashtags: HashtagData[], existing: string): string {
     );
   }
 
-  lines.push('', '## Niche Hashtags');
-  lines.push('- #studytips');
-  lines.push('- #studyhacks');
-  lines.push('- #studentlife');
-  lines.push('- #aitoolsforstudents');
-  lines.push('- #ainotetaker');
-  lines.push('- #studywithme');
-  lines.push('- #productivityhacks');
-  lines.push('- #minutewise');
+  // Niche + branded hashtags. When the campaign has tracked/branded
+  // hashtags configured (via the dashboard's Edit page) we use those
+  // verbatim — the niche pool a study app cares about is not the niche
+  // pool a comedy/roast brand cares about. Fall back to the legacy
+  // study list only when neither is set, for back-compat with the
+  // pre-multi-campaign install.
+  const tracked = (trackedHashtags ?? []).filter(Boolean);
+  const branded = (brandedHashtags ?? []).filter(Boolean);
+  if (tracked.length > 0 || branded.length > 0) {
+    if (tracked.length > 0) {
+      lines.push('', '## Niche Hashtags (from campaign config)');
+      for (const h of tracked) lines.push(`- ${h.startsWith('#') ? h : '#' + h}`);
+    }
+    if (branded.length > 0) {
+      lines.push('', '## Branded Hashtags (always include)');
+      for (const h of branded) lines.push(`- ${h.startsWith('#') ? h : '#' + h}`);
+    }
+  } else {
+    lines.push('', '## Niche Hashtags');
+    lines.push('- #studytips');
+    lines.push('- #studyhacks');
+    lines.push('- #studentlife');
+    lines.push('- #aitoolsforstudents');
+    lines.push('- #ainotetaker');
+    lines.push('- #studywithme');
+    lines.push('- #productivityhacks');
+    lines.push('- #minutewise');
+  }
 
   return lines.join('\n') + '\n';
 }
@@ -292,10 +317,18 @@ export async function runResearch(): Promise<void> {
   await writeFile(dataPath('TRENDING-NOW.md'), trendingContent);
   log('Updated TRENDING-NOW.md');
 
-  // Update HASHTAG-BANK.md
+  // Update HASHTAG-BANK.md — pass the active campaign's branded /
+  // tracked hashtag lists so the bank reflects this campaign's niche
+  // rather than a hardcoded study-themed pool.
   if (hashtags.length) {
+    const campaign = await getCampaign(getCampaignSlug()).catch(() => null);
     const existingHashtags = await readFile(dataPath('HASHTAG-BANK.md'), 'utf-8').catch(() => '');
-    const hashtagContent = formatHashtagBank(hashtags, existingHashtags);
+    const hashtagContent = formatHashtagBank(
+      hashtags,
+      existingHashtags,
+      campaign?.branded_hashtags ?? null,
+      campaign?.tracked_hashtags ?? null,
+    );
     await writeFile(dataPath('HASHTAG-BANK.md'), hashtagContent);
     log('Updated HASHTAG-BANK.md');
   }

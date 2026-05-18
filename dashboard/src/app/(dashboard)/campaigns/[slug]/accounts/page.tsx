@@ -216,6 +216,7 @@ export default async function CampaignAccountsPage({
           rows={visibleRows}
           unassigned={unassigned}
           otherCampaignAccounts={otherCampaignAccounts}
+          pausedHidden={showInactive ? 0 : pausedCount}
         />
       </CardContent>
     </Card>

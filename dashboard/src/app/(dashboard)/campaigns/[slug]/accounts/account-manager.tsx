@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Plus, Trash2, X, Loader2, AlertTriangle, ExternalLink, Power,
+  Plus, Trash2, X, Loader2, AlertTriangle, ExternalLink, Power, Eye,
 } from "lucide-react";
 import {
   assignAccountToCampaign,
@@ -68,6 +69,13 @@ interface Props {
   rows: ManagedRow[];
   unassigned: UnassignedAccount[];
   otherCampaignAccounts: OtherCampaignAccount[];
+  /**
+   * How many paused accounts are currently hidden by the page's active-only
+   * filter. The page owns the filter (?inactive=1); we just need the count
+   * so the header and empty state can mention them. 0 means either the
+   * campaign has no paused accounts OR the user already flipped the toggle.
+   */
+  pausedHidden: number;
 }
 
 export function AccountManager({
@@ -77,6 +85,7 @@ export function AccountManager({
   rows,
   unassigned,
   otherCampaignAccounts,
+  pausedHidden,
 }: Props) {
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
@@ -128,8 +137,11 @@ export function AccountManager({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
-            {rows.length} account{rows.length === 1 ? "" : "s"} on this campaign ·{" "}
-            campaign default: {campaignDefaultTarget}/week
+            {rows.length} active account{rows.length === 1 ? "" : "s"}
+            {pausedHidden > 0 && (
+              <> · {pausedHidden} paused (hidden)</>
+            )}{" "}
+            · campaign default: {campaignDefaultTarget}/week
           </p>
         </div>
         <Button type="button" onClick={() => setShowAdd(true)}>
@@ -155,18 +167,52 @@ export function AccountManager({
 
       {/* Table */}
       {rows.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="py-16 text-center">
-            <p className="text-base font-medium mb-1">No accounts assigned yet</p>
-            <p className="text-sm text-muted-foreground mb-6">
-              Add an account to start posting for this campaign.
-            </p>
-            <Button type="button" onClick={() => setShowAdd(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add account
-            </Button>
-          </CardContent>
-        </Card>
+        // Two empty states: (a) genuinely no accounts on this campaign,
+        // (b) all accounts on this campaign are paused so the active-only
+        // filter hides them. Without (b), the user sees "No accounts
+        // assigned yet" on a campaign that does have an account — just a
+        // paused one — and assumes their data is missing.
+        pausedHidden > 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-16 text-center">
+              <p className="text-base font-medium mb-1">
+                No active accounts — {pausedHidden} paused
+              </p>
+              <p className="text-sm text-muted-foreground mb-6">
+                This campaign has {pausedHidden} account{pausedHidden === 1 ? "" : "s"} attached
+                but {pausedHidden === 1 ? "it is" : "they are"} currently paused.
+                Show paused to view or reactivate {pausedHidden === 1 ? "it" : "them"},
+                or add a new active account.
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <Link
+                  href={`/campaigns/${slug}/accounts?inactive=1`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  <Eye className="h-4 w-4" />
+                  Show paused
+                </Link>
+                <Button type="button" onClick={() => setShowAdd(true)}>
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Add account
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="py-16 text-center">
+              <p className="text-base font-medium mb-1">No accounts assigned yet</p>
+              <p className="text-sm text-muted-foreground mb-6">
+                Add an account to start posting for this campaign.
+              </p>
+              <Button type="button" onClick={() => setShowAdd(true)}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Add account
+              </Button>
+            </CardContent>
+          </Card>
+        )
       ) : (
         <Card>
           <CardContent className="p-0">

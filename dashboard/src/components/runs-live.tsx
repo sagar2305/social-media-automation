@@ -86,20 +86,34 @@ export function RunsLive() {
     const supabase = createBrowserSupabase();
     const cancelledAt = new Date().toISOString();
 
-    // Cancel the cycle_run itself.
-    await supabase
+    // Cancel the cycle_run itself. RLS / network blips / status-changed-
+    // out-from-under-us all surface as `error` on the response — if we
+    // don't check it, the UI flips to "cancelled" while the Mac process
+    // keeps running and the operator never knows. The whole point of
+    // Cancel is to actually halt the run, so a silent failure here is
+    // worse than a noisy one.
+    const { error: runErr } = await supabase
       .from("cycle_runs")
       .update({ status: "cancelled", ended_at: cancelledAt, error_text: "Cancelled by admin" })
       .eq("id", runId)
       .eq("status", "running");
+    if (runErr) {
+      setBusyId(null);
+      alert(`Cancel failed: ${runErr.message}\n\nThe cycle is still running. Try again, or check the Mac mini logs.`);
+      return;
+    }
 
     // Close the parent cycle_jobs row so the "Running…" pill in the
     // campaign hero stops showing. Without this, the job sits in
     // 'claimed' forever (the Mac poller may have crashed mid-run, or
     // the user cancelled before the poller got a chance to write back).
     // Bounded to status='claimed' so we never overwrite a job that
-    // legitimately completed in the meantime.
-    await supabase
+    // legitimately completed in the meantime. We don't fail the cancel
+    // if THIS update errors — the run itself is already marked
+    // cancelled above, which is the user-visible contract; this is
+    // best-effort cleanup of the pill. Log it so the operator sees the
+    // mismatch in their console but doesn't get a blocking alert.
+    const { error: jobErr } = await supabase
       .from("cycle_jobs")
       .update({
         status: "cancelled",
@@ -108,6 +122,9 @@ export function RunsLive() {
       })
       .eq("cycle_run_id", runId)
       .eq("status", "claimed");
+    if (jobErr) {
+      console.warn(`[runs-live] cycle_run cancelled but cycle_jobs cleanup failed: ${jobErr.message}`);
+    }
 
     setBusyId(null);
     setRuns((prev) => prev.map((r) => (r.id === runId ? { ...r, status: "cancelled" } : r)));
@@ -118,8 +135,22 @@ export function RunsLive() {
     if (!confirm("Delete this run from history?\n\nRemoves the run + all its events. Cannot be undone.")) return;
     setBusyId(runId);
     const supabase = createBrowserSupabase();
-    await supabase.from("cycle_events").delete().eq("cycle_run_id", runId);
-    await supabase.from("cycle_runs").delete().eq("id", runId);
+    // Delete events FIRST so that if cycle_runs delete fails we don't
+    // end up with orphan events pointing at a still-existing parent
+    // (the schema may or may not have ON DELETE CASCADE — relying on
+    // explicit order keeps us safe either way).
+    const { error: evErr } = await supabase.from("cycle_events").delete().eq("cycle_run_id", runId);
+    if (evErr) {
+      setBusyId(null);
+      alert(`Delete failed (events): ${evErr.message}\n\nThe run was NOT deleted. Refresh and try again.`);
+      return;
+    }
+    const { error: runErr } = await supabase.from("cycle_runs").delete().eq("id", runId);
+    if (runErr) {
+      setBusyId(null);
+      alert(`Delete failed (run): ${runErr.message}\n\nEvents were deleted but the run row remains — refresh and retry to clean it up.`);
+      return;
+    }
     setBusyId(null);
     setRuns((prev) => prev.filter((r) => r.id !== runId));
     if (selectedId === runId) setSelectedId(null);

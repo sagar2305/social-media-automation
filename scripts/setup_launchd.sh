@@ -27,9 +27,11 @@ set -euo pipefail
 TICK_LABEL="com.minutewise.scheduler.tick"
 JOBS_LABEL="com.minutewise.jobs.poller"
 AUTORESEARCH_LABEL="com.minutewise.autoresearch"
+REFRESH_LABEL="com.minutewise.daily.refresh"
 TICK_PLIST_PATH="$HOME/Library/LaunchAgents/$TICK_LABEL.plist"
 JOBS_PLIST_PATH="$HOME/Library/LaunchAgents/$JOBS_LABEL.plist"
 AUTORESEARCH_PLIST_PATH="$HOME/Library/LaunchAgents/$AUTORESEARCH_LABEL.plist"
+REFRESH_PLIST_PATH="$HOME/Library/LaunchAgents/$REFRESH_LABEL.plist"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$REPO_DIR/data/cycle-logs"
 LOG_FILE="$LOG_DIR/launchd-daily.log"
@@ -247,6 +249,66 @@ EOF
 
 echo "Wrote $AUTORESEARCH_PLIST_PATH"
 
+# ─── Daily refresh plist (analytics + sync-to-supabase) ──────
+# Fires every 6 hours. Runs `npm run refresh:quick` which polls Blotato for
+# real post statuses, captures TikTok URLs, then syncs POST-TRACKER.md back
+# into Supabase. Without this, posts created by main.ts stay stuck on
+# status=pending in the dashboard even after they've actually published —
+# because main.ts's end-of-cycle sync writes "pending" before Blotato has
+# finished uploading. This plist is the missing post-publish reconciliation
+# loop. Cadence chosen at 6h (4×/day) so a stuck post is visibly fresh
+# within a quarter-day at worst, while keeping API credit use light
+# (refresh:quick averages ~30s and skips Virlo).
+
+cat > "$REFRESH_PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$REFRESH_LABEL</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>$NODE_DIR/npm</string>
+    <string>run</string>
+    <string>refresh:quick</string>
+  </array>
+
+  <!-- Every 6 hours. The script is idempotent (read-modify-write of
+       POST-TRACKER.md + upsert into Supabase posts table) so extra
+       invocations are harmless. -->
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <!-- Run on plist load so wake-from-sleep cold-boots a refresh
+       immediately rather than waiting up to 6 h. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>AbandonProcessGroup</key>
+  <false/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$NODE_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>$REPO_DIR</string>
+
+  <key>StandardOutPath</key>
+  <string>$LOG_DIR/daily-refresh.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>$LOG_DIR/daily-refresh.err</string>
+</dict>
+</plist>
+EOF
+
+echo "Wrote $REFRESH_PLIST_PATH"
+
 # ─── Load it ─────────────────────────────────────────────────
 
 # Note: the legacy 19:00 anti-thrash window is gone since we no longer have
@@ -257,7 +319,7 @@ echo "Wrote $AUTORESEARCH_PLIST_PATH"
 # does not always recompute calendar triggers correctly on macOS 13+.
 DOMAIN="gui/$(id -u)"
 
-for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL"; do
+for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL" "$REFRESH_LABEL"; do
   launchctl bootout "$DOMAIN/$L" 2>/dev/null || true
 done
 
@@ -267,9 +329,11 @@ launchctl bootstrap "$DOMAIN" "$JOBS_PLIST_PATH"
 launchctl enable "$DOMAIN/$JOBS_LABEL"
 launchctl bootstrap "$DOMAIN" "$AUTORESEARCH_PLIST_PATH"
 launchctl enable "$DOMAIN/$AUTORESEARCH_LABEL"
+launchctl bootstrap "$DOMAIN" "$REFRESH_PLIST_PATH"
+launchctl enable "$DOMAIN/$REFRESH_LABEL"
 
 ok=1
-for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL"; do
+for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL" "$REFRESH_LABEL"; do
   if launchctl print "$DOMAIN/$L" >/dev/null 2>&1; then
     echo "✓ Registered: $L"
   else
@@ -289,13 +353,15 @@ Setup complete.
   scheduler.tick   — every 5 min  — reads cycle_batches, fires due ones
   jobs.poller      — every 60 sec — picks up "Run Cycle Now" requests
   autoresearch     — every 1 hour + on-load — script self-guards to once/day
+  daily.refresh    — every 6 hours + on-load — pulls Blotato statuses, syncs DB
 
 Useful commands:
-  launchctl list | grep minutewise          # confirm 3 plists registered
+  launchctl list | grep minutewise          # confirm 4 plists registered
   bash scripts/teardown_launchd.sh          # disable everything
   tail -f $LOG_DIR/scheduler-tick.log       # watch tick decisions
   tail -f $LOG_DIR/jobs-poller.log          # watch manual triggers
   tail -f $LOG_DIR/autoresearch.log         # watch the morning brain
+  tail -f $LOG_DIR/daily-refresh.log        # watch dashboard sync
 
 To change schedule:
   Edit batches in the dashboard at /settings/schedule. No plist changes

@@ -58,6 +58,14 @@ export function ReassignButton({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [eligible, setEligible] = useState<CreatorRow[]>([]);
+  // Set of creator ids that already have an assignment on this
+  // campaign. Drives the two-section split in the picker AND the
+  // "merge mode" flag once one of them is selected.
+  const [onCampaignIds, setOnCampaignIds] = useState<Set<string>>(new Set());
+  // For each on-campaign creator, what their current expected_posts
+  // is — so we can render "Maya currently has 6 expected; adding N
+  // means her new target is 6+N" in merge mode.
+  const [onCampaignExpected, setOnCampaignExpected] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, startSubmit] = useTransition();
@@ -102,22 +110,34 @@ export function ReassignButton({
         .in("status", ["invited", "onboarded"])
         .order("legal_name")
         .returns<CreatorRow[]>(),
+      // Pull current assignments + their expected_posts so we can
+      // (a) mark who's already on the campaign and (b) preview the
+      // additive target in merge mode. status='completed' rows are
+      // excluded — those creators are done with the campaign and
+      // merging back into a closed assignment is the wrong operation.
       sb.from("assignments")
-        .select("creator_id")
+        .select("creator_id, expected_posts, status")
         .eq("campaign_id", campaignId)
-        .returns<Array<{ creator_id: string }>>(),
+        .neq("status", "completed")
+        .returns<Array<{ creator_id: string; expected_posts: number; status: string }>>(),
       sb.from("creators")
         .select("owned_account_ids")
         .eq("id", currentCreatorId)
         .maybeSingle<{ owned_account_ids: string[] | null }>(),
     ]).then(async ([creatorsRes, assignRes, currentCreatorRes]) => {
       if (creatorsRes.error) { setError(creatorsRes.error.message); setLoading(false); return; }
-      const onCampaign = new Set((assignRes.data ?? []).map((a) => a.creator_id));
+      const assignRows = assignRes.data ?? [];
+      const onCampaign = new Set(assignRows.map((a) => a.creator_id));
+      const expectedByCreator = new Map(assignRows.map((a) => [a.creator_id, a.expected_posts]));
+      // We now include on-campaign creators in `eligible` (we no
+      // longer filter them out) — only excluding the current creator
+      // being reassigned-away-from. The picker UI groups them into
+      // two sections below.
       setEligible(
-        (creatorsRes.data ?? []).filter(
-          (c) => c.id !== currentCreatorId && !onCampaign.has(c.id),
-        ),
+        (creatorsRes.data ?? []).filter((c) => c.id !== currentCreatorId),
       );
+      setOnCampaignIds(onCampaign);
+      setOnCampaignExpected(expectedByCreator);
 
       // Count accounts intersecting current creator's owned ids with
       // this campaign's accounts. Same query the server runs to gate.
@@ -147,6 +167,8 @@ export function ReassignButton({
     setNewKind("ugc");
     setAccountsToMoveCount(null);
     setEligible([]);
+    setOnCampaignIds(new Set());
+    setOnCampaignExpected(new Map());
     setNewTarget(defaultNewTarget);
   }
 
@@ -194,6 +216,14 @@ export function ReassignButton({
       });
     }
   }
+
+  // Selecting an on-campaign creator → MERGE mode. Their existing
+  // assignment absorbs the leaving creator's accounts (no second
+  // assignment is created — the schema's unique(creator_id,campaign_id)
+  // means there can only ever be one). The post-target input now
+  // represents how much extra work to ADD to that creator's commitment.
+  const mergeMode = mode === "pick" && !!selectedId && onCampaignIds.has(selectedId);
+  const mergeTargetCurrent = mergeMode ? onCampaignExpected.get(selectedId!) ?? 0 : 0;
 
   const filtered = eligible.filter((c) => {
     if (!search.trim()) return true;
@@ -260,15 +290,20 @@ export function ReassignButton({
                 </div>
               )}
 
-              {/* Hard block: no campaign-scoped accounts to move means
-                  the new creator can't actually post anything. Same
-                  rule the server enforces; we surface it early. */}
-              {accountsToMoveCount === 0 && (
+              {/* Hard block when there's truly nothing to move AND the
+                  operator is creating a fresh assignment for someone
+                  new. In merge mode (picking an on-campaign creator)
+                  we let 0 accounts through — the operation is still
+                  meaningful as a "close this creator's assignment,
+                  add their work to an existing campaign-mate." */}
+              {accountsToMoveCount === 0 && !mergeMode && (
                 <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>
                     {currentCreatorName} has no accounts attached to this campaign — there&apos;s nothing to hand off.
-                    Attach at least one account to them first (or use <span className="font-medium">Assign creator</span> to add the new creator directly).
+                    To bring in a brand-new creator, attach an account to {currentCreatorName} first, or use{" "}
+                    <span className="font-medium">Assign creator</span>. To pass the work to an existing
+                    campaign-mate, pick one of them below — that path doesn&apos;t require any accounts to move.
                   </span>
                 </div>
               )}
@@ -298,14 +333,18 @@ export function ReassignButton({
                 </button>
               </div>
 
-              {/* Editable expected-posts target for the new assignment.
-                  Defaults to remaining when there's leftover work, else
-                  falls back to the original campaign target. Operator
-                  can always override. Whole numbers only, min 1. */}
+              {/* Editable expected-posts target. Two modes:
+                    - NEW creator path: this number becomes the new
+                      assignment's expected_posts.
+                    - MERGE path (on-campaign creator selected): this
+                      number is ADDED to that creator's existing target.
+                      We render the live preview "X + N = Y" so the
+                      operator sees exactly what they're committing.
+                  Defaults to remaining when there's leftover work. */}
               <div className="space-y-1.5">
                 <div className="flex items-baseline justify-between">
                   <label htmlFor="reassign-new-target" className="text-xs font-medium">
-                    New creator&apos;s post target
+                    {mergeMode ? "Extra posts to add to their target" : "New creator's post target"}
                   </label>
                   <span className="text-[11px] text-muted-foreground">
                     {remaining > 0
@@ -324,9 +363,21 @@ export function ReassignButton({
                     setNewTarget(Number.isFinite(v) ? Math.floor(v) : Number.NaN);
                   }}
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  How many posts the new creator commits to delivering. Edit any time after via the campaign edit page.
-                </p>
+                {mergeMode ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Their current target is{" "}
+                    <span className="font-medium text-foreground">{mergeTargetCurrent}</span>; this brings the
+                    new total to{" "}
+                    <span className="font-medium text-foreground">
+                      {mergeTargetCurrent + (Number.isFinite(newTarget) ? newTarget : 0)}
+                    </span>
+                    . Edit later via the campaign edit page.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    How many posts the new creator commits to delivering. Edit any time after via the campaign edit page.
+                  </p>
+                )}
               </div>
 
               {mode === "pick" ? (
@@ -365,35 +416,76 @@ export function ReassignButton({
                         )}
                       </div>
                     ) : (
-                      <div className="divide-y divide-border/40">
-                        {filtered.map((c) => (
-                          <label
-                            key={c.id}
-                            className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${
-                              selectedId === c.id ? "bg-emerald-500/10" : "hover:bg-muted/30"
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="reassign-creator"
-                              checked={selectedId === c.id}
-                              onChange={() => setSelectedId(c.id)}
-                              className="h-3.5 w-3.5"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium">
-                                {c.display_name || c.legal_name}
-                                {c.kind === "team_member" && (
-                                  <span className="ml-2 text-[9px] uppercase tracking-wider rounded-full px-1.5 py-0.5 bg-blue-500/10 text-blue-700">
-                                    Team
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-[11px] text-muted-foreground">{c.email}</p>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
+                      // Two-section list: existing campaign creators on
+                      // top (the common "redistribute within the team"
+                      // path), other creators below (the "bring in an
+                      // outsider" path). Each section header gives the
+                      // operator a quick reminder of what picking from
+                      // it actually does.
+                      (() => {
+                        const onCampaign = filtered.filter((c) => onCampaignIds.has(c.id));
+                        const others = filtered.filter((c) => !onCampaignIds.has(c.id));
+                        const renderRow = (c: CreatorRow) => {
+                          const isOnCampaign = onCampaignIds.has(c.id);
+                          const theirExpected = onCampaignExpected.get(c.id);
+                          return (
+                            <label
+                              key={c.id}
+                              className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${
+                                selectedId === c.id ? "bg-emerald-500/10" : "hover:bg-muted/30"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="reassign-creator"
+                                checked={selectedId === c.id}
+                                onChange={() => setSelectedId(c.id)}
+                                className="h-3.5 w-3.5"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">
+                                  {c.display_name || c.legal_name}
+                                  {c.kind === "team_member" && (
+                                    <span className="ml-2 text-[9px] uppercase tracking-wider rounded-full px-1.5 py-0.5 bg-blue-500/10 text-blue-700">
+                                      Team
+                                    </span>
+                                  )}
+                                  {isOnCampaign && theirExpected !== undefined && (
+                                    <span className="ml-2 text-[10px] text-muted-foreground font-normal">
+                                      · already on campaign · {theirExpected} expected
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">{c.email}</p>
+                              </div>
+                            </label>
+                          );
+                        };
+                        return (
+                          <div>
+                            {onCampaign.length > 0 && (
+                              <>
+                                <div className="px-3 py-1.5 bg-muted/30 text-[10px] uppercase tracking-widest text-muted-foreground font-medium border-b border-border/40">
+                                  On this campaign · adds to their existing target
+                                </div>
+                                <div className="divide-y divide-border/40">
+                                  {onCampaign.map(renderRow)}
+                                </div>
+                              </>
+                            )}
+                            {others.length > 0 && (
+                              <>
+                                <div className="px-3 py-1.5 bg-muted/30 text-[10px] uppercase tracking-widest text-muted-foreground font-medium border-y border-border/40">
+                                  Other creators · creates a new assignment
+                                </div>
+                                <div className="divide-y divide-border/40">
+                                  {others.map(renderRow)}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()
                     )}
                   </div>
                 </>
@@ -466,13 +558,31 @@ export function ReassignButton({
                       </li>
                     )}
                     <li>
-                      A new <span className="font-mono text-foreground">active</span> assignment opens for{" "}
-                      <span className="font-medium text-foreground">
-                        {mode === "pick"
-                          ? eligible.find((c) => c.id === selectedId)?.display_name ?? eligible.find((c) => c.id === selectedId)?.legal_name
-                          : (newDisplay || newLegal)}
-                      </span>{" "}
-                      with <span className="font-semibold text-foreground">{newTarget} post{newTarget === 1 ? "" : "s"}</span> as the target.
+                      {mergeMode ? (
+                        <>
+                          <span className="font-medium text-foreground">
+                            {eligible.find((c) => c.id === selectedId)?.display_name ??
+                              eligible.find((c) => c.id === selectedId)?.legal_name}
+                          </span>
+                          &apos;s existing assignment absorbs the work — their target goes from{" "}
+                          <span className="font-semibold text-foreground">{mergeTargetCurrent}</span>
+                          {" "}to{" "}
+                          <span className="font-semibold text-foreground">
+                            {mergeTargetCurrent + (Number.isFinite(newTarget) ? newTarget : 0)}
+                          </span>
+                          {" "}expected posts.
+                        </>
+                      ) : (
+                        <>
+                          A new <span className="font-mono text-foreground">active</span> assignment opens for{" "}
+                          <span className="font-medium text-foreground">
+                            {mode === "pick"
+                              ? eligible.find((c) => c.id === selectedId)?.display_name ?? eligible.find((c) => c.id === selectedId)?.legal_name
+                              : (newDisplay || newLegal)}
+                          </span>{" "}
+                          with <span className="font-semibold text-foreground">{newTarget} post{newTarget === 1 ? "" : "s"}</span> as the target.
+                        </>
+                      )}
                     </li>
                     {accountsToMoveCount !== null && accountsToMoveCount > 0 && (
                       <li>
@@ -498,7 +608,10 @@ export function ReassignButton({
                 onClick={onConfirm}
                 disabled={
                   submitting ||
-                  accountsToMoveCount === 0 ||
+                  // Block on zero accounts ONLY when creating a fresh
+                  // assignment. Merge mode (on-campaign creator picked)
+                  // is allowed through even when nothing moves.
+                  (accountsToMoveCount === 0 && !mergeMode) ||
                   !Number.isInteger(newTarget) || newTarget < 1 ||
                   (mode === "pick" ? !selectedId : !newLegal.trim() || !newEmail.trim())
                 }
@@ -510,7 +623,9 @@ export function ReassignButton({
                 )}
                 {mode === "invite"
                   ? `Invite & hand off (${newTarget} post${newTarget === 1 ? "" : "s"})`
-                  : `Reassign (${newTarget} post${newTarget === 1 ? "" : "s"})`}
+                  : mergeMode
+                    ? `Merge into their assignment (+${newTarget} post${newTarget === 1 ? "" : "s"})`
+                    : `Reassign (${newTarget} post${newTarget === 1 ? "" : "s"})`}
               </Button>
             </footer>
           </div>

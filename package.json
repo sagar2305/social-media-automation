@@ -13,11 +13,14 @@
     "generate": "tsx scripts/text_overlay.ts",
     "post": "tsx scripts/post_to_tiktok.ts",
     "analytics": "tsx scripts/pull_analytics.ts",
+    "payouts:recompute": "tsx scripts/payouts_recompute.ts",
     "optimize": "tsx scripts/optimizer.ts",
     "refresh": "tsx scripts/daily-refresh.ts",
     "refresh:quick": "tsx scripts/daily-refresh.ts --skip-research",
     "sync": "tsx scripts/sync-to-supabase.ts",
-    "healthcheck": "bash scripts/healthcheck.sh"
+    "healthcheck": "bash scripts/healthcheck.sh",
+    "cleanup:posts": "tsx scripts/cleanup_old_posts.ts",
+    "rotate:logs": "tsx scripts/rotate_logs.ts"
   },
   "keywords": [],
   "author": "",

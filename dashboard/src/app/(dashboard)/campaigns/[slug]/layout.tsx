@@ -178,6 +178,7 @@ export default async function CampaignLayout({
             campaignId={campaign.id}
             campaignSlug={campaign.slug}
             campaignName={campaign.name}
+            campaignStatus={campaign.status}
             enabledFlows={campaign.flows_enabled ?? {
               photorealistic: true,
               animated: true,

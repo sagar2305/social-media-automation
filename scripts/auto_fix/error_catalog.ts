@@ -235,6 +235,55 @@ export const ERROR_CATALOG: CatalogEntry[] = [
     docs: 'docs/blotato-api.md',
   },
 
+  // ─── Network / transport ───────────────────────────────────
+
+  {
+    id: 'local/network-fetch-failed',
+    source: 'local',
+    match: /TypeError:\s*fetch failed|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|ETIMEDOUT/i,
+    tier: 'RETRY',
+    action:
+      'Transient network failure — usually triggered by Mac sleep/wake or brief Wi-Fi drops. The pipeline\'s long-running pollers (scheduler_tick, jobs_poller, daily-refresh) all retry on their next interval, so a single occurrence is harmless. Investigate only if it dominates the err log over multi-hour windows (sustained DNS or upstream outage).',
+    retry: { maxAttempts: 3, backoffMs: 5_000 },
+    notes:
+      'Hit dozens of times in scheduler-tick.err/jobs-poller.err prior to 2026-05-08 — was previously unclassified, accumulating in err logs without ever surfacing. Now consumed by the catalog so the err logs stay quiet and any sustained outage trips the dedup notifier exactly once.',
+  },
+
+  // ─── Pipeline liveness ─────────────────────────────────────
+
+  {
+    id: 'pipeline/cycle-run-orphaned',
+    source: 'local',
+    match: /Reaped \d+ orphaned cycle_runs?/i,
+    tier: 'HUMAN-ONLY',
+    action:
+      'A cycle_runs row was stuck in status="running" for >2 hours, which means the cycle process died without writing an end_at (Mac slept mid-run, OOM, kill -9, or main.ts crashed before the finally block). The reaper auto-flipped it to "failed" so the dashboard\'s Live Runs panel is accurate again. If this fires repeatedly, look at data/cycle-logs/launchd-daily.log around the affected run\'s started_at for the actual crash cause.',
+    notes:
+      'Synthesised by the scheduler_tick reaper when it cleans stuck rows. Fires once per reap event, deduped per signature.',
+  },
+
+  {
+    id: 'pipeline/autoresearch-stale',
+    source: 'local',
+    match: /autoresearch sentinel is \d+ days? old/i,
+    tier: 'HUMAN-ONLY',
+    action:
+      'data/.last-autoresearch-run was last updated more than 48h ago. The autoresearch plist (com.minutewise.autoresearch) should fire hourly + on-load, then the script self-guards once per calendar day. If the sentinel is stale, either the plist is unloaded or the script is crashing before writing the sentinel. Check launchctl print gui/$(id -u)/com.minutewise.autoresearch and tail data/cycle-logs/autoresearch.err.',
+    notes:
+      'Synthesised by scheduler_tick whenever the brain has been silent >2 days. Catches a different failure mode from refresh-stale: refresh deals with reconciliation, autoresearch deals with continuous experimentation.',
+  },
+
+  {
+    id: 'pipeline/refresh-stale',
+    source: 'local',
+    match: /REFRESH-LOG stale: last successful refresh was \d+ hours? ago/i,
+    tier: 'HUMAN-ONLY',
+    action:
+      'data/REFRESH-LOG.md has not been updated in >36 h, which means npm run refresh:quick is no longer running on schedule. The dashboard will start showing posts stuck on status=pending because nothing is reconciling Blotato statuses back into Supabase. Check launchctl list | grep minutewise — the com.minutewise.daily.refresh plist should be loaded. If missing, re-run bash scripts/setup_launchd.sh. If loaded but failing, tail data/cycle-logs/daily-refresh.err.',
+    notes:
+      'Synthesised by scheduler_tick on every tick when the most recent REFRESH-LOG entry is older than 36 h. Catches the silent-pipeline-stall scenario where nothing is throwing an API error (because nothing is even running) and post statuses drift out of sync over multiple days.',
+  },
+
   // ─── Local: filesystem ─────────────────────────────────────
 
   {

@@ -23,8 +23,12 @@
 import { spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile, stat } from 'node:fs/promises';
 import { config as dotenvConfig } from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { classifyError } from './auto_fix/classifier.js';
+import { logClassified } from './auto_fix/audit_logger.js';
+import { maybeNotify } from './auto_fix/notifier.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenvConfig({ path: resolve(__dirname, '..', '.env.local'), override: true });
@@ -55,10 +59,12 @@ interface CycleBatch {
   posts_per_account: number;
   skip_research: boolean;
   schedule_offset_hours: number;
+  post_interval_minutes: number;
   enabled: boolean;
   last_run_date: string | null;
   created_at: string;
   updated_at: string;
+  campaign_id: string | null;  // Phase 17 multi-campaign — null = legacy / default campaign
 }
 
 function nowInTimezone(tz: string): { date: string; minutes: number } {
@@ -94,8 +100,80 @@ function flowToFlag(flow: string): string {
   return flow;
 }
 
-function buildBatchArgs(batch: CycleBatch): string[] {
+/**
+ * Build the npm-run-cycle CLI args for a batch. Critically prepends
+ * --campaign=<slug> when the batch has a campaign_id — without it, every
+ * scheduler-fired cycle falls back to the engine's default campaign and
+ * the run shows up under the wrong campaign in the dashboard (MinuteWise
+ * instead of RoastAI was the original symptom).
+ *
+ * Mirrors `cycle_jobs_poller.buildArgs` so the two firing paths stay
+ * behaviourally identical.
+ */
+async function buildBatchArgs(batch: CycleBatch): Promise<string[] | null> {
+  // Resolve campaign slug + status from campaign_id (one extra Supabase
+  // round-trip per fired batch — only happens at fire time, not on every
+  // 5-min tick). We pull status alongside slug so the pause/archive guard
+  // below can run without a second query.
+  let campaignSlug: string | null = null;
+  if (batch.campaign_id) {
+    const { data } = await supabase
+      .from('campaigns')
+      .select('slug, status')
+      .eq('id', batch.campaign_id)
+      .maybeSingle<{ slug: string; status: 'active' | 'paused' | 'archived' }>();
+    campaignSlug = data?.slug ?? null;
+    // Hard guard: if the batch claims to be tied to a campaign but the
+    // campaign row is gone (deleted, slug renamed under us, RLS hiding
+    // it, etc.) we MUST NOT fall through and spawn an unrouted cycle —
+    // main.ts would smart-default to a different campaign and post the
+    // wrong content. Returning null here makes fireBatch skip the row
+    // without touching last_run_date so it'll re-attempt next tick.
+    if (!campaignSlug) {
+      console.error(
+        `[scheduler_tick] REFUSE to fire "${batch.label}" — batch.campaign_id=${batch.campaign_id} ` +
+        `but no matching campaigns row found. Fix the data (delete the orphan batch or restore the campaign) ` +
+        `and the next tick will re-attempt.`,
+      );
+      return null;
+    }
+    // Pause/archive guard: the dashboard's campaign Edit page lets the
+    // operator flip status to 'paused' or 'archived'. Until now the
+    // engine ignored that flag, so "pausing" a campaign was cosmetic —
+    // batches still fired, Run cycle still queued. Honour it here so
+    // pause/archive really means "stop posting". Operator unblocks by
+    // flipping status back to 'active' on /campaigns/<slug>/edit; the
+    // next 5-min tick will pick the batch back up if today is still
+    // its run day.
+    if (data && data.status !== 'active') {
+      console.log(
+        `[scheduler_tick] skip "${batch.label}" — campaign "${campaignSlug}" is ${data.status}. ` +
+        `Set status back to 'active' on /campaigns/${campaignSlug}/edit to resume.`,
+      );
+      return null;
+    }
+  }
+
+  // Hard guard: campaign-scoped batches MUST declare their target accounts
+  // explicitly. Legacy "empty = all active" semantics let a batch fan
+  // out to every active account in the campaign — the dashboard now
+  // requires explicit selection on save (see batch-manager.tsx), but
+  // pre-existing rows in cycle_batches may still be empty. Refuse them
+  // here so a stale batch can't silently post to accounts the operator
+  // didn't intend. Editing the batch in the dashboard's Schedule tab
+  // and picking accounts unblocks it.
+  if (batch.campaign_id && batch.account_handles.length === 0) {
+    console.error(
+      `[scheduler_tick] REFUSE to fire "${batch.label}" — batch has campaign_id=${batch.campaign_id} ` +
+      `but account_handles is empty. The "empty = all active" fallback was removed; every batch ` +
+      `must explicitly list its target accounts. Edit the batch on /campaigns/${campaignSlug}/schedule, ` +
+      `pick at least one account, and save.`,
+    );
+    return null;
+  }
+
   const args: string[] = ['run', 'cycle', '--'];
+  if (campaignSlug) args.push(`--campaign=${campaignSlug}`);
   args.push(`--flow=${batch.flows.map(flowToFlag).join(',')}`);
   args.push(`--path=${batch.path}`);
   if (batch.account_handles.length > 0) {
@@ -110,11 +188,19 @@ function buildBatchArgs(batch: CycleBatch): string[] {
   if (batch.schedule_offset_hours > 0) {
     args.push(`--delay=${batch.schedule_offset_hours * 60}`);
   }
+  if (batch.post_interval_minutes && batch.post_interval_minutes > 0) {
+    args.push(`--post-interval=${batch.post_interval_minutes}`);
+  }
   return args;
 }
 
 async function fireBatch(batch: CycleBatch, today: string): Promise<void> {
-  const args = buildBatchArgs(batch);
+  const args = await buildBatchArgs(batch);
+  // buildBatchArgs returns null when it refuses to fire (orphan campaign_id).
+  // Don't touch last_run_date in that case — we want the next tick to
+  // re-attempt once the operator fixes the data.
+  if (args === null) return;
+
   const dryRun = process.env.SCHEDULER_DRY_RUN === '1';
 
   if (dryRun) {
@@ -140,7 +226,144 @@ async function fireBatch(batch: CycleBatch, today: string): Promise<void> {
   child.unref();
 }
 
+/**
+ * Freshness probe — fires a HUMAN-ONLY alert if data/REFRESH-LOG.md hasn't
+ * been touched in >36 h. Catches the silent-pipeline-stall case where the
+ * com.minutewise.daily.refresh plist is missing or failing without any
+ * API error to classify (auto-fix is reactive, not a heartbeat monitor).
+ *
+ * Throttled to once per calendar day via a sentinel file so we don't spam
+ * alerts on every 5-min tick once stale.
+ */
+async function probeRefreshFreshness(repoDir: string): Promise<void> {
+  const STALE_HOURS = 36;
+  const logPath = resolve(repoDir, 'data', 'REFRESH-LOG.md');
+  const sentinelPath = resolve(repoDir, 'data', '.last-refresh-stale-alert');
+
+  let ageHours: number;
+  try {
+    const st = await stat(logPath);
+    ageHours = (Date.now() - st.mtimeMs) / 3_600_000;
+  } catch {
+    return; // file missing — first-run repo; don't alert
+  }
+
+  if (ageHours <= STALE_HOURS) return;
+
+  // Throttle: only one alert per calendar day
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const last = (await readFile(sentinelPath, 'utf-8')).trim();
+    if (last === today) return;
+  } catch { /* sentinel missing — fall through */ }
+
+  const synthetic = new Error(
+    `REFRESH-LOG stale: last successful refresh was ${Math.round(ageHours)} hours ago`,
+  );
+  const classified = classifyError(synthetic, { source: 'local', url: logPath });
+  await logClassified(classified, { handled: 'pending' });
+  await maybeNotify(classified);
+
+  try {
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(sentinelPath, today);
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Autoresearch staleness probe. The brain plist fires hourly + on-load, and
+ * the script writes data/.last-autoresearch-run after a successful daily run.
+ * If that sentinel is older than 48h, something has silently broken and we
+ * want a HUMAN-ONLY alert (refresh-stale catches the reconciliation pipeline,
+ * this catches the experimentation pipeline — separate failure modes).
+ */
+async function probeAutoresearchFreshness(repoDir: string): Promise<void> {
+  const STALE_DAYS = 2;
+  const sentinelPath = resolve(repoDir, 'data', '.last-autoresearch-run');
+  const alertedSentinel = resolve(repoDir, 'data', '.last-autoresearch-stale-alert');
+
+  let raw: string;
+  try { raw = (await readFile(sentinelPath, 'utf-8')).trim(); }
+  catch { return; } // never run yet — nothing to alert on
+
+  // Sentinel is "YYYY-MM-DD"
+  const last = new Date(raw + 'T00:00:00Z');
+  if (Number.isNaN(last.getTime())) return;
+  const ageDays = (Date.now() - last.getTime()) / 86_400_000;
+  if (ageDays <= STALE_DAYS) return;
+
+  // Throttle to one alert per calendar day
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    if ((await readFile(alertedSentinel, 'utf-8')).trim() === today) return;
+  } catch { /* sentinel missing — fall through */ }
+
+  const synthetic = new Error(
+    `autoresearch sentinel is ${Math.floor(ageDays)} days old (last run ${raw})`,
+  );
+  const classified = classifyError(synthetic, { source: 'local', url: sentinelPath });
+  await logClassified(classified, { handled: 'pending' });
+  await maybeNotify(classified);
+
+  try {
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(alertedSentinel, today);
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Reap orphaned cycle_runs. Any row in status='running' with started_at older
+ * than 2 hours is, in practice, a row whose cycle process died without
+ * updating the end_at (Mac slept mid-cycle, OOM, kill -9, etc). The dashboard
+ * Live Runs panel reads `status='running'` straight from this table, so stuck
+ * rows render as fake live cycles forever. Flipping them to "failed" keeps
+ * the UI honest and surfaces a HUMAN-ONLY alert exactly once per reap event.
+ */
+async function reapOrphanedRuns(): Promise<void> {
+  const cutoff = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  const { data, error } = await supabase
+    .from('cycle_runs')
+    .update({
+      status: 'failed',
+      ended_at: new Date().toISOString(),
+      error_text: 'Auto-reaped: row was status=running for >2 h. The cycle process died without updating end_at (likely Mac slept mid-run, OOM, or process killed).',
+    })
+    .eq('status', 'running')
+    .lt('started_at', cutoff)
+    .select('id');
+
+  if (error) {
+    console.error('[scheduler_tick] reaper failed:', error.message);
+    return;
+  }
+
+  if (data && data.length > 0) {
+    console.log(`[scheduler_tick] reaped ${data.length} orphaned cycle_run(s)`);
+    const synthetic = new Error(`Reaped ${data.length} orphaned cycle_runs (older than 2h)`);
+    try {
+      const classified = classifyError(synthetic, { source: 'local' });
+      await logClassified(classified, { handled: 'pending' });
+      await maybeNotify(classified);
+    } catch { /* non-fatal */ }
+  }
+}
+
 async function main() {
+  const repoDir = resolve(__dirname, '..');
+  // Liveness probes BEFORE the supabase reads so a Supabase outage doesn't
+  // mask stale-pipeline alerts. All non-fatal — never block the actual tick.
+  try { await probeRefreshFreshness(repoDir); } catch (err) {
+    console.error('[scheduler_tick] freshness probe failed:', err);
+  }
+  try { await probeAutoresearchFreshness(repoDir); } catch (err) {
+    console.error('[scheduler_tick] autoresearch probe failed:', err);
+  }
+  // Reap orphaned cycle_runs so the dashboard's Live Runs panel doesn't
+  // show 4-day-old "running" rows. Cheap query (indexed on status+started_at).
+  try { await reapOrphanedRuns(); } catch (err) {
+    console.error('[scheduler_tick] reaper failed:', err);
+  }
+
   const { data: settings, error: settingsErr } = await supabase
     .from('schedule_settings')
     .select('enabled, timezone')
@@ -148,7 +371,17 @@ async function main() {
     .single<ScheduleSettings>();
 
   if (settingsErr || !settings) {
-    console.error('[scheduler_tick] could not read schedule_settings:', settingsErr?.message);
+    // Route the error through the auto-fix classifier so transient network
+    // blips (TypeError: fetch failed) are catalogued + dedup-notified instead
+    // of accumulating silently in scheduler-tick.err on every 5-min tick.
+    const msg = settingsErr?.message || 'could not read schedule_settings';
+    const synthetic = new Error(`[scheduler_tick] ${msg}`);
+    try {
+      const classified = classifyError(synthetic, { source: 'local' });
+      await logClassified(classified, { handled: 'pending' });
+      await maybeNotify(classified);
+    } catch { /* non-fatal */ }
+    console.error('[scheduler_tick] could not read schedule_settings:', msg);
     process.exit(2);
   }
 
@@ -168,7 +401,17 @@ async function main() {
     .returns<CycleBatch[]>();
 
   if (batchesErr || !batches) {
-    console.error('[scheduler_tick] could not read cycle_batches:', batchesErr?.message);
+    // Same auto-fix routing as the schedule_settings read above — a transient
+    // fetch failure here would otherwise just print to err on every 5-min tick
+    // forever without ever surfacing to the human.
+    const msg = batchesErr?.message || 'could not read cycle_batches';
+    const synthetic = new Error(`[scheduler_tick] ${msg}`);
+    try {
+      const classified = classifyError(synthetic, { source: 'local' });
+      await logClassified(classified, { handled: 'pending' });
+      await maybeNotify(classified);
+    } catch { /* non-fatal */ }
+    console.error('[scheduler_tick] could not read cycle_batches:', msg);
     process.exit(2);
   }
 

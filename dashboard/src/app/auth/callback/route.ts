@@ -21,9 +21,10 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next");
+  const fromCreator = searchParams.get("from") === "creator";
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/login`);
+    return NextResponse.redirect(`${origin}${fromCreator ? "/creator/login" : "/login"}`);
   }
 
   const cookieStore = await cookies();
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    return NextResponse.redirect(`${origin}/login`);
+    return NextResponse.redirect(`${origin}${fromCreator ? "/creator/login" : "/login"}`);
   }
 
   // Try the link. Non-fatal on any error path — we don't want to
@@ -54,6 +55,14 @@ export async function GET(request: Request) {
 
   if (link.linked) {
     return NextResponse.redirect(`${origin}/creator`);
+  }
+
+  // Creator-portal signup that didn't match an invited creators row.
+  // Sign back out so the user doesn't end up authenticated on the
+  // wrong portal, then surface the same banner the password flow uses.
+  if (fromCreator) {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(`${origin}/creator/login?reason=not-a-creator`);
   }
 
   return NextResponse.redirect(`${origin}${next ?? "/"}`);

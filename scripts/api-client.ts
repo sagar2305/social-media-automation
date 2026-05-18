@@ -169,6 +169,17 @@ export async function apiRequest<T>(
     await logClassified(classified);
     const { maybeNotify } = await import('./auto_fix/notifier.js');
     await maybeNotify(classified);
+    // For errors the catalog says need a code fix, ask Gemini to generate one.
+    // Off by default — transient API failures shouldn't trigger paid Gemini
+    // calls. Set AUTO_FIX_GEMINI=1 to opt in once the catalog is stable enough
+    // that PROPOSE/ASK/UNKNOWN truly means "this needs a human-readable fix".
+    if (
+      process.env.AUTO_FIX_GEMINI === '1' &&
+      ['PROPOSE', 'ASK', 'UNKNOWN'].includes(classified.tier as string)
+    ) {
+      const { runGeminiFix } = await import('./auto_fix/gemini_fixer.js');
+      await runGeminiFix(classified, lastError!).catch(() => {});
+    }
   } catch {
     // never let the audit path mask the real error
   }

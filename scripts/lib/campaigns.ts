@@ -36,6 +36,14 @@ export interface Campaign {
   character_consistency: string | null;
   gallery_inspo_urls: string[];
 
+  // Style training (Phase 17c) — operator-uploaded reference images
+  // distilled into a paragraph by Gemini Vision once. Injected into
+  // every text + image prompt at cycle time. The training_image_urls
+  // are NOT read at cycle time — only the distilled text is.
+  training_image_urls: string[];
+  style_distillation: string | null;
+  style_distilled_at: string | null;
+
   // Flows
   flows_enabled: { photorealistic: boolean; animated: boolean; emoji_overlay: boolean };
   flow_weights:  { photorealistic: number;  animated: number;  emoji_overlay: number };

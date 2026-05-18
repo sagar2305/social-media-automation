@@ -123,70 +123,127 @@ function classifyHookStyle(title: string): HookStyle {
 }
 
 // ─── Slide Role Assignment ─────────────────────────────────────
-// Enforces EXACTLY 8 slides per post
-// If CSV template has fewer, pad with Minutewise promotional slides
+// Enforces EXACTLY 8 slides per post.
+//
+// Two filler banks live below. Both are intentionally GENERIC (no brand
+// mention) because filler is per-post-type, not per-campaign — when a
+// CSV/Gemini template returns < TARGET_SLIDE_COUNT slides we want to top
+// up without painting another campaign's posts with MinuteWise copy. The
+// per-campaign brand mention is owned by the CTA slide (last slide), which
+// uses campaign.name dynamically (see resolveCtaText below).
+//
+// Historical note: this used to be MINUTEWISE_FILLER_SLIDES with copy like
+// "Minutewise AI / Records and transcribes lectures…" — that bled
+// MinuteWise brand text into RoastAI posts when Gemini returned a short
+// response. Multi-campaign Phase 17.
 
-const MINUTEWISE_FILLER_SLIDES: { top: string; center: string; bottom: string }[] = [
+const GENERIC_FILLER_SLIDES: { top: string; center: string; bottom: string }[] = [
   {
-    top: 'Minutewise AI',
-    center: 'Records and transcribes your lectures into perfect notes automatically.',
-    bottom: 'So you can focus on learning, not writing.',
+    top: 'Most people skip this',
+    center: 'It takes 30 seconds and changes the next hour completely.',
+    bottom: 'Try it once.',
   },
   {
-    top: 'Why Minutewise?',
-    center: 'AI-powered notes, quizzes, flashcards, and summaries — all from one recording.',
-    bottom: 'Available on iOS App Store.',
+    top: 'Here is the trick',
+    center: 'Stop trying to remember everything. Build a system that does it for you.',
+    bottom: 'Future-you will thank you.',
   },
   {
-    top: '100+ Languages Supported',
-    center: 'Minutewise transcribes lectures in over 100 languages.',
-    bottom: 'Perfect for international students.',
+    top: 'Why this works',
+    center: 'Your brain is great at thinking, terrible at storing.',
+    bottom: 'Outsource the storage.',
   },
   {
-    top: 'Stop Wasting Time on Notes',
-    center: 'Let Minutewise handle your notes while you actually pay attention in class.',
-    bottom: 'Your grades will thank you.',
+    top: 'The pattern',
+    center: 'Capture once. Review on a schedule. Watch it stick.',
+    bottom: 'That is it.',
   },
   {
-    top: 'Smart Study Tools',
-    center: 'Minutewise generates quizzes and flashcards from your lecture notes.',
-    bottom: 'Study smarter, not harder.',
+    top: 'One small habit',
+    center: 'Two minutes at the end of every session, written down.',
+    bottom: 'Compounds fast.',
   },
   {
-    top: 'Never Miss a Detail',
-    center: 'Minutewise captures every word from lectures and Zoom meetings.',
-    bottom: 'Get organized summaries instantly.',
+    top: 'Forget perfect',
+    center: 'Done and reviewed beats polished and forgotten.',
+    bottom: 'Every time.',
   },
   {
-    top: 'Save Hours Every Week',
-    center: 'Students using Minutewise save 5+ hours on note-taking every week.',
-    bottom: 'That is time you can spend actually studying.',
+    top: 'Trust the process',
+    center: 'You will not see the gains for two weeks. Then it clicks.',
+    bottom: 'Stay with it.',
   },
   {
-    top: 'Your AI Study Companion',
-    center: 'From recording to revision — Minutewise handles it all.',
-    bottom: 'Download free on the App Store.',
+    top: 'You already know',
+    center: 'The hard part is not learning the trick. It is doing the trick.',
+    bottom: 'Start now.',
   },
 ];
 
 const TARGET_SLIDE_COUNT = 6;
 
-function assignSlideRoles(slides: { top: string; center: string; bottom: string }[]): SlideContent[] {
+/**
+ * Build the CTA slide text for the given campaign.
+ * - top:    "Download <campaign.name>" so the brand name appears verbatim.
+ * - center: short tagline; first sentence of campaign.description, capped.
+ * - bottom: "Available on App Store" by default (most campaigns are apps).
+ *
+ * Falls back to MinuteWise wording only when no campaign was loaded
+ * (Supabase down at cycle start). Without this every campaign's CTA
+ * slide said "Download Minutewise" verbatim — that's the bug we're
+ * fixing.
+ */
+function resolveCtaText(campaignName: string | null, campaignDescription: string | null): {
+  top: string; center: string; bottom: string;
+} {
+  if (!campaignName) {
+    return {
+      top: 'Download Minutewise',
+      center: 'Your AI Note Taker',
+      bottom: 'Available on App Store',
+    };
+  }
+  // Take the first sentence of description as a tagline, cap at ~40 chars
+  // so it fits on a TikTok slide. Strips trailing punctuation.
+  let tagline = '';
+  if (campaignDescription) {
+    const firstSentence = campaignDescription.split(/[.!?]/)[0]?.trim() ?? '';
+    tagline = firstSentence.length > 40 ? firstSentence.slice(0, 40).trim() + '…' : firstSentence;
+  }
+  return {
+    top: `Download ${campaignName}`,
+    center: tagline || `Try ${campaignName} now`,
+    bottom: 'Available on App Store',
+  };
+}
+
+function assignSlideRoles(
+  slides: { top: string; center: string; bottom: string }[],
+  campaignName: string | null,
+  campaignDescription: string | null,
+): SlideContent[] {
   const result: SlideContent[] = [];
 
-  // Use template slides first (5 content slides)
+  // Use template slides first (5 content slides). The "is this a brand
+  // mention slide?" detection now compares against the active campaign's
+  // name (or 'minutewise' as the legacy default) instead of being
+  // hardcoded — keeps the role labelling honest across campaigns.
+  const brandTokens: string[] = [];
+  if (campaignName) brandTokens.push(campaignName.toLowerCase());
+  brandTokens.push('minutewise', 'minute wise'); // legacy back-compat
+
   for (let i = 0; i < slides.length && result.length < TARGET_SLIDE_COUNT - 1; i++) {
     const s = slides[i];
     const text = [s.top, s.center, s.bottom].join(' ').toLowerCase();
-    const isMinutewise = text.includes('minutewise') || text.includes('minute wise');
+    const isBrandMention = brandTokens.some(t => text.includes(t));
 
     let role: SlideContent['role'];
     if (result.length === 0) {
       role = 'hook';
     } else if (result.length === 1) {
       role = 'knowledge_gap';
-    } else if (isMinutewise) {
-      role = 'minutewise';
+    } else if (isBrandMention) {
+      role = 'minutewise'; // role enum kept as 'minutewise' for back-compat with downstream classifiers
     } else {
       role = 'value';
     }
@@ -194,21 +251,20 @@ function assignSlideRoles(slides: { top: string; center: string; bottom: string 
     result.push({ role, top: s.top, center: s.center, bottom: s.bottom });
   }
 
-  // Pad with Minutewise content if not enough template slides
+  // Pad with GENERIC (non-branded) filler if Gemini/CSV returned too few
+  // slides. We deliberately don't promote any product here — the CTA slide
+  // is the one and only place the brand appears.
   let fillerIdx = 0;
   while (result.length < TARGET_SLIDE_COUNT - 1) {
-    const filler = MINUTEWISE_FILLER_SLIDES[fillerIdx % MINUTEWISE_FILLER_SLIDES.length];
+    const filler = GENERIC_FILLER_SLIDES[fillerIdx % GENERIC_FILLER_SLIDES.length];
     fillerIdx++;
-    result.push({ role: 'minutewise', top: filler.top, center: filler.center, bottom: filler.bottom });
+    result.push({ role: 'value', top: filler.top, center: filler.center, bottom: filler.bottom });
   }
 
-  // Slide 6: CTA (generated in matching style by generate_images.ts)
-  result.push({
-    role: 'cta',
-    top: 'Download Minutewise',
-    center: 'Your AI Note Taker',
-    bottom: 'Available on App Store',
-  });
+  // Final slide: CTA — uses campaign.name. The actual image is rendered
+  // by generate_images.ts which substitutes campaign.cta_image_url
+  // verbatim when the campaign uploaded one.
+  result.push({ role: 'cta', ...resolveCtaText(campaignName, campaignDescription) });
 
   return result;
 }
@@ -224,38 +280,51 @@ const EMOJI_MAP: Record<string, string> = {
   cta: '👉',
 };
 
+// Generic, NON-DOMAIN-SPECIFIC fallback fillers. Used only when Gemini
+// returned fewer slides than the narrative arc needs. Earlier these were
+// study-themed ("3 hours on notes / can't remember for the exam") which
+// leaked into every campaign that hit the fallback. Now they read as
+// universal struggles + universal advice so they fit roast brands,
+// finance brands, study brands, etc. equally well — the campaign-specific
+// content always comes from Gemini using `campaign.description`; this
+// only steps in when Gemini under-delivered.
+
 const PROBLEM_FILLER_SLIDES: { top: string; center: string; bottom: string }[] = [
   {
     top: 'Sound familiar?',
-    center: 'You spend 3 hours on notes and still can\'t remember anything for the exam.',
+    center: 'You keep doing the same thing and getting the same result.',
     bottom: 'There has to be a better way.',
   },
   {
     top: 'The struggle is real',
-    center: 'Re-reading your notes 10 times and retaining nothing.',
+    center: 'Putting in hours and feeling like nothing sticks.',
     bottom: 'You\'re not alone.',
   },
 ];
 
 const TIP_FILLER_SLIDES: { top: string; center: string; bottom: string }[] = [
   {
-    top: 'Try active recall',
-    center: 'Close your notes and write down everything you remember. Then check what you missed.',
-    bottom: 'This alone can boost retention by 50%.',
+    top: 'Start ridiculously small',
+    center: 'Two minutes a day beats two hours once a month. Pick the version you can\'t fail at.',
+    bottom: 'Then stack from there.',
   },
   {
-    top: 'Use spaced repetition',
-    center: 'Review material at increasing intervals — 1 day, 3 days, 7 days, 14 days.',
-    bottom: 'Your brain locks it in permanently.',
+    top: 'Make it a system',
+    center: 'A repeatable trigger + a clear next step. Decisions are expensive; routines are free.',
+    bottom: 'Stop relying on motivation.',
   },
   {
-    top: 'Let Minutewise handle notes',
-    center: 'Record your lectures. Minutewise transcribes and creates notes, quizzes, and flashcards automatically.',
-    bottom: 'Focus on understanding, not writing.',
+    top: 'Two-minute summary',
+    center: 'At the end of each session, write three bullets in your own words.',
+    bottom: 'Cheap, fast, sticky.',
   },
 ];
 
-function assignEmojiFlowRoles(slides: { top: string; center: string; bottom: string }[]): SlideContent[] {
+function assignEmojiFlowRoles(
+  slides: { top: string; center: string; bottom: string }[],
+  campaignName: string | null,
+  campaignDescription: string | null,
+): SlideContent[] {
   const result: SlideContent[] = [];
   const available = [...slides];
 
@@ -285,26 +354,27 @@ function assignEmojiFlowRoles(slides: { top: string; center: string; bottom: str
     }
   }
 
-  // Slide 5: Resolution
+  // Slide 5: Resolution — generic + campaign-aware nudge.
   if (available.length > 0) {
     const s = available.shift()!;
     result.push({ role: 'resolution', top: s.top, center: s.center, bottom: s.bottom, emoji: EMOJI_MAP.resolution });
   } else {
+    const nudge = campaignName ? `Try ${campaignName} — it helps.` : 'Start with the smallest version today.';
     result.push({
       role: 'resolution',
       top: 'You\'ve got this',
-      center: 'With the right tools and methods, you can study less and remember more.',
-      bottom: 'Start with Minutewise — it\'s free.',
+      center: 'With the right system, the work shrinks and the results compound.',
+      bottom: nudge,
       emoji: EMOJI_MAP.resolution,
     });
   }
 
-  // Slide 6: CTA (generated in matching style by generate_images.ts)
+  // Slide 6: CTA — uses campaign.name. The actual image is rendered by
+  // generate_images.ts which substitutes campaign.cta_image_url verbatim
+  // when the campaign uploaded one.
   result.push({
     role: 'cta',
-    top: 'Download Minutewise',
-    center: 'Your AI Note Taker',
-    bottom: 'Available on App Store',
+    ...resolveCtaText(campaignName, campaignDescription),
     emoji: EMOJI_MAP.cta,
   });
 
@@ -313,14 +383,21 @@ function assignEmojiFlowRoles(slides: { top: string; center: string; bottom: str
 
 // ─── Hashtag Strategy ──────────────────────────────────────────
 // SOUL.md: 1 trending/broad + 2 niche-specific + 1-2 ultra-niche/topic
-// Never repeat same set two posts in a row
+// Never repeat same set two posts in a row.
+//
+// MinuteWise-era ULTRA_NICHE_HASHTAGS used to live here as a hardcoded
+// list ("#Minutewise", "#FeynmanTechnique", etc.) — that meant RoastAI
+// posts shipped with study-niche hashtags. The pickers below now prefer
+// the active campaign's branded_hashtags + tracked_hashtags first,
+// falling back to the generic STUDY pools only when the campaign hasn't
+// been configured.
 
-const NICHE_HASHTAGS = [
+const STUDY_NICHE_HASHTAGS = [
   '#StudyTips', '#StudyHacks', '#StudyTok', '#StudentLife',
   '#StudyWithMe', '#AcademicTikTok', '#CollegeLife', '#ExamPrep',
 ];
 
-const ULTRA_NICHE_HASHTAGS = [
+const STUDY_ULTRA_NICHE_HASHTAGS = [
   '#Minutewise', '#AINoteTaker', '#PomodoroTechnique', '#FeynmanTechnique',
   '#ActiveRecall', '#SpacedRepetition', '#StudyMotivation', '#BlurtingMethod',
   '#StudyMethod', '#NotesTaking',
@@ -332,22 +409,82 @@ const TRENDING_BROAD = [
 
 let lastHashtagSet: string[] = [];
 
-function pickHashtags(hashtagBank: string): string[] {
-  // 1 trending/broad
+/**
+ * Normalise a list of campaign hashtags. The dashboard form sometimes
+ * stores user-typed hashtags without leading "#" or with junk like
+ * "#Roast#Funny#Comedy" mashed into one tag (the RoastAI test case had
+ * exactly that). We split on '#', re-prefix, and drop empties so the
+ * downstream caption gets a sensible list either way.
+ */
+function normaliseCampaignHashtags(tags: string[] | null | undefined): string[] {
+  if (!tags || tags.length === 0) return [];
+  const out: string[] = [];
+  for (const raw of tags) {
+    if (!raw) continue;
+    // Split on '#' to recover from jammed-together input.
+    const parts = String(raw).split('#').map(s => s.trim()).filter(Boolean);
+    for (const p of parts) {
+      if (!/^[A-Za-z0-9_]+$/.test(p)) continue; // skip if it has spaces / odd chars
+      out.push(`#${p}`);
+    }
+  }
+  return Array.from(new Set(out));
+}
+
+/**
+ * Build the hashtag set for a post. Universal across campaigns:
+ *
+ *   - 1 trending/broad tag (#FYP / #LearnOnTikTok etc.)        — always
+ *   - up to 2 niche tags from `campaign.tracked_hashtags`      — only if set
+ *   - up to 2 branded tags from `campaign.branded_hashtags`    — only if set
+ *
+ * If the campaign hasn't filled in tracked/branded yet (a freshly created
+ * Campaign 3, say), we DO NOT splice in study-niche placeholders — that
+ * was the original cross-campaign leakage. The post simply gets fewer
+ * tags. The dashboard's edit page surfaces both fields so the operator
+ * can fill them in once and own their niche.
+ *
+ * The legacy STUDY_* pools are now only consulted when there is also
+ * NO active campaign loaded at all (Supabase down + no campaign_id), so
+ * a back-compat MinuteWise install still works.
+ */
+function pickHashtags(
+  _hashtagBank: string,
+  campaignBranded: string[] | null,
+  campaignTracked: string[] | null,
+): string[] {
+  const branded = normaliseCampaignHashtags(campaignBranded);
+  const tracked = normaliseCampaignHashtags(campaignTracked);
+  const campaignConfigured = branded.length > 0 || tracked.length > 0;
+
   const trending = [pickRandom(TRENDING_BROAD)];
 
-  // 2 niche-specific
-  const niche = NICHE_HASHTAGS.sort(() => Math.random() - 0.5).slice(0, 2);
+  // Niche / branded slots — campaign-driven when configured, legacy
+  // study pool ONLY when the campaign is unconfigured (no branded AND
+  // no tracked). This is the universal-leakage fix: a campaign without
+  // its niche set should not inherit MinuteWise's niche.
+  const nicheSource = tracked.length >= 1
+    ? tracked
+    : (campaignConfigured ? [] : STUDY_NICHE_HASHTAGS);
+  const niche = [...nicheSource].sort(() => Math.random() - 0.5).slice(0, 2);
 
-  // 1-2 ultra-niche
-  const ultra = ULTRA_NICHE_HASHTAGS.sort(() => Math.random() - 0.5).slice(0, 1 + Math.round(Math.random()));
+  const ultraSource = branded.length >= 1
+    ? branded
+    : (campaignConfigured ? [] : STUDY_ULTRA_NICHE_HASHTAGS);
+  const ultra = [...ultraSource].sort(() => Math.random() - 0.5).slice(0, 1 + Math.round(Math.random()));
 
   const set = [...trending, ...niche, ...ultra];
 
-  // Don't repeat same set
-  if (JSON.stringify(set.sort()) === JSON.stringify(lastHashtagSet.sort())) {
-    set.pop();
-    set.push(pickRandom(ULTRA_NICHE_HASHTAGS.filter((h) => !set.includes(h))));
+  // Don't repeat the same set two posts in a row. Swap the last tag
+  // with one from the same campaign-driven pool so the rotation stays
+  // in scope; if the campaign has only a single branded tag we just
+  // accept the repeat rather than reaching for an off-niche pool.
+  if (JSON.stringify([...set].sort()) === JSON.stringify([...lastHashtagSet].sort())) {
+    const swapPool = ultraSource.filter(h => !set.includes(h));
+    if (swapPool.length > 0) {
+      set.pop();
+      set.push(pickRandom(swapPool));
+    }
   }
 
   lastHashtagSet = [...set];
@@ -355,43 +492,30 @@ function pickHashtags(hashtagBank: string): string[] {
 }
 
 // ─── Caption Builder ───────────────────────────────────────────
-// SOUL.md template:
-// [Bold hook] + [emoji]
-// [1-2 lines of value creating curiosity]
-// Save this for exam week 📌
-// Send to your study group 📚
-// #hashtags
-
-const CAPTION_HOOKS = [
-  'Your professor won\'t tell you this',
-  'I wish someone told me this sooner',
-  'Save this before exams hit',
-  'This changed my entire study game',
-  'Stop studying wrong — do this instead',
-  'Your GPA will thank you later',
-  'Every student needs to see this',
-  'The study hack that actually works',
-];
-
-const CAPTION_VALUE_LINES = [
-  'Most students waste hours on notes — there\'s a smarter way.',
-  'These methods took me from cramming to actually understanding.',
-  'If you\'re still re-reading, you\'re doing it wrong.',
-  'The difference between a 3.0 and a 4.0 is HOW you study.',
-  'Your brain remembers 90% more when you study like this.',
-  'I tested every study method so you don\'t have to.',
-];
+// Caption shape:
+//   <title from Gemini/CSV — already campaign-on-topic>
+//   <hashtags>
+//
+// We used to splice in a hardcoded "Save this for exam week 📌 / Send to
+// your study group 📚" closer plus a study-themed hook from
+// CAPTION_HOOKS. That worked for MinuteWise but stamped study-niche copy
+// on every other campaign's posts. The Gemini prompt now generates a
+// campaign-appropriate title (it's the slide-1 hook) so the caption can
+// just relay that.
 
 function buildCaption(title: string, hashtags: string[]): string {
-  const hook = pickRandom(CAPTION_HOOKS);
-  const valueLine = pickRandom(CAPTION_VALUE_LINES);
-
-  return `${hook} 💡\n\n${valueLine}\n\nSave this for exam week 📌\nSend to your study group 📚\n\n${hashtags.join(' ')}`;
+  // Title doubles as the caption hook (Gemini emits it that way; CSV
+  // templates store it in template.name). Trailing punctuation removed
+  // so we can safely add the emoji.
+  const hookLine = title.replace(/[.!?]\s*$/, '');
+  return `${hookLine} 💡\n\n${hashtags.join(' ')}`;
 }
 
 // ─── Experiment Logic ──────────────────────────────────────────
 
-async function determineHookStyle(): Promise<{ style: HookStyle; experiment: ExperimentVariant | null }> {
+async function determineHookStyle(
+  accountIndex: number = 0,
+): Promise<{ style: HookStyle; experiment: ExperimentVariant | null }> {
   const experimentLog = await readMemoryFile('EXPERIMENT-LOG.md');
   const formatWinners = await readMemoryFile('FORMAT-WINNERS.md');
 
@@ -402,10 +526,15 @@ async function determineHookStyle(): Promise<{ style: HookStyle; experiment: Exp
     const styleBMatch = content.match(/Variant B:\s*(\w+)/);
     const idMatch = content.match(/Experiment #?(\w+)/);
     if (styleAMatch && styleBMatch && idMatch) {
-      const tracker = await readMemoryFile('POST-TRACKER.md');
-      const lastVariant = tracker.includes(`${idMatch[1]}|A`) ? 'B' : 'A';
-      const style = (lastVariant === 'A' ? styleAMatch[1] : styleBMatch[1]) as HookStyle;
-      return { style, experiment: { experimentId: idMatch[1], variant: lastVariant, hookStyle: style } };
+      // Variant assignment by account-index parity. Previously this read
+      // POST-TRACKER.md for "${experimentId}|A" but that marker is never
+      // written there, so the toggle always returned 'A' and the second
+      // variant never got tested. Parity gives us a deterministic 50/50
+      // split across the cycle (4 accounts → 2A, 2B) and is stable on
+      // retry without state lookups.
+      const assignedVariant: 'A' | 'B' = accountIndex % 2 === 0 ? 'A' : 'B';
+      const style = (assignedVariant === 'A' ? styleAMatch[1] : styleBMatch[1]) as HookStyle;
+      return { style, experiment: { experimentId: idMatch[1], variant: assignedVariant, hookStyle: style } };
     }
   }
 
@@ -441,14 +570,27 @@ async function generateAIContent(
 
   // Resolve the active campaign so the prompt is grounded in THIS campaign's
   // brand, tone, and branded hashtags rather than hardcoded MinuteWise text.
-  // Falls back to MinuteWise defaults if Supabase is unreachable so the
-  // pipeline keeps producing usable output.
+  //
+  // Brand-string resolution order — once a campaign object is loaded, we
+  // never fall back to "MinuteWise" wording, even if individual fields
+  // (description, hashtags) are missing. The MinuteWise default is ONLY
+  // for the no-campaign-loaded case (Supabase down at cycle start).
   const campaign = await getCampaign(getCampaignSlug());
-  const brandLine = campaign?.description
-    ? `BRAND: ${campaign.name} — ${campaign.description}`
+  const brandLine = campaign
+    ? `BRAND: ${campaign.name}${campaign.description ? ' — ' + campaign.description : ''}`
     : 'BRAND: MinuteWise — AI note-taker app for students. Records lectures, transcribes, creates notes/quizzes/flashcards.';
   const styleLine = campaign?.visual_style_prompt
     ? `VISUAL STYLE: ${campaign.visual_style_prompt}`
+    : '';
+  // Distilled-from-training-images style guidance (Phase 17c). When the
+  // operator has uploaded reference images and clicked "Train style",
+  // Gemini Vision wrote a detailed paragraph into campaigns.style_distillation.
+  // We inject it here as STYLE GUIDE so the slide-copy generation also
+  // reflects the trained look (e.g. moodier copy for a moody-styled
+  // brand). At image-generation time the same paragraph is used by
+  // generate_images.ts for the visual prompts.
+  const styleGuideLine = campaign?.style_distillation
+    ? `STYLE GUIDE (from trained reference images): ${campaign.style_distillation}`
     : '';
   const toneLine = campaign?.tone_of_voice
     ? `TONE OF VOICE: ${campaign.tone_of_voice}`
@@ -456,7 +598,7 @@ async function generateAIContent(
   const brandedTagsHint = campaign?.branded_hashtags?.length
     ? `Always include the branded hashtags: ${campaign.branded_hashtags.join(', ')}`
     : '';
-  const brandMentionHint = campaign?.name
+  const brandMentionHint = campaign
     ? `At least one slide must naturally mention ${campaign.name} as a solution`
     : 'At least one slide must naturally mention MinuteWise as a solution';
 
@@ -476,6 +618,7 @@ async function generateAIContent(
 
 ${brandLine}
 ${styleLine}
+${styleGuideLine}
 ${toneLine}
 
 ACCOUNT: ${account.name} (${account.handle})
@@ -570,38 +713,62 @@ export async function generateContent(
   const account = config.tiktokAccounts[accountIndex];
   log(`=== CONTENT GENERATION (${flow}, ${account.name}) ===`);
 
+  // Resolve the active campaign FIRST. Every downstream helper that used
+  // to hardcode MinuteWise (CTA text, hashtag picker, brand-mention
+  // detection) now branches on this object. If Supabase is unreachable
+  // we get null and the helpers fall back to the legacy MinuteWise copy,
+  // which is the right behavior for the back-compat case.
+  const campaignSlug = getCampaignSlug();
+  const campaign = await getCampaign(campaignSlug);
+  if (!campaign) {
+    log(`[campaign] WARNING: campaign "${campaignSlug}" not loaded from Supabase — content helpers will use legacy back-compat defaults. This is fine for the original MinuteWise install but means a fresh campaign would generate generic content. Check Supabase connectivity if this is unexpected.`);
+  }
+  // The CSV-template fallback is MinuteWise-specific (every row hardcodes
+  // study/MinuteWise copy), so it is ONLY safe for the legacy MinuteWise
+  // campaign. Every other campaign — including a brand-new one — must
+  // generate via Gemini using its own description; the CSV path is hard-
+  // gated off for them.
+  const isMinutewiseCampaign = !campaign || campaign.slug === 'minutewise';
+
   const hashtagBank = await readMemoryFile('HASHTAG-BANK.md');
 
-  // Load CSV templates
+  // Load CSV templates. We only consult them on a campaign whose topic
+  // matches the templates' study domain — otherwise the CSV is a strict
+  // foot-gun: every row hardcodes MinuteWise copy, so applying it to
+  // RoastAI (or any future campaign) ships wrong-brand content.
   let templates: CsvTemplate[] = [];
-  try {
-    const csvContent = await readFile(config.paths.templates, 'utf-8');
-    templates = parseCsvTemplates(csvContent);
-    log(`Loaded ${templates.length} templates from CSV`);
-  } catch {
-    log('No CSV templates found');
+  if (isMinutewiseCampaign) {
+    try {
+      const csvContent = await readFile(config.paths.templates, 'utf-8');
+      templates = parseCsvTemplates(csvContent);
+      log(`Loaded ${templates.length} templates from CSV`);
+    } catch {
+      log('No CSV templates found');
+    }
+
+    // Filter: ONLY education/study/Minutewise related templates
+    const STUDY_KEYWORDS = [
+      'study', 'studi', 'exam', 'grade', 'gpa', 'note', 'learn',
+      'college', 'school', 'university', 'lecture', 'class', 'homework',
+      'minutewise', 'minute wise', 'pomodoro', 'feynman', 'flashcard',
+      'recall', 'memoriz', 'revision', 'tutor', 'academic', 'freshman',
+      'semester', 'student', 'education', 'productivity', 'focus',
+      'brain', 'reading', 'smart', 'tip', 'hack', 'method', 'technique',
+    ];
+
+    templates = templates.filter((t) => {
+      const text = [t.name, t.category, ...t.slides.map(s => `${s.top} ${s.center} ${s.bottom}`)].join(' ').toLowerCase();
+      return STUDY_KEYWORDS.some((kw) => text.includes(kw));
+    });
+    log(`Filtered to ${templates.length} study/Minutewise templates`);
+  } else {
+    log(`[campaign] non-MinuteWise campaign "${campaign!.slug}" — skipping MinuteWise CSV fallback (would produce wrong-brand content)`);
   }
 
-  // Filter: ONLY education/study/Minutewise related templates
-  // Every post must promote Minutewise — reject off-topic templates
-  const STUDY_KEYWORDS = [
-    'study', 'studi', 'exam', 'grade', 'gpa', 'note', 'learn',
-    'college', 'school', 'university', 'lecture', 'class', 'homework',
-    'minutewise', 'minute wise', 'pomodoro', 'feynman', 'flashcard',
-    'recall', 'memoriz', 'revision', 'tutor', 'academic', 'freshman',
-    'semester', 'student', 'education', 'productivity', 'focus',
-    'brain', 'reading', 'smart', 'tip', 'hack', 'method', 'technique',
-  ];
-
-  templates = templates.filter((t) => {
-    const text = [t.name, t.category, ...t.slides.map(s => `${s.top} ${s.center} ${s.bottom}`)].join(' ').toLowerCase();
-    return STUDY_KEYWORDS.some((kw) => text.includes(kw));
-  });
-  log(`Filtered to ${templates.length} study/Minutewise templates`);
-
-  // Determine hook style
-  const { style, experiment } = await determineHookStyle();
-  log(`Hook style target: ${style}`);
+  // Determine hook style — passes accountIndex so the variant toggle
+  // (when an Active Experiment exists) alternates A/B across the cycle.
+  const { style, experiment } = await determineHookStyle(accountIndex);
+  log(`Hook style target: ${style}${experiment ? ` (experiment ${experiment.experimentId} variant ${experiment.variant})` : ''}`);
 
   // Try AI-generated content first, fall back to CSV
   let template: CsvTemplate | null = null;
@@ -623,8 +790,19 @@ export async function generateContent(
     log(`AI content generation failed, falling back to CSV: ${err}`);
   }
 
-  // Fallback: pick from CSV templates
+  // Fallback: pick from CSV templates. Templates are MinuteWise-only —
+  // we already skipped loading them for non-MinuteWise campaigns above,
+  // so this branch is empty for RoastAI etc. Refuse to fabricate a post
+  // for a non-MinuteWise campaign without Gemini rather than ship
+  // study-themed copy.
   if (!template) {
+    if (templates.length === 0) {
+      throw new Error(
+        `Gemini content generation failed and no CSV fallback is available for campaign "${campaign?.slug ?? campaignSlug}". ` +
+        `Either Gemini is misconfigured (check GEMINI_API_KEY) or the campaign has no description for the prompt to work with. ` +
+        `Refusing to fabricate a post — would produce wrong-campaign content.`,
+      );
+    }
     log('Using CSV template fallback');
     const available = templates.filter((t) => !usedTemplatesThisCycle.has(t.name));
     if (available.length > 0) {
@@ -638,9 +816,9 @@ export async function generateContent(
 
   const title = template.name;
   const slides = flow === 'emoji_overlay'
-    ? assignEmojiFlowRoles(template.slides)
-    : assignSlideRoles(template.slides);
-  const hashtags = pickHashtags(hashtagBank);
+    ? assignEmojiFlowRoles(template.slides, campaign?.name ?? null, campaign?.description ?? null)
+    : assignSlideRoles(template.slides, campaign?.name ?? null, campaign?.description ?? null);
+  const hashtags = pickHashtags(hashtagBank, campaign?.branded_hashtags ?? null, campaign?.tracked_hashtags ?? null);
   const caption = buildCaption(title, hashtags);
   const actualHookStyle = classifyHookStyle(title);
 

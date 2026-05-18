@@ -61,10 +61,13 @@ function CreatorLoginForm() {
       return;
     }
 
-    // After password login, hit the linker server-side via /auth/relink
-    // (a thin GET endpoint that mirrors the callback's link step). Then
-    // route by role.
-    router.push("/auth/relink");
+    // After password login, hit the linker server-side via /auth/relink.
+    // The `from=creator` hint tells relink this attempt came through the
+    // creator portal — if the signed-in user isn't (and can't be linked
+    // to) a creator, relink signs them back out and bounces here with a
+    // `reason=not-a-creator` banner instead of silently dropping them on
+    // the staff dashboard.
+    router.push("/auth/relink?from=creator");
     router.refresh();
   }
 
@@ -90,6 +93,17 @@ function CreatorLoginForm() {
         <div className="rounded-md border border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs">
           Your account isn&apos;t linked to a creator profile yet. Ask your
           contact to invite the email you&apos;re using here.
+        </div>
+      )}
+
+      {reason === "not-a-creator" && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs">
+          That email isn&apos;t a creator account. If you&apos;re on the team,
+          use the{" "}
+          <Link href="/login" className="font-medium underline">
+            staff login
+          </Link>
+          . Otherwise ask your contact to invite this email as a creator.
         </div>
       )}
 

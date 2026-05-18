@@ -38,12 +38,14 @@ export default function CreatorSignupPage() {
 
     const supabase = createBrowserSupabase();
     // Pass the email through emailRedirectTo so the confirmation link
-    // lands at /auth/callback, where the linker fires.
+    // lands at /auth/callback, where the linker fires. `from=creator`
+    // tells the callback to bounce non-creators back here rather than
+    // silently dropping them on the staff dashboard.
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const { error: err } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${origin}/auth/callback` },
+      options: { emailRedirectTo: `${origin}/auth/callback?from=creator` },
     });
 
     if (err) {

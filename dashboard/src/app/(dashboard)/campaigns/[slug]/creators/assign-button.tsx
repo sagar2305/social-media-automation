@@ -18,20 +18,27 @@ import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  UserPlus, Loader2, X, AlertCircle, Search,
+  UserPlus, Loader2, X, AlertCircle, Search, AtSign, ChevronDown, ChevronUp,
 } from "lucide-react";
 import type { Creator, Multiplier } from "@/lib/types";
-import { createAssignment } from "../../../payouts/actions";
+import { createAssignment, setCreatorCampaignAccounts } from "../../../payouts/actions";
+import type { CampaignAccountOption } from "./manage-accounts-button";
 
 interface Props {
   campaignId: string;
   multipliers: Multiplier[];
+  /**
+   * All accounts on this campaign (with each one's current owner if
+   * any). Threaded in from the parent page so the modal doesn't have
+   * to refetch; same shape the ManageAccountsButton consumes.
+   */
+  campaignAccounts?: CampaignAccountOption[];
   /** Optional override of the button label/style (used in the empty state). */
   variant?: "default" | "outline";
   label?: string;
 }
 
-export function CampaignAssignCreatorButton({ campaignId, multipliers, variant = "default", label = "Assign creator" }: Props) {
+export function CampaignAssignCreatorButton({ campaignId, multipliers, campaignAccounts = [], variant = "default", label = "Assign creator" }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [creators, setCreators] = useState<Creator[]>([]);
@@ -50,6 +57,11 @@ export function CampaignAssignCreatorButton({ campaignId, multipliers, variant =
   // Default to invite (creator must Accept). Operators agreeing offline
   // can flip the toggle and skip straight to status='active'.
   const [sendAsInvite, setSendAsInvite] = useState(true);
+  // Optional: give the creator some of this campaign's accounts at
+  // assign time. Collapsed by default so the modal stays compact for
+  // the "just assign them, I'll do accounts later" path.
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  const [accountsExpanded, setAccountsExpanded] = useState(false);
 
   useEffect(() => {
     if (!open || creators.length > 0) return;
@@ -88,7 +100,18 @@ export function CampaignAssignCreatorButton({ campaignId, multipliers, variant =
     setRateOverride("");
     setAppliedMultipliers([]);
     setSendAsInvite(true);
+    setSelectedAccountIds(new Set());
+    setAccountsExpanded(false);
     setError(null);
+  }
+
+  function toggleAccount(id: string) {
+    setSelectedAccountIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function close() {
@@ -122,6 +145,28 @@ export function CampaignAssignCreatorButton({ campaignId, multipliers, variant =
         as_invite: sendAsInvite,
       });
       if (!r.ok) { setError(r.error); return; }
+
+      // If the operator ticked any accounts, hand those off too. We
+      // do this AFTER the assignment so a failure here doesn't leave
+      // the creator-row in a half-onboarded state. The set-accounts
+      // action is idempotent — re-running it with the same selection
+      // is safe.
+      if (selectedAccountIds.size > 0) {
+        const accountsR = await setCreatorCampaignAccounts({
+          creatorId: selectedId,
+          campaignId,
+          accountIds: [...selectedAccountIds],
+        });
+        if (!accountsR.ok) {
+          setError(
+            `Creator was assigned, but the account hand-off failed: ${accountsR.error}. ` +
+            `Use the row's "Accounts" button to retry.`,
+          );
+          router.refresh();
+          return;
+        }
+      }
+
       close();
       router.refresh();
     });
@@ -315,6 +360,84 @@ export function CampaignAssignCreatorButton({ campaignId, multipliers, variant =
                       </button>
                     </div>
                   </div>
+
+                  {/* OPTIONAL: hand them some of this campaign's accounts
+                      right now. Collapsed by default — the operator can
+                      always do it later via the row's "Accounts" button,
+                      but offering it here saves a navigation when the
+                      account assignment is already decided. List is
+                      scoped strictly to this campaign's accounts. */}
+                  {campaignAccounts.length > 0 && (
+                    <div className="pt-2 border-t border-border/50">
+                      <button
+                        type="button"
+                        onClick={() => setAccountsExpanded((v) => !v)}
+                        className="w-full flex items-center justify-between text-xs font-medium hover:text-foreground"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          Give them campaign accounts{" "}
+                          <span className="text-muted-foreground font-normal">
+                            ({selectedAccountIds.size} selected · optional)
+                          </span>
+                        </span>
+                        {accountsExpanded ? (
+                          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+
+                      {accountsExpanded && (
+                        <div className="mt-2 rounded-md border border-border/60 divide-y divide-border/30 max-h-56 overflow-y-auto">
+                          {campaignAccounts.map((a) => {
+                            const ownedByOther =
+                              a.current_owner_id &&
+                              a.current_owner_id !== selectedId;
+                            const checked = selectedAccountIds.has(a.id);
+                            return (
+                              <label
+                                key={a.id}
+                                className={`flex items-start gap-3 px-3 py-2 cursor-pointer text-xs ${
+                                  checked ? "bg-primary/5" : "hover:bg-muted/40"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleAccount(a.id)}
+                                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-medium flex items-center gap-1.5">
+                                    <AtSign className="h-3 w-3 text-muted-foreground" />
+                                    <span className="font-mono">{a.handle}</span>
+                                    {!a.active && (
+                                      <span className="text-[9px] text-muted-foreground uppercase">paused</span>
+                                    )}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    {a.name ?? "—"}
+                                    {ownedByOther && (
+                                      <>
+                                        {" · "}
+                                        <span className="text-amber-700 dark:text-amber-400">
+                                          currently owned by {a.current_owner_name}
+                                          {checked && " — saving will move it"}
+                                        </span>
+                                      </>
+                                    )}
+                                    {!a.current_owner_id && (
+                                      <> · <span className="text-muted-foreground/70">unassigned</span></>
+                                    )}
+                                  </p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
