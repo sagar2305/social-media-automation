@@ -54,13 +54,6 @@ function parseResourceLines(input: string | undefined): Array<{ label: string; u
   return out;
 }
 
-/** Clamp + normalise a weight number to [0, 1]. */
-function weight(input: FormDataEntryValue | null): number {
-  const n = Number(input ?? 0);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(1, n));
-}
-
 export async function updateCampaignAction(formData: FormData): Promise<Result> {
   const auth = await assertRole("admin");
   if (!auth.ok) return auth;

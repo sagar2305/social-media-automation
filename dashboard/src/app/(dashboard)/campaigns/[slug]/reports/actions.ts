@@ -219,7 +219,10 @@ export async function sendTestDigest(input: { slug: string }): Promise<ActionRes
   }
 
   // Always log — operator wants the whole timeline, including failures.
-  await sb.from("email_reports_log").insert({
+  // Capture the insert error separately: a logging failure must NOT mask
+  // the email-send result. The audit row is gone for this attempt; surface
+  // it to the server console so the operator can reconcile manually.
+  const { error: logInsertErr } = await sb.from("email_reports_log").insert({
     campaign_id: campaign.id,
     recipients,
     subject,
@@ -232,6 +235,11 @@ export async function sendTestDigest(input: { slug: string }): Promise<ActionRes
       posts_count: (posts ?? []).filter((p) => p.status === "published").length,
     },
   });
+  if (logInsertErr) {
+    console.error(
+      `[reports] email_reports_log insert failed (send result: ${errorMsg ? "failed" : "ok"}): ${logInsertErr.message}`,
+    );
+  }
 
   revalidatePath(`/campaigns/${input.slug}/reports`);
 

@@ -42,18 +42,23 @@ export function CreateCreatorForm() {
 
   useEffect(() => {
     if (kind !== "team_member" || accounts.length > 0 || accountsLoading) return;
-    setAccountsLoading(true);
-    const sb = createBrowserSupabase();
-    sb.from("accounts")
-      .select("id, name, handle")
-      .eq("active", true)
-      .order("name")
-      .returns<AccountOption[]>()
-      .then(({ data, error: err }) => {
-        if (err) setError(err.message);
-        else setAccounts(data ?? []);
-        setAccountsLoading(false);
-      });
+    let cancelled = false;
+    // Async IIFE so setState lives in a callback rather than the
+    // synchronous effect body (React 19 set-state-in-effect rule).
+    (async () => {
+      setAccountsLoading(true);
+      const sb = createBrowserSupabase();
+      const { data, error: err } = await sb.from("accounts")
+        .select("id, name, handle")
+        .eq("active", true)
+        .order("name")
+        .returns<AccountOption[]>();
+      if (cancelled) return;
+      if (err) setError(err.message);
+      else setAccounts(data ?? []);
+      setAccountsLoading(false);
+    })();
+    return () => { cancelled = true; };
   }, [kind, accounts.length, accountsLoading]);
 
   function toggleOwnedAccount(id: string) {

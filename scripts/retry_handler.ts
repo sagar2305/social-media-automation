@@ -194,17 +194,13 @@ export async function findRetries(): Promise<Map<string, RetryablePost>> {
     const key = `${m.flow}:${m.accountIndex}`;
     if (byKey.has(key)) continue;
 
-    // Reconstruct slide paths from archive
-    const slidePaths: string[] = [];
-    for (let i = 1; i <= 20; i++) {
-      const slidePath = join(m.archiveDir, `slide_${i}.png`);
-      try {
-        await readFile(slidePath); // just check existence
-        slidePaths.push(slidePath);
-      } catch {
-        break;
-      }
-    }
+    // Reconstruct slide paths from archive. Use readdir + filter rather than
+    // probing slide_1.png ... slide_N.png by existence — avoids the hard
+    // 20-slide ceiling and the wasteful full-file read on every probe.
+    const slidePaths = (await readdir(m.archiveDir).catch(() => []))
+      .filter(f => /^slide_[1-9]\d*\.png$/.test(f))
+      .sort((a, b) => parseInt(a.match(/\d+/)![0], 10) - parseInt(b.match(/\d+/)![0], 10))
+      .map(f => join(m.archiveDir, f));
     if (!slidePaths.length) continue;
 
     byKey.set(key, {

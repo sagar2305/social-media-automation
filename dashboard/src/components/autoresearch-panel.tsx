@@ -156,7 +156,7 @@ export function AutoresearchPanel({
                 </p>
                 {active.hypothesis && (
                   <p className="text-xs text-emerald-700 mt-2 italic">
-                    "{active.hypothesis}"
+                    &ldquo;{active.hypothesis}&rdquo;
                   </p>
                 )}
                 <p className="text-[11px] text-emerald-700 mt-2">
@@ -259,7 +259,7 @@ export function AutoresearchPanel({
                     <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">
                       Hypothesis
                     </p>
-                    <p className="text-sm italic">"{selected.hypothesis}"</p>
+                    <p className="text-sm italic">&ldquo;{selected.hypothesis}&rdquo;</p>
                   </div>
                 )}
 
@@ -562,7 +562,7 @@ function BrainLogDetail({ run }: { run: AutoresearchRun }) {
           {run.account && <span className="text-muted-foreground"> on @{run.account}</span>}
         </p>
         {run.hypothesis && (
-          <p className="text-sm italic text-muted-foreground mt-2">"{run.hypothesis}"</p>
+          <p className="text-sm italic text-muted-foreground mt-2">&ldquo;{run.hypothesis}&rdquo;</p>
         )}
       </div>
 

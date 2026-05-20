@@ -345,9 +345,12 @@ function TargetInput({
 }) {
   const [local, setLocal] = useState(value === null ? "" : String(value));
   const [focused, setFocused] = useState(false);
-  // Keep local in sync if prop changes from outside (e.g., revalidate)
+  // Keep local in sync if prop changes from outside (e.g., revalidate),
+  // but never while the user is actively typing — that would wipe input.
   useEffect(() => {
+    if (focused) return;
     setLocal(value === null ? "" : String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   return (
     <Input

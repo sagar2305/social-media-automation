@@ -65,33 +65,40 @@ export function CampaignAssignCreatorButton({ campaignId, multipliers, campaignA
 
   useEffect(() => {
     if (!open || creators.length > 0) return;
-    setLoading(true);
-    const sb = createBrowserSupabase();
-    // Load creators AND existing assignments for this campaign in
-    // parallel. The assignments list drives the "already assigned"
-    // badge so the admin doesn't waste a click on a creator that's
-    // already on the campaign (the unique constraint on
-    // (creator_id, campaign_id) would reject the duplicate insert
-    // anyway, but failing visually is a better experience than
-    // submitting and getting a server error).
-    Promise.all([
-      sb.from("creators")
-        .select("*")
-        .in("status", ["invited", "onboarded"])
-        .order("legal_name")
-        .returns<Creator[]>(),
-      sb.from("assignments")
-        .select("creator_id, status")
-        .eq("campaign_id", campaignId)
-        .returns<Array<{ creator_id: string; status: string }>>(),
-    ]).then(([creatorsRes, assignRes]) => {
+    let cancelled = false;
+    // Async IIFE so setState calls live in an async callback rather than
+    // the synchronous effect body (React 19 lint rule: no setState in
+    // synchronous effect body to avoid cascading renders).
+    (async () => {
+      setLoading(true);
+      const sb = createBrowserSupabase();
+      // Load creators AND existing assignments for this campaign in
+      // parallel. The assignments list drives the "already assigned"
+      // badge so the admin doesn't waste a click on a creator that's
+      // already on the campaign (the unique constraint on
+      // (creator_id, campaign_id) would reject the duplicate insert
+      // anyway, but failing visually is a better experience than
+      // submitting and getting a server error).
+      const [creatorsRes, assignRes] = await Promise.all([
+        sb.from("creators")
+          .select("*")
+          .in("status", ["invited", "onboarded"])
+          .order("legal_name")
+          .returns<Creator[]>(),
+        sb.from("assignments")
+          .select("creator_id, status")
+          .eq("campaign_id", campaignId)
+          .returns<Array<{ creator_id: string; status: string }>>(),
+      ]);
+      if (cancelled) return;
       if (creatorsRes.error) { setError(creatorsRes.error.message); setLoading(false); return; }
       setCreators(creatorsRes.data ?? []);
       const ids = new Map<string, string>();
       for (const a of assignRes.data ?? []) ids.set(a.creator_id, a.status);
       setExistingAssignments(ids);
       setLoading(false);
-    });
+    })();
+    return () => { cancelled = true; };
   }, [open, creators.length, campaignId]);
 
   function reset() {

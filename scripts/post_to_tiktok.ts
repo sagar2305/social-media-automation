@@ -283,7 +283,6 @@ export async function postAllDrafts(
   // can stagger by (count × interval) per account independently.
   const accountPostCount = new Map<number, number>();
   const results: PostResult[] = [];
-  let firstExperimentLogged = false;
 
   for (const data of postData) {
     try {
@@ -309,9 +308,12 @@ export async function postAllDrafts(
       );
       results.push(result);
 
-      if (!firstExperimentLogged && data.metadata.experimentId) {
+      // Log every experiment-tagged post — updateExperimentLog has its own
+      // internal dedup (content.includes(experimentId)) so concurrent calls
+      // for the same experiment are no-ops. Previously a one-shot flag
+      // dropped any second-or-later experiment in a multi-experiment cycle.
+      if (data.metadata.experimentId) {
         await updateExperimentLog(data.metadata);
-        firstExperimentLogged = true;
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

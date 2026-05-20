@@ -147,7 +147,6 @@ export function CampaignForm() {
       // straight on the Edit page so they can fix it without hunting,
       // and alert the reason so it doesn't get missed.
       if (result.warning) {
-        // eslint-disable-next-line no-alert
         alert(result.warning);
         router.push(`/campaigns/${result.slug}/edit`);
       } else {

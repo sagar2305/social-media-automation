@@ -379,6 +379,10 @@ async function runCycle(): Promise<void> {
     caller: process.env.CYCLE_CALLER ?? 'manual',
     campaignId: campaign?.id ?? null,
   });
+  if (!runId) {
+    log('⚠ Telemetry unavailable — dashboard /runs will not show this cycle.');
+    log('  Check POST-TRACKER.md before re-running to avoid double-posts.');
+  }
   // Stash for downstream helpers (generate_images.ts logs prompts via
   // this). Set even when runId is null so callers don't fail.
   setCurrentRunId(runId);
@@ -560,14 +564,31 @@ async function runCycle(): Promise<void> {
 
   // Bookkeeping: update each archive's meta.json with its new Blotato postId
   // and mark the original tracker row as retried if this was a retry.
-  for (let i = 0; i < results.length && i < allPostData.length; i++) {
-    const r = results[i];
+  // Iterate over allPostData (not results) so any input without a matching
+  // result — e.g., postAllDrafts crashed mid-batch — still surfaces as a
+  // 'post_failed' timeline event instead of vanishing silently.
+  if (results.length !== allPostData.length) {
+    log(`⚠ Post result/input mismatch: ${results.length} results vs ${allPostData.length} inputs — missing rows will be reported as failures.`);
+  }
+  for (let i = 0; i < allPostData.length; i++) {
     const d = allPostData[i];
-    await recordAttempt(d.archiveDir, r.postId);
-    if (d.isRetry && d.originalPostId) {
-      await markTrackerRowRetried(d.originalPostId, r.postId);
-    }
     const account = config.tiktokAccounts[d.accountIndex];
+    const hasResult = i < results.length;
+    const r: PostResult = hasResult ? results[i] : {
+      accountName: account?.name ?? '?',
+      integrationId: account?.id ?? '?',
+      postId: `FAILED_NO_RESULT_${i}`,
+      flow: d.metadata?.flow ?? 'unknown',
+    };
+    // Only touch archive/tracker state when postAllDrafts actually returned
+    // a result for this input — synthesized failures must not consume the
+    // archive's retry budget or mark a tracker row as retried.
+    if (hasResult) {
+      await recordAttempt(d.archiveDir, r.postId);
+      if (d.isRetry && d.originalPostId) {
+        await markTrackerRowRetried(d.originalPostId, r.postId);
+      }
+    }
     const submittedOk = r.postId && !r.postId.startsWith('FAILED');
     if (submittedOk) {
       await reportEvent(

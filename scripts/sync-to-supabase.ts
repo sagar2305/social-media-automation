@@ -148,13 +148,23 @@ async function syncAccountStats() {
     videos: cleanNum(r["Videos"]),
   }));
 
+  let synced = 0;
+  let failed = 0;
   for (const stat of stats) {
     const { error } = await supabase.from("account_stats").upsert(stat, {
       onConflict: "date,account",
     });
-    if (error) console.error("  Account stats upsert error:", error.message);
+    if (error) {
+      failed++;
+      console.error(`  Account stats upsert error (${stat.account}): ${error.message}`);
+    } else {
+      synced++;
+    }
   }
-  console.log(`  Synced ${stats.length} account stats`);
+  if (failed > 0) {
+    console.warn(`  ⚠ Account stats: ${failed}/${stats.length} upserts failed`);
+  }
+  console.log(`  Synced ${synced}/${stats.length} account stats`);
 }
 
 async function syncExperiments() {

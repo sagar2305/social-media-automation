@@ -210,13 +210,19 @@ async function processAssignment(
     throw new Error(`load posts: ${postsErr.message}`);
   }
 
-  const posts: CalculatorPost[] = (postsRaw ?? []).map(p => ({
+  // Skip posts without a go-live date rather than substituting epoch — a
+  // 1970 timestamp would put the post into the wrong rate-card tier (or
+  // out of the pay period entirely) and silently corrupt the payout.
+  const filteredRaw = (postsRaw ?? []).filter(p => p.date);
+  const posts: CalculatorPost[] = filteredRaw.map(p => ({
     id: p.id,
-    posted_at: p.date ?? new Date(0).toISOString(),
+    posted_at: p.date as string,
     views: p.views ?? 0,
     saves: p.saves,
     status: p.status ?? 'unknown',
   }));
+  const skippedCount = (postsRaw ?? []).length - filteredRaw.length;
+  if (skippedCount > 0) log(`  ⚠ Skipped ${skippedCount} post(s) with null/empty date`);
 
   // Existing pending payout — we want to preserve manual_adjustments
   // the operator may have typed in. Other fields get overwritten.
@@ -332,6 +338,32 @@ export async function recomputePendingPayoutsForCampaign(
     .maybeSingle<CampaignPayoutConfig>();
 
   if (!config || config.mode === 'none') {
+    stats.campaignsSkipped++;
+    return stats;
+  }
+
+  // Validate config completeness BEFORE processing. An incomplete config
+  // (e.g., mode='flat' with flat_per_post_cents=null) silently produces
+  // $0 payouts in the calculator — operator sees the zeros, can't tell why.
+  const configErrors: string[] = [];
+  if ((config.mode === 'flat' || config.mode === 'hybrid') &&
+      (config.flat_per_post_cents == null || config.flat_per_post_cents <= 0)) {
+    configErrors.push('flat_per_post_cents missing or ≤ 0');
+  }
+  if ((config.mode === 'cpm' || config.mode === 'hybrid') &&
+      (config.cpm_cents == null || config.cpm_cents <= 0)) {
+    configErrors.push('cpm_cents missing or ≤ 0');
+  }
+  if (config.mode === 'hybrid' &&
+      (config.hybrid_threshold_views == null || config.hybrid_threshold_views <= 0)) {
+    configErrors.push('hybrid_threshold_views missing or ≤ 0');
+  }
+  if (config.mode === 'milestone' &&
+      (!config.milestones || config.milestones.length === 0)) {
+    configErrors.push('no milestone tiers configured');
+  }
+  if (configErrors.length > 0) {
+    log(`[payouts] ${campaignId.slice(0, 8)}… SKIP — config incomplete: ${configErrors.join(', ')}`);
     stats.campaignsSkipped++;
     return stats;
   }

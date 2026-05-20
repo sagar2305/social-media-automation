@@ -101,30 +101,36 @@ export function ReassignButton({
   useEffect(() => {
     if (!open) return;
     if (eligible.length > 0 && accountsToMoveCount !== null) return;
-    setLoading(true);
-    setError(null);
-    const sb = createBrowserSupabase();
-    Promise.all([
-      sb.from("creators")
-        .select("id, legal_name, display_name, email, kind")
-        .in("status", ["invited", "onboarded"])
-        .order("legal_name")
-        .returns<CreatorRow[]>(),
-      // Pull current assignments + their expected_posts so we can
-      // (a) mark who's already on the campaign and (b) preview the
-      // additive target in merge mode. status='completed' rows are
-      // excluded — those creators are done with the campaign and
-      // merging back into a closed assignment is the wrong operation.
-      sb.from("assignments")
-        .select("creator_id, expected_posts, status")
-        .eq("campaign_id", campaignId)
-        .neq("status", "completed")
-        .returns<Array<{ creator_id: string; expected_posts: number; status: string }>>(),
-      sb.from("creators")
-        .select("owned_account_ids")
-        .eq("id", currentCreatorId)
-        .maybeSingle<{ owned_account_ids: string[] | null }>(),
-    ]).then(async ([creatorsRes, assignRes, currentCreatorRes]) => {
+    let cancelled = false;
+    // Async IIFE so setState calls live in an async callback rather than
+    // the synchronous effect body (React 19 lint rule: no setState in
+    // synchronous effect body to avoid cascading renders).
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const sb = createBrowserSupabase();
+      const [creatorsRes, assignRes, currentCreatorRes] = await Promise.all([
+        sb.from("creators")
+          .select("id, legal_name, display_name, email, kind")
+          .in("status", ["invited", "onboarded"])
+          .order("legal_name")
+          .returns<CreatorRow[]>(),
+        // Pull current assignments + their expected_posts so we can
+        // (a) mark who's already on the campaign and (b) preview the
+        // additive target in merge mode. status='completed' rows are
+        // excluded — those creators are done with the campaign and
+        // merging back into a closed assignment is the wrong operation.
+        sb.from("assignments")
+          .select("creator_id, expected_posts, status")
+          .eq("campaign_id", campaignId)
+          .neq("status", "completed")
+          .returns<Array<{ creator_id: string; expected_posts: number; status: string }>>(),
+        sb.from("creators")
+          .select("owned_account_ids")
+          .eq("id", currentCreatorId)
+          .maybeSingle<{ owned_account_ids: string[] | null }>(),
+      ]);
+      if (cancelled) return;
       if (creatorsRes.error) { setError(creatorsRes.error.message); setLoading(false); return; }
       const assignRows = assignRes.data ?? [];
       const onCampaign = new Set(assignRows.map((a) => a.creator_id));
@@ -150,10 +156,12 @@ export function ReassignButton({
           .select("id", { count: "exact", head: true })
           .eq("campaign_id", campaignId)
           .in("id", ownedIds);
+        if (cancelled) return;
         setAccountsToMoveCount(count ?? 0);
       }
       setLoading(false);
-    });
+    })();
+    return () => { cancelled = true; };
   }, [open, eligible.length, campaignId, currentCreatorId, accountsToMoveCount]);
 
   function reset() {

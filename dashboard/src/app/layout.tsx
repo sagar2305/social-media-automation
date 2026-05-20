@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "MinuteWise Dashboard",
   description: "TikTok content automation analytics",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({

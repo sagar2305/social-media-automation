@@ -11,7 +11,6 @@
 
 import { requireCreator } from "@/lib/auth";
 import { createClient } from "@/lib/supabase";
-import { Card, CardContent } from "@/components/ui/card";
 import { PaymentRow } from "./payment-row";
 import type { PayoutWithJoins } from "@/lib/types";
 

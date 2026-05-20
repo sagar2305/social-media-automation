@@ -165,22 +165,24 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
     if (datesToLoad.length === 0) return;
 
     let cancelled = false;
-    setLoadingEvents(true);
-    const supabase = createBrowserSupabase();
-
-    Promise.all(
-      datesToLoad.map(async (date) => {
-        const start = `${date}T00:00:00Z`;
-        const end = `${date}T23:59:59Z`;
-        const { data } = await supabase
-          .from("auto_fix_events")
-          .select("id, occurred_at, source, tier, signature, message, action, handled")
-          .gte("occurred_at", start)
-          .lte("occurred_at", end)
-          .order("occurred_at", { ascending: false });
-        return [date, (data as AutoFixEvent[] | null) ?? []] as const;
-      })
-    ).then((entries) => {
+    // Async IIFE so setState lives in a callback rather than the
+    // synchronous effect body (React 19 set-state-in-effect rule).
+    (async () => {
+      setLoadingEvents(true);
+      const supabase = createBrowserSupabase();
+      const entries = await Promise.all(
+        datesToLoad.map(async (date) => {
+          const start = `${date}T00:00:00Z`;
+          const end = `${date}T23:59:59Z`;
+          const { data } = await supabase
+            .from("auto_fix_events")
+            .select("id, occurred_at, source, tier, signature, message, action, handled")
+            .gte("occurred_at", start)
+            .lte("occurred_at", end)
+            .order("occurred_at", { ascending: false });
+          return [date, (data as AutoFixEvent[] | null) ?? []] as const;
+        }),
+      );
       if (cancelled) return;
       setEventsByDate((prev) => {
         const next = new Map(prev);
@@ -188,8 +190,7 @@ export function FailedPostsTable({ posts: initial }: { posts: FailedPost[] }) {
         return next;
       });
       setLoadingEvents(false);
-    });
-
+    })();
     return () => { cancelled = true; };
   }, [expanded, visible, eventsByDate]);
 

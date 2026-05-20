@@ -11,6 +11,7 @@
  */
 
 import { createClient } from "@/lib/supabase";
+import { assertRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 interface CampaignRow { id: string }
@@ -34,6 +35,8 @@ export async function assignAccountToCampaign(input: {
   slug: string;
   accountId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const c = await getCampaignBySlug(input.slug);
   if (!c) return { ok: false, error: "Campaign not found" };
 
@@ -58,6 +61,8 @@ export async function createAccountForCampaign(input: {
   target_posts_per_week: number | null;
   notes: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const handle = normaliseHandle(input.handle);
   if (!handle) return { ok: false, error: "Handle is required" };
   if (!input.name.trim()) return { ok: false, error: "Display name is required" };
@@ -145,6 +150,8 @@ export async function removeAccountFromCampaign(input: {
   slug: string;
   accountId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const sb = await createClient();
   const { error } = await sb
     .from("accounts")
@@ -164,6 +171,8 @@ export async function setAccountActive(input: {
   accountId: string;
   active: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const sb = await createClient();
   const { error } = await sb
     .from("accounts")
@@ -182,6 +191,8 @@ export async function setAccountTarget(input: {
   accountId: string;
   target: number | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   if (input.target !== null && (input.target < 0 || input.target > 50)) {
     return { ok: false, error: "Target must be 0–50 posts/week" };
   }
