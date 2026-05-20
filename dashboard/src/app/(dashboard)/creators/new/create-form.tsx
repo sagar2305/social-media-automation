@@ -40,8 +40,13 @@ export function CreateCreatorForm() {
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [ownedAccountIds, setOwnedAccountIds] = useState<string[]>([]);
 
+  // Track failure separately so we don't re-trigger the fetch on the
+  // accountsLoading toggle (true → false on error would otherwise re-enter
+  // the effect through the dep array, creating an infinite retry loop —
+  // CodeRabbit caught this on PR #4).
+  const [accountsFetchTried, setAccountsFetchTried] = useState(false);
   useEffect(() => {
-    if (kind !== "team_member" || accounts.length > 0 || accountsLoading) return;
+    if (kind !== "team_member" || accounts.length > 0 || accountsLoading || accountsFetchTried) return;
     let cancelled = false;
     // Async IIFE so setState lives in a callback rather than the
     // synchronous effect body (React 19 set-state-in-effect rule).
@@ -57,9 +62,10 @@ export function CreateCreatorForm() {
       if (err) setError(err.message);
       else setAccounts(data ?? []);
       setAccountsLoading(false);
+      setAccountsFetchTried(true);
     })();
     return () => { cancelled = true; };
-  }, [kind, accounts.length, accountsLoading]);
+  }, [kind, accounts.length, accountsLoading, accountsFetchTried]);
 
   function toggleOwnedAccount(id: string) {
     setOwnedAccountIds((cur) =>

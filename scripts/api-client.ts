@@ -142,6 +142,9 @@ export async function apiRequest<T>(
       // clear message instead of letting the JSON parser garble it.
       const contentType = response.headers.get('content-type');
       const rawText = await response.text();
+      // Empty success responses (204 No Content, 205, or genuinely empty 200)
+      // are valid — return undefined cast as T instead of throwing on JSON.parse.
+      if (rawText.length === 0) return undefined as T;
       if (contentType?.toLowerCase().includes('text/html') || rawText.trimStart().startsWith('<')) {
         const summary = summariseErrorBody(rawText, contentType);
         throw new Error(`${service} ${method} ${path} → ${response.status}: expected JSON but got ${summary}`);

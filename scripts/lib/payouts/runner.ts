@@ -210,19 +210,26 @@ async function processAssignment(
     throw new Error(`load posts: ${postsErr.message}`);
   }
 
-  // Skip posts without a go-live date rather than substituting epoch — a
-  // 1970 timestamp would put the post into the wrong rate-card tier (or
-  // out of the pay period entirely) and silently corrupt the payout.
-  const filteredRaw = (postsRaw ?? []).filter(p => p.date);
-  const posts: CalculatorPost[] = filteredRaw.map(p => ({
-    id: p.id,
-    posted_at: p.date as string,
-    views: p.views ?? 0,
-    saves: p.saves,
-    status: p.status ?? 'unknown',
-  }));
-  const skippedCount = (postsRaw ?? []).length - filteredRaw.length;
-  if (skippedCount > 0) log(`  ⚠ Skipped ${skippedCount} post(s) with null/empty date`);
+  // Map all posts through — DO NOT drop null-date posts here. Flat mode
+  // ("X cents per published post") doesn't care about posted_at; only
+  // CPM / milestone / hybrid modes do, and the calculator's per-post
+  // window check already excludes a missing/epoch date from those tiers.
+  // Dropping at this layer would silently skip flat-eligible deliveries.
+  // (CodeRabbit caught this on PR #4.)
+  let nullDateCount = 0;
+  const posts: CalculatorPost[] = (postsRaw ?? []).map(p => {
+    if (!p.date) nullDateCount++;
+    return {
+      id: p.id,
+      posted_at: p.date ?? new Date(0).toISOString(),
+      views: p.views ?? 0,
+      saves: p.saves,
+      status: p.status ?? 'unknown',
+    };
+  });
+  if (nullDateCount > 0) {
+    log(`  ⚠ ${nullDateCount} post(s) with null date — flat-eligible only (CPM/milestone tiers will skip via per-post window check)`);
+  }
 
   // Existing pending payout — we want to preserve manual_adjustments
   // the operator may have typed in. Other fields get overwritten.

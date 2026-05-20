@@ -92,6 +92,11 @@ export function CampaignAssignCreatorButton({ campaignId, multipliers, campaignA
       ]);
       if (cancelled) return;
       if (creatorsRes.error) { setError(creatorsRes.error.message); setLoading(false); return; }
+      // Surface assignment-query failures instead of treating "no rows"
+      // as "no existing assignments" — that would mislead the admin into
+      // picking an already-assigned creator and only failing at submit
+      // (CodeRabbit caught this on PR #4).
+      if (assignRes.error) { setError(`Couldn't load existing assignments: ${assignRes.error.message}`); setLoading(false); return; }
       setCreators(creatorsRes.data ?? []);
       const ids = new Map<string, string>();
       for (const a of assignRes.data ?? []) ids.set(a.creator_id, a.status);

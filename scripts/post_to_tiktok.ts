@@ -310,13 +310,31 @@ export async function postAllDrafts(
 
       // Log every experiment-tagged post — updateExperimentLog has its own
       // internal dedup (content.includes(experimentId)) so concurrent calls
-      // for the same experiment are no-ops. Previously a one-shot flag
-      // dropped any second-or-later experiment in a multi-experiment cycle.
+      // for the same experiment are no-ops. Wrapped in its own try/catch so
+      // an audit-log failure can't masquerade as a posting failure (which
+      // would emit a false 'post_failed' event for an already-successful
+      // submission and trigger auto-fix alerts).
       if (data.metadata.experimentId) {
-        await updateExperimentLog(data.metadata);
+        try {
+          await updateExperimentLog(data.metadata);
+        } catch (logErr) {
+          log(`updateExperimentLog failed for #${data.metadata.experimentId} (non-fatal): ${logErr instanceof Error ? logErr.message : String(logErr)}`);
+        }
       }
     } catch (err) {
+      // Push a synthesized FAILED result FIRST so results stays
+      // index-aligned with postData. Without this, a later success would
+      // get matched to this input's archive/tracker row in main.ts,
+      // corrupting bookkeeping (CodeRabbit caught this on PR #4).
+      const account = config.tiktokAccounts[data.accountIndex];
       const errMsg = err instanceof Error ? err.message : String(err);
+      results.push({
+        accountName: account?.name ?? data.metadata.account ?? '?',
+        integrationId: account?.id ?? '?',
+        postId: `FAILED:${errMsg.slice(0, 120).replace(/\n/g, ' ')}`,
+        flow: data.metadata.flow ?? 'unknown',
+      });
+
       const accountLabel = data.metadata.account || `account[${data.accountIndex}]`;
       log(`Failed to post to ${accountLabel}: ${errMsg}`);
 
