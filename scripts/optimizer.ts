@@ -1,7 +1,7 @@
 import { readFile, writeFile, appendFile } from 'fs/promises';
 import { log } from './api-client.js';
 import type { PostMetrics } from './pull_analytics.js';
-import { dataPath } from './lib/campaign-paths.js';
+import { dataPath, atomicWrite } from './lib/campaign-paths.js';
 
 interface ExperimentResult {
   experimentId: string;
@@ -23,10 +23,15 @@ function parseTrackerMetrics(content: string): Map<string, { hookStyle: string; 
 
     const saveRateStr = cols[10] || '0';
     const viewsStr = cols[5] || '0';
+    const saveRate = parseFloat(saveRateStr.replace('%', ''));
+    if (!Number.isFinite(saveRate)) {
+      log(`Skipping row with non-numeric saveRate: ${postId} = "${saveRateStr}"`);
+      continue;
+    }
 
     map.set(postId, {
       hookStyle: cols[2] || '',
-      saveRate: parseFloat(saveRateStr.replace('%', '')) || 0,
+      saveRate,
       views: parseInt(viewsStr.replace(/,/g, ''), 10) || 0,
       date: cols[1] || '',
     });
@@ -138,7 +143,7 @@ async function updateFormatWinners(result: ExperimentResult): Promise<void> {
     content += `| - | 7-slide | ${winnerStyle} | ${winnerRate}% | ${winnerViews.toLocaleString()} | ${new Date().toISOString().slice(0, 10)} |\n`;
   }
 
-  await writeFile(path, content);
+  await atomicWrite(path, content);
   log(`Updated FORMAT-WINNERS.md: ${winnerStyle} promoted`);
 }
 
@@ -157,7 +162,7 @@ async function updateLessonsLearned(result: ExperimentResult): Promise<void> {
     content += `\n## Insights${insight}\n`;
   }
 
-  await writeFile(path, content);
+  await atomicWrite(path, content);
   log(`Updated LESSONS-LEARNED.md with experiment insight`);
 }
 
@@ -194,7 +199,7 @@ async function completeExperiment(result: ExperimentResult): Promise<void> {
 
   content = content.replace('_None yet._', '');
 
-  await writeFile(path, content);
+  await atomicWrite(path, content);
   log(`Experiment #${result.experimentId} completed: ${verdictText}`);
 }
 
@@ -202,7 +207,7 @@ async function completeExperiment(result: ExperimentResult): Promise<void> {
 
 async function logToResultsTsv(result: ExperimentResult): Promise<void> {
   const tsvPath = dataPath('results.tsv');
-  const status = result.winner === 'inconclusive' ? 'inconclusive' : result.winner === 'A' ? 'keep' : 'keep';
+  const status = result.winner === 'inconclusive' ? 'inconclusive' : 'keep';
   const row = [
     result.experimentId,
     new Date().toISOString().slice(0, 10),
@@ -217,7 +222,7 @@ async function logToResultsTsv(result: ExperimentResult): Promise<void> {
     0, // saves_a (not tracked separately yet)
     0, // saves_b
     status,
-    `${result.variantA.hookStyle} vs ${result.variantB.hookStyle}, ${result.relativeDiff}% relative diff`,
+    `Winner: ${result.winner} - ${result.variantA.hookStyle} vs ${result.variantB.hookStyle}, ${result.relativeDiff}% relative diff`,
   ].join('\t');
 
   await appendFile(tsvPath, row + '\n');
@@ -269,7 +274,7 @@ async function refreshFormatWinners(tracker: string): Promise<void> {
     content += `\n${rankingHeader}${rankingRows}\n`;
   }
 
-  await writeFile(path, content);
+  await atomicWrite(path, content);
   log(`Updated FORMAT-WINNERS.md (${ranked.length} styles ranked)`);
 }
 
@@ -335,7 +340,7 @@ export async function optimize(): Promise<void> {
       /## Rolling Dashboard[\s\S]*?(?=\n## [A-Z])/,
       `## Rolling Dashboard\n- 7-day avg save rate: ${avgSaveRate}%\n- 7-day avg views: ${avgViews.toLocaleString()}\n- Best hook style: ${bestStyle}\n- Best posting day/time: _analyzing_\n\n`,
     );
-    await writeFile(lessonsPath, lessons);
+    await atomicWrite(lessonsPath, lessons);
     log(`Dashboard: ${avgViews} avg views, ${avgSaveRate}% avg save rate, best style: ${bestStyle}`);
   }
 

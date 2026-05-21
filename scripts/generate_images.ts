@@ -640,10 +640,16 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
   // why RoastAI posts looked like study posts visually even though the
   // captions were about roasts. resolveCampaignScenes caches per-slug
   // so the Gemini derivation only runs once per cycle.
+  // Stable per account per day. Previously `accountIndex + Date.now()` was
+  // dominated by Date.now() (13-digit ms vs accountIndex 0-4), so selection
+  // was effectively random and the "consistent character per account"
+  // contract was broken. Day-bucket the rotator and use coprime multipliers
+  // (7, 11) so character and scene don't rotate in lockstep.
   const characters = flow === 'photorealistic' ? PHOTO_CHARACTERS : ANIMATED_CHARACTERS;
-  const character = characters[(accountIndex + Date.now()) % characters.length];
+  const dayIndex = Math.floor(Date.now() / 86_400_000);
+  const character = characters[(accountIndex * 7 + dayIndex) % characters.length];
   const scenes = await resolveCampaignScenes(campaign);
-  const scene = scenes[(accountIndex + Math.floor(Date.now() / 1000)) % scenes.length];
+  const scene = scenes[(accountIndex * 11 + dayIndex) % scenes.length];
   log(`Scene: "${scene.slice(0, 80)}${scene.length > 80 ? '…' : ''}"`);
 
   let animStyle: typeof ANIMATION_STYLES[number] | null = null;

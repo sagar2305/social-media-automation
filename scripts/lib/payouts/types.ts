@@ -123,7 +123,7 @@ export interface CalculatorPost {
 
 // ─── Manual adjustments (operator-typed line items) ─────────────
 
-export type AdjustmentKind = 'add' | 'subtract' | 'override';
+export type AdjustmentKind = 'add' | 'subtract';
 
 export interface ManualAdjustment {
   /** Free-form label, shown on the breakdown line. */

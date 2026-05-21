@@ -434,57 +434,6 @@ function Field({
 }
 
 /**
- * One row in the Flows section: an enabled checkbox + a 0.0–1.0 weight
- * input. The action layer renormalises across all three so the operator
- * doesn't have to make them sum to exactly 1.
- */
-function FlowRow({
-  label,
-  hint,
-  enabledName,
-  weightName,
-  defaultEnabled,
-  defaultWeight,
-}: {
-  label: string;
-  hint: string;
-  enabledName: string;
-  weightName: string;
-  defaultEnabled: boolean;
-  defaultWeight: number;
-}) {
-  return (
-    <div className="grid grid-cols-[1fr_auto_120px] items-center gap-3 px-3 py-2.5 rounded-md border border-border">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-[11px] text-muted-foreground">{hint}</p>
-      </div>
-      <label className="inline-flex items-center gap-2 cursor-pointer text-xs">
-        <input
-          type="checkbox"
-          name={enabledName}
-          defaultChecked={defaultEnabled}
-          className="h-4 w-4 rounded border-input"
-        />
-        Enabled
-      </label>
-      <div className="flex items-center gap-1.5">
-        <Input
-          name={weightName}
-          type="number"
-          step={0.05}
-          min={0}
-          max={1}
-          defaultValue={defaultWeight.toFixed(2)}
-          className="h-8 text-xs"
-        />
-        <span className="text-[11px] text-muted-foreground">weight</span>
-      </div>
-    </div>
-  );
-}
-
-/**
  * Single-select radio for the simplified flow picker. Mirrors the
  * FlowRadio on /campaigns/new so the two forms feel identical.
  */

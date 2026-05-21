@@ -110,13 +110,21 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const calculatorPosts: CalculatorPost[] = (posts ?? []).map(p => ({
-    id: p.id,
-    posted_at: p.date ?? new Date(0).toISOString(),
-    views: p.views ?? 0,
-    saves: p.saves,
-    status: p.status,
-  }));
+  // Skip posts without a go-live date rather than substituting epoch — a
+  // 1970 timestamp would put the post into the wrong rate-card tier (or
+  // out of the pay period entirely) and silently corrupt the payout.
+  // Surface the skipped count so the operator notices data-quality issues.
+  const calculatorPosts: CalculatorPost[] = (posts ?? [])
+    .filter(p => p.date)
+    .map(p => ({
+      id: p.id,
+      posted_at: p.date,
+      views: p.views ?? 0,
+      saves: p.saves,
+      status: p.status,
+    }));
+  const skippedCount = (posts ?? []).length - calculatorPosts.length;
+  if (skippedCount > 0) console.warn(`⚠ Skipped ${skippedCount} post(s) with null/empty date`);
 
   const out = calculatePayout({
     config,

@@ -105,13 +105,23 @@ async function writeMetricsSnapshots(rows: TrackerRow[]): Promise<number> {
   if (!newRows.length) return 0;
 
   // Batch inserts — 100 per call keeps statement size well under any limits.
+  // Track inserted vs failed so the return value reflects what actually
+  // landed, not what we attempted to land.
+  let inserted = 0;
+  let failedBatches = 0;
   for (let i = 0; i < newRows.length; i += 100) {
     const batch = newRows.slice(i, i + 100);
     const { error } = await sb.from('post_metrics_history').insert(batch);
-    if (error) log(`  Snapshot insert error: ${error.message}`);
+    if (error) {
+      log(`  Snapshot insert error (batch starting at ${i}): ${error.message}`);
+      failedBatches++;
+    } else {
+      inserted += batch.length;
+    }
   }
+  if (failedBatches > 0) log(`  ⚠ ${failedBatches} batch(es) failed; ${inserted}/${newRows.length} rows landed`);
 
-  return newRows.length;
+  return inserted;
 }
 
 // ─── Types ────────────────────────────────────────────────────

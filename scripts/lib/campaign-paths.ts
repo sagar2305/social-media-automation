@@ -24,6 +24,7 @@
 
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFile, rename } from 'node:fs/promises';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..', '..');
@@ -103,6 +104,19 @@ export function dataPath(filename: string, slug?: string): string {
 /** Absolute path to the campaign's state directory. */
 export function campaignDir(slug?: string): string {
   return join(REPO_ROOT, 'data', 'campaigns', slug ?? getCampaignSlug());
+}
+
+/**
+ * Atomic write — writes to a tmp file then renames into place. On POSIX,
+ * rename is atomic so concurrent readers/writers will never see a partial
+ * file. Use this for any shared markdown state file (FORMAT-WINNERS,
+ * HASHTAG-BANK, TRENDING-NOW, etc.) where autoresearch + manual cycles
+ * could overlap.
+ */
+export async function atomicWrite(path: string, content: string): Promise<void> {
+  const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
+  await writeFile(tmp, content);
+  await rename(tmp, path);
 }
 
 /** Absolute path to the campaign's CTA image (used by post_to_tiktok). */

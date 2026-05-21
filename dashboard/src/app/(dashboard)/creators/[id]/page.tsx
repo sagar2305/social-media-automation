@@ -13,7 +13,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Mail, Globe, Wallet,
   Eye, Heart, Bookmark, MessageCircle,

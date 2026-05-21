@@ -46,16 +46,18 @@ export function PayCreatorPanel({ creator }: Props) {
   // render. 1h expiry keeps it usable for the admin's session without
   // creating a long-lived secret. Re-fetches if the path changes.
   useEffect(() => {
-    if (!creator.payment_screenshot_path) {
-      setSignedUrl(null);
-      return;
-    }
     let cancelled = false;
+    // Async IIFE so the early-return setState lives in a callback rather
+    // than the synchronous effect body (React 19 set-state-in-effect rule).
     (async () => {
+      if (!creator.payment_screenshot_path) {
+        if (!cancelled) setSignedUrl(null);
+        return;
+      }
       const sb = createBrowserSupabase();
       const { data, error } = await sb.storage
         .from(BUCKET)
-        .createSignedUrl(creator.payment_screenshot_path!, 60 * 60);
+        .createSignedUrl(creator.payment_screenshot_path, 60 * 60);
       if (cancelled) return;
       if (error) { setSignedUrlError(error.message); return; }
       setSignedUrl(data?.signedUrl ?? null);

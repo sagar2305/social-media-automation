@@ -27,7 +27,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __minutewise_supabase_browser_client__: SupabaseClient | undefined;
 }
 

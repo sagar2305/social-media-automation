@@ -48,20 +48,17 @@ dotenvConfig({ path: '.env.local', override: true });
 // (data/campaigns/<slug>/.last-autoresearch-run).
 const sentinelPath = (): string => dataPath('.last-autoresearch-run');
 
-function todayLocal(): string {
-  const d = new Date();
-  // Local-date YYYY-MM-DD (not UTC) so "today" matches whichever calendar day
-  // the operator perceives. launchd fires in local TZ.
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+function todayUTC(): string {
+  // UTC-date YYYY-MM-DD. Previously used local time; DST transitions and
+  // travel-across-timezones would shift the comparison window and cause
+  // the once-per-day script to fire twice in the same calendar day.
+  return new Date().toISOString().slice(0, 10);
 }
 
 async function alreadyRanToday(): Promise<boolean> {
   try {
     const last = (await readFile(sentinelPath(), 'utf-8')).trim();
-    return last === todayLocal();
+    return last === todayUTC();
   } catch {
     return false;
   }
@@ -69,7 +66,7 @@ async function alreadyRanToday(): Promise<boolean> {
 
 async function markRanToday(): Promise<void> {
   try {
-    await writeFile(sentinelPath(), todayLocal() + '\n');
+    await writeFile(sentinelPath(), todayUTC() + '\n');
   } catch {
     // sentinel write failure is non-fatal — at worst we run twice today
   }
@@ -725,7 +722,7 @@ async function runOneCampaign(campaign: Campaign | null) {
   // this, the Supabase row is write-only and tonight's batches keep
   // running on past format-winners alone, ignoring the brain's plan.
   try {
-    await writeDecisionToExperimentLog(decision, todayLocal());
+    await writeDecisionToExperimentLog(decision, todayUTC());
   } catch (err) {
     // Non-fatal — the decision is already recorded in Supabase. Log
     // so the operator can spot the drift, but don't abort the day.

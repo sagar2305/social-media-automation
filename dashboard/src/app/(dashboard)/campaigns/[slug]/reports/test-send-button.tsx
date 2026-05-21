@@ -23,6 +23,9 @@ export function TestSendButton({
 
   async function onClick() {
     if (state === "sending") return;
+    if (!confirm("Send test email to all configured recipients?\n\nThis sends a real email — make sure subscribers expect a test preview.")) {
+      return;
+    }
     setState("sending");
     setErrorMsg(null);
     const result = await sendTestDigest({ slug });

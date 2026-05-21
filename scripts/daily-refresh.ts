@@ -296,10 +296,17 @@ async function dailyRefresh(): Promise<void> {
   log(`║  Total: ${totalSec}s`);
   log('╚══════════════════════════════════════════════════╝');
 
-  // Exit with error code if any phase failed critically
+  // Exit with error code if any phase failed. Skips are tolerated.
+  // Pre-fix only exited when EVERY phase failed, so a single failed phase
+  // amid skipped/successful phases (common with refresh:quick) landed
+  // exit 0 — launchd recorded silent success on a real failure.
   const failures = results.filter((r) => r.status === 'failed');
-  if (failures.length === results.length) {
-    log('ALL PHASES FAILED — check API keys and connectivity');
+  if (failures.length > 0) {
+    if (failures.length === results.length) {
+      log('ALL PHASES FAILED — check API keys and connectivity');
+    } else {
+      log(`${failures.length} phase(s) failed: ${failures.map((f) => f.phase).join(', ')}`);
+    }
     process.exit(1);
   }
 }

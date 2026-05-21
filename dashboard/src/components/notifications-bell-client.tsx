@@ -74,17 +74,19 @@ const KIND_ICON = {
 
 export function NotificationsBellClient({ items }: { items: NotificationItem[] }) {
   const [open, setOpen] = useState(false);
-  // SSR-safe: start with an empty set, hydrate on mount. The badge
-  // briefly shows the unfiltered count before the localStorage read
-  // completes — fine, the layout doesn't shift.
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    setDismissed(loadDismissed());
-  }, []);
+  // SSR-safe: initializer runs once. On the server it returns an empty
+  // Set (no localStorage); the client uses the persisted value on first
+  // render — no second render, no flash.
+  const [dismissed, setDismissed] = useState<Set<string>>(() =>
+    typeof window === "undefined" ? new Set() : loadDismissed(),
+  );
 
   // Drop any dismissed ids that no longer appear in the live items —
   // means the underlying work resolved server-side, and we should let
   // the same id reappear next time (defensive, rare but cheap).
+  // The setState-in-effect rule is suppressed: this is a legitimate
+  // sync-to-prop pattern (server-fetched `items` drives the cleanup),
+  // not a render-time side effect.
   useEffect(() => {
     if (dismissed.size === 0) return;
     const liveIds = new Set(items.map((i) => i.id));
@@ -95,6 +97,7 @@ export function NotificationsBellClient({ items }: { items: NotificationItem[] }
       else changed = true;
     }
     if (changed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDismissed(next);
       persistDismissed(next);
     }

@@ -26,7 +26,6 @@ import { encryptSecret, decryptSecret } from "@/lib/credential-vault";
 import type {
   Creator,
   Assignment,
-  CampaignPayoutConfig,
   ManualAdjustment,
   Multiplier,
   PayoutMode,
@@ -960,7 +959,7 @@ export async function requestCreatorAccount(input: RequestAccountInput): Promise
   let passwordCipher: string;
   try {
     passwordCipher = encryptSecret(password);
-  } catch (e) {
+  } catch {
     return {
       ok: false,
       error:
@@ -1381,11 +1380,12 @@ export async function approvePayout(input: { id: string }): Promise<Result> {
   // Re-read the payout server-side to guard against stale UI state.
   const { data: payout, error: readErr } = await sb
     .from("payouts")
-    .select("id, status, amount_cents, currency, campaign_id, creator_id")
+    .select("id, status, amount_cents, currency, campaign_id, creator_id, breakdown")
     .eq("id", input.id)
     .maybeSingle<{
       id: string; status: string; amount_cents: number; currency: string;
       campaign_id: string; creator_id: string;
+      breakdown: Array<{ meta?: { floored_from_cents?: number } }> | null;
     }>();
   if (readErr || !payout) return { ok: false, error: readErr?.message ?? "Payout not found" };
   if (payout.status !== "pending") {
@@ -1393,6 +1393,18 @@ export async function approvePayout(input: { id: string }): Promise<Result> {
   }
   if (payout.amount_cents <= 0) {
     return { ok: false, error: "Cannot approve a $0 payout." };
+  }
+  // Block approval when the calculator floored a negative computed total to
+  // $0. The breakdown carries floored_from_cents on the floor line — if it's
+  // present, the manual adjustments drove the payout below zero and an admin
+  // must reconcile (either correct adjustments or document the decision)
+  // before locking the ledger entry.
+  const flooredLine = (payout.breakdown ?? []).find((b) => b?.meta?.floored_from_cents != null);
+  if (flooredLine) {
+    return {
+      ok: false,
+      error: "Cannot approve — payout was floored to $0 by manual adjustments. Correct the adjustments or document the decision and re-run the calculator before approving.",
+    };
   }
 
   // Resolve / lazily-create the two ledger accounts this txn touches.

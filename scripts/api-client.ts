@@ -59,6 +59,27 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Distil an error-response body to something readable. When upstream APIs
+ * (Blotato Cloudflare challenges, auth-wall redirects, maintenance pages,
+ * default nginx 4xx/5xx pages) return HTML, dumping the full <!DOCTYPE>
+ * blob into logs and the dashboard's cycle_events detail field is useless
+ * noise. Extract the <title> (or first <h1>) instead and report the byte
+ * size so the operator knows it WAS HTML, not a partial JSON parse.
+ * Plain-text / JSON bodies are returned as-is, truncated to 500 chars.
+ */
+function summariseErrorBody(body: string, contentType: string | null): string {
+  const trimmed = body.trim();
+  const isHtml = contentType?.toLowerCase().includes('text/html') || trimmed.startsWith('<');
+  if (!isHtml) {
+    return trimmed.length > 500 ? `${trimmed.slice(0, 500)}…` : trimmed;
+  }
+  const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim();
+  const h1 = trimmed.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  const label = title || h1 || 'HTML response (no title)';
+  return `${label} (HTML error page, ${trimmed.length} bytes)`;
+}
+
 export async function apiRequest<T>(
   service: ApiService,
   path: string,
@@ -111,10 +132,24 @@ export async function apiRequest<T>(
       if (!response.ok) {
         lastStatus = response.status;
         const errorBody = await response.text();
-        throw new Error(`${service} ${method} ${path} → ${response.status}: ${errorBody}`);
+        const summary = summariseErrorBody(errorBody, response.headers.get('content-type'));
+        throw new Error(`${service} ${method} ${path} → ${response.status}: ${summary}`);
       }
 
-      return (await response.json()) as T;
+      // Defensive: some APIs (notably Blotato under Cloudflare challenges)
+      // return 200 OK with an HTML body. response.json() throws SyntaxError
+      // and the caller never knows why. Sniff the body and fail fast with a
+      // clear message instead of letting the JSON parser garble it.
+      const contentType = response.headers.get('content-type');
+      const rawText = await response.text();
+      // Empty success responses (204 No Content, 205, or genuinely empty 200)
+      // are valid — return undefined cast as T instead of throwing on JSON.parse.
+      if (rawText.length === 0) return undefined as T;
+      if (contentType?.toLowerCase().includes('text/html') || rawText.trimStart().startsWith('<')) {
+        const summary = summariseErrorBody(rawText, contentType);
+        throw new Error(`${service} ${method} ${path} → ${response.status}: expected JSON but got ${summary}`);
+      }
+      return JSON.parse(rawText) as T;
     } catch (error) {
       lastError = error as Error;
 
@@ -144,8 +179,15 @@ export async function apiRequest<T>(
       }
 
       if (attempt < maxRetries) {
-        const waitMs = catalogDecision?.waitMs ?? Math.min(1000 * 2 ** (attempt - 1), 30_000);
-        console.log(`[${service}] Attempt ${attempt} failed, retrying in ${waitMs}ms...`);
+        // Upstream errors (Heroku/nginx 499, 5xx) need longer than the
+        // default exponential 1s/2s/4s — a Heroku dyno cold-start or
+        // redeploy typically takes 15-30s. Give it real time to recover.
+        const isUpstream = lastStatus === 499 || (lastStatus !== null && lastStatus >= 500);
+        const defaultBackoff = isUpstream
+          ? 15_000 + (attempt - 1) * 5_000           // 15s, 20s, 25s
+          : Math.min(1000 * 2 ** (attempt - 1), 30_000); // 1s, 2s, 4s
+        const waitMs = catalogDecision?.waitMs ?? defaultBackoff;
+        console.log(`[${service}] Attempt ${attempt} failed${lastStatus ? ` (${lastStatus})` : ''}, retrying in ${Math.round(waitMs / 1000)}s...`);
         await sleep(waitMs);
       }
     }

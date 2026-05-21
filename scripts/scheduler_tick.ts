@@ -132,9 +132,16 @@ async function buildBatchArgs(batch: CycleBatch): Promise<string[] | null> {
     if (!campaignSlug) {
       console.error(
         `[scheduler_tick] REFUSE to fire "${batch.label}" — batch.campaign_id=${batch.campaign_id} ` +
-        `but no matching campaigns row found. Fix the data (delete the orphan batch or restore the campaign) ` +
-        `and the next tick will re-attempt.`,
+        `but no matching campaigns row found. Auto-disabling the batch so we don't poll an orphan ` +
+        `forever; re-enable from /settings/schedule after fixing the data (delete the orphan batch ` +
+        `or restore the campaign).`,
       );
+      // Disable so we don't burn ticks polling an orphan forever. The
+      // operator can re-enable on /settings/schedule once the underlying
+      // data is fixed. (The paused/archived/empty-accounts paths below
+      // intentionally do NOT disable — those are operator-recoverable
+      // states, not data corruption.)
+      await supabase.from('cycle_batches').update({ enabled: false }).eq('id', batch.id);
       return null;
     }
     // Pause/archive guard: the dashboard's campaign Edit page lets the

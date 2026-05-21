@@ -27,6 +27,10 @@ export default async function ErrorsPage({
   const { data: events } = await query;
   const all = (events ?? []) as AutoFixEvent[];
 
+  // Server component: Date.now() is evaluated server-side at request time,
+  // not during client render. React 19's purity rule fires regardless, so
+  // suppress on this specific use — there is no hydration concern here.
+  // eslint-disable-next-line react-hooks/purity
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
   const last24h = all.filter((e) => new Date(e.occurred_at).getTime() >= dayAgo);
 

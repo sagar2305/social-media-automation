@@ -201,7 +201,7 @@ export async function createCampaignAction(formData: FormData): Promise<
     let draft: PayoutConfigDraft | null = null;
     try {
       draft = JSON.parse(payoutRaw) as PayoutConfigDraft;
-    } catch (e) {
+    } catch {
       payoutWarning = `Payout config didn't save (couldn't parse form payload). Set it on the campaign's Edit page.`;
     }
     if (draft && draft.mode !== "none") {

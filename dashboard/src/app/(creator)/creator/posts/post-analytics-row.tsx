@@ -63,10 +63,15 @@ export function PostAnalyticsRow({ post, avgViews }: Props) {
   const compareDelta = showCompare ? ((views - avgViews) / avgViews) * 100 : 0;
   const above = compareDelta > 0;
 
-  // "Posted N days ago" — fail gracefully on missing date.
-  const daysAgo = post.date
-    ? Math.max(0, Math.floor((Date.now() - new Date(post.date).getTime()) / 86_400_000))
-    : null;
+  // "Posted N days ago" — computed once at mount via useState initializer
+  // (the only React 19 pattern that allows Date.now() without tripping the
+  // purity / set-state-in-effect lint rules). Frozen across the component's
+  // lifetime, which is fine because post.date is the post's go-live date
+  // and doesn't change after creation.
+  const [daysAgo] = useState<number | null>(() => {
+    if (!post.date) return null;
+    return Math.max(0, Math.floor((Date.now() - new Date(post.date).getTime()) / 86_400_000));
+  });
 
   return (
     <div className="px-4 py-3">

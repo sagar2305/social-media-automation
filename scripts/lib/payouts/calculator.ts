@@ -121,7 +121,12 @@ function computeCpm(
   const contributing: string[] = [];
 
   for (const p of eligible) {
-    const eligibleViews = Math.max(0, p.views - thresholdViews);
+    // Boundary rule: a post with exactly `thresholdViews` views counts as
+    // having reached the threshold and the FULL view count is CPM-eligible.
+    // Below threshold → $0. Documented here because the legacy expression
+    // (Math.max(0, p.views - thresholdViews)) silently underpaid boundary
+    // posts.
+    const eligibleViews = p.views >= thresholdViews ? p.views : 0;
     if (eligibleViews <= 0) continue;
     const earned = roundCents((eligibleViews / 1000) * cpm);
     if (earned <= 0) continue;
@@ -161,6 +166,10 @@ function computeMilestones(
   const contributing: string[] = [];
 
   for (const p of eligible) {
+    // Boundary rule: `>=` is inclusive. A post with exactly the tier's
+    // `views` threshold counts as having hit the tier (e.g., a post at
+    // 100,000 views earns the 100k-view bonus). Documented here so the
+    // operator-facing rate-card UI can stay consistent with this semantic.
     let highestTier: typeof tiers[number] | null = null;
     for (const t of tiers) {
       if (p.views >= t.views) highestTier = t;
@@ -196,7 +205,19 @@ function applyMultipliers(
 
   for (const id of appliedMultiplierIds) {
     const m = config.multipliers.find(x => x.id === id);
-    if (!m || m.pct === 0) continue;
+    if (!m) {
+      // Multiplier referenced by assignment but missing from config (deleted
+      // or renamed). Surface as a zero-value line so the breakdown is honest
+      // about underpaying — previously silently skipped.
+      lines.push({
+        label: `⚠ Missing multiplier ${id} (not in campaign config) — applied 0%`,
+        cents: 0,
+        kind: 'multiplier',
+        meta: { missing_multiplier_id: id },
+      });
+      continue;
+    }
+    if (m.pct === 0) continue;
     const delta = roundCents((subtotalCents * m.pct) / 100);
     total += delta;
     const sign = m.pct > 0 ? '+' : '';
@@ -219,8 +240,7 @@ function applyManualAdjustments(
   for (const a of adjustments) {
     let delta: number;
     if (a.kind === 'add') delta = a.cents;
-    else if (a.kind === 'subtract') delta = -a.cents;
-    else continue;   // 'override' is handled by the caller, not here
+    else delta = -a.cents; // 'subtract' — only remaining kind in AdjustmentKind
     total += delta;
     lines.push({
       label: a.note ? `${a.label} (${a.note})` : a.label,

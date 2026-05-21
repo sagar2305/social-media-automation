@@ -475,6 +475,11 @@ function RunSchedulePreview({
   intervalHours: number;
   postsPerAccount: number;
 }) {
+  // Stable mount-time reference. Date.now() is impure, so React 19 rejects
+  // it inside render. useState's initializer runs exactly once at mount,
+  // avoiding both the hydration mismatch and the cascading-render warning.
+  // Hooks must run unconditionally — declare BEFORE any early return.
+  const [baseMs] = useState<number>(() => Date.now());
   if (postsPerAccount <= 1) {
     return (
       <p className="text-[11px] text-muted-foreground">
@@ -489,9 +494,8 @@ function RunSchedulePreview({
       </p>
     );
   }
-  const base = new Date();
   const slots = Array.from({ length: postsPerAccount }, (_, i) => {
-    const t = new Date(base.getTime() + i * intervalHours * 3600 * 1000);
+    const t = new Date(baseMs + i * intervalHours * 3600 * 1000);
     return t.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   });
   return (

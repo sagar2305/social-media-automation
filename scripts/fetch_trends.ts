@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'fs/promises';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
-import { dataPath, getCampaignSlug } from './lib/campaign-paths.js';
+import { dataPath, getCampaignSlug, atomicWrite } from './lib/campaign-paths.js';
 import { getCampaign } from './lib/campaigns.js';
 
 interface OrbitResponse {
@@ -134,7 +134,7 @@ async function getTrendingHashtags(): Promise<HashtagData[]> {
     'virlo',
     `/tiktok/hashtags?start_date=${dateStr(7)}&end_date=${dateStr()}&limit=30&order_by=views&sort=desc`,
   );
-  return res.data;
+  return res.data ?? [];
 }
 
 async function getTrendDigest(): Promise<TrendDigest> {
@@ -314,7 +314,7 @@ export async function runResearch(): Promise<void> {
 
   // Write TRENDING-NOW.md
   const trendingContent = formatTrendingNow(orbitData?.analysis, topVideos, trends, videoDigest);
-  await writeFile(dataPath('TRENDING-NOW.md'), trendingContent);
+  await atomicWrite(dataPath('TRENDING-NOW.md'), trendingContent);
   log('Updated TRENDING-NOW.md');
 
   // Update HASHTAG-BANK.md — pass the active campaign's branded /
@@ -329,7 +329,7 @@ export async function runResearch(): Promise<void> {
       campaign?.branded_hashtags ?? null,
       campaign?.tracked_hashtags ?? null,
     );
-    await writeFile(dataPath('HASHTAG-BANK.md'), hashtagContent);
+    await atomicWrite(dataPath('HASHTAG-BANK.md'), hashtagContent);
     log('Updated HASHTAG-BANK.md');
   }
 
@@ -337,7 +337,7 @@ export async function runResearch(): Promise<void> {
   if (outliers.length) {
     const existingFormats = await readFile(dataPath('FORMAT-WINNERS.md'), 'utf-8').catch(() => '');
     const formatContent = updateFormatWinners(outliers, existingFormats);
-    await writeFile(dataPath('FORMAT-WINNERS.md'), formatContent);
+    await atomicWrite(dataPath('FORMAT-WINNERS.md'), formatContent);
     log('Updated FORMAT-WINNERS.md');
   }
 

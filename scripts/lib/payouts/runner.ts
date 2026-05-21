@@ -210,13 +210,26 @@ async function processAssignment(
     throw new Error(`load posts: ${postsErr.message}`);
   }
 
-  const posts: CalculatorPost[] = (postsRaw ?? []).map(p => ({
-    id: p.id,
-    posted_at: p.date ?? new Date(0).toISOString(),
-    views: p.views ?? 0,
-    saves: p.saves,
-    status: p.status ?? 'unknown',
-  }));
+  // Map all posts through — DO NOT drop null-date posts here. Flat mode
+  // ("X cents per published post") doesn't care about posted_at; only
+  // CPM / milestone / hybrid modes do, and the calculator's per-post
+  // window check already excludes a missing/epoch date from those tiers.
+  // Dropping at this layer would silently skip flat-eligible deliveries.
+  // (CodeRabbit caught this on PR #4.)
+  let nullDateCount = 0;
+  const posts: CalculatorPost[] = (postsRaw ?? []).map(p => {
+    if (!p.date) nullDateCount++;
+    return {
+      id: p.id,
+      posted_at: p.date ?? new Date(0).toISOString(),
+      views: p.views ?? 0,
+      saves: p.saves,
+      status: p.status ?? 'unknown',
+    };
+  });
+  if (nullDateCount > 0) {
+    log(`  ⚠ ${nullDateCount} post(s) with null date — flat-eligible only (CPM/milestone tiers will skip via per-post window check)`);
+  }
 
   // Existing pending payout — we want to preserve manual_adjustments
   // the operator may have typed in. Other fields get overwritten.
@@ -332,6 +345,32 @@ export async function recomputePendingPayoutsForCampaign(
     .maybeSingle<CampaignPayoutConfig>();
 
   if (!config || config.mode === 'none') {
+    stats.campaignsSkipped++;
+    return stats;
+  }
+
+  // Validate config completeness BEFORE processing. An incomplete config
+  // (e.g., mode='flat' with flat_per_post_cents=null) silently produces
+  // $0 payouts in the calculator — operator sees the zeros, can't tell why.
+  const configErrors: string[] = [];
+  if ((config.mode === 'flat' || config.mode === 'hybrid') &&
+      (config.flat_per_post_cents == null || config.flat_per_post_cents <= 0)) {
+    configErrors.push('flat_per_post_cents missing or ≤ 0');
+  }
+  if ((config.mode === 'cpm' || config.mode === 'hybrid') &&
+      (config.cpm_cents == null || config.cpm_cents <= 0)) {
+    configErrors.push('cpm_cents missing or ≤ 0');
+  }
+  if (config.mode === 'hybrid' &&
+      (config.hybrid_threshold_views == null || config.hybrid_threshold_views <= 0)) {
+    configErrors.push('hybrid_threshold_views missing or ≤ 0');
+  }
+  if (config.mode === 'milestone' &&
+      (!config.milestones || config.milestones.length === 0)) {
+    configErrors.push('no milestone tiers configured');
+  }
+  if (configErrors.length > 0) {
+    log(`[payouts] ${campaignId.slice(0, 8)}… SKIP — config incomplete: ${configErrors.join(', ')}`);
     stats.campaignsSkipped++;
     return stats;
   }

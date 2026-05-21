@@ -683,9 +683,21 @@ Generate a unique, engaging post now.`;
       return null;
     }
 
-    const parsed = JSON.parse(text);
-    if (!parsed.title || !parsed.slides || !Array.isArray(parsed.slides) || parsed.slides.length < 3) {
-      log(`Gemini returned invalid structure: ${parsed.slides?.length || 0} slides`);
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseErr) {
+      log(`Gemini returned non-JSON output (length=${text.length}): ${text.slice(0, 200)}…`);
+      log(`  Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
+      return null;
+    }
+    const missing: string[] = [];
+    if (!parsed.title) missing.push('title');
+    if (!Array.isArray(parsed.slides)) missing.push('slides[]');
+    else if (parsed.slides.length < 3) missing.push(`slides<3 (got ${parsed.slides.length})`);
+    if (missing.length > 0) {
+      log(`Gemini JSON missing required fields: ${missing.join(', ')}`);
+      log(`  Raw response: ${JSON.stringify(parsed).slice(0, 200)}…`);
       return null;
     }
 

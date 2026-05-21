@@ -70,9 +70,18 @@ else
   yellow "  ⚠ No REFRESH-LOG.md yet — first run hasn't completed"
 fi
 
-# 3. Recent err log noise — anything substantial indicates a silent fault.
+# 3. Recent err log noise — anything substantial AND recent indicates a silent
+# fault. Stale stderr (file not touched in >1h) is treated as historical noise:
+# the scheduler/poller scripts catch transient Supabase fetch blips and route
+# them through the auto-fix classifier, but console.error still appends to the
+# launchd StandardErrorPath. Without a freshness gate, one bad Wi-Fi moment
+# leaves these files screaming forever. Line threshold raised so a single
+# tick's 1-2 stderr lines counts as transient, not sustained, noise.
 echo ""
 echo "── Stderr log noise ──"
+STALE_AFTER_S=3600       # 1 hour
+RED_LINE_THRESHOLD=20    # only sustained noise (≥20 recent lines) goes red
+now=$(date +%s)
 for err_file in scheduler-tick.err jobs-poller.err autoresearch.err daily-refresh.err; do
   full="$LOG_DIR/$err_file"
   if [ -f "$full" ]; then
@@ -80,10 +89,17 @@ for err_file in scheduler-tick.err jobs-poller.err autoresearch.err daily-refres
     lines=$(wc -l <"$full" | tr -d ' ')
     if [ "$size" = "0" ]; then
       green "  ✓ $err_file  (empty)"
-    elif [ "$lines" -lt 5 ]; then
-      yellow "  ⚠ $err_file  ($lines lines, $size bytes) — review"
+      continue
+    fi
+    mtime=$(stat -f %m "$full" 2>/dev/null || echo 0)
+    age_s=$(( now - mtime ))
+    age_h=$(( age_s / 3600 ))
+    if [ "$age_s" -gt "$STALE_AFTER_S" ]; then
+      yellow "  ⚠ $err_file  ($lines lines, $size bytes, last touched ${age_h}h ago) — stale noise, clear with: : > $full"
+    elif [ "$lines" -lt "$RED_LINE_THRESHOLD" ]; then
+      yellow "  ⚠ $err_file  ($lines lines, $size bytes, recent) — transient, review"
     else
-      red   "  ✗ $err_file  ($lines lines, $size bytes) — pipeline degrading silently"
+      red   "  ✗ $err_file  ($lines lines, $size bytes) — pipeline degrading silently (sustained)"
       tail -3 "$full" | sed 's/^/      /'
       overall_ok=0
     fi
