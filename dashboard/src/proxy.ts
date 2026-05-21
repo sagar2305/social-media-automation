@@ -9,6 +9,8 @@ const publicRoutes = [
   "/auth/relink",
   "/creator/login",
   "/creator/signup",
+  "/creator/brief",
+  "/creator/setup",
 ];
 
 export default async function proxy(request: NextRequest) {

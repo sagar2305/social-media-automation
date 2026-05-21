@@ -22,6 +22,18 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const next = searchParams.get("next");
   const fromCreator = searchParams.get("from") === "creator";
+  const supabaseError = searchParams.get("error");
+  const supabaseErrorCode = searchParams.get("error_code");
+
+  // Supabase appends ?error=...&error_code=... when the magic link is
+  // bad (otp_expired = link already used or stale). Surface that on the
+  // login page instead of silently redirecting — the user needs to
+  // know to request a fresh confirmation email.
+  if (supabaseError) {
+    const dest = fromCreator ? "/creator/login" : "/login";
+    const reason = supabaseErrorCode || supabaseError;
+    return NextResponse.redirect(`${origin}${dest}?reason=${encodeURIComponent(reason)}`);
+  }
 
   if (!code) {
     return NextResponse.redirect(`${origin}${fromCreator ? "/creator/login" : "/login"}`);

@@ -27,9 +27,12 @@ export default function WelcomePage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Creator card — emerald accent, partner tone. */}
+        {/* Creator card — emerald accent, partner tone. Now routes through
+            /creator/brief so first-time visitors read the internship brief
+            before signing up. Returning creators tap "Sign in" on the brief
+            page itself to reach /creator/login. */}
         <Link
-          href="/creator/login"
+          href="/creator/brief"
           className="group relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-emerald-500/[0.02] hover:from-emerald-500/[0.12] hover:to-emerald-500/[0.04] transition-colors p-6 sm:p-7 flex flex-col gap-3"
         >
           <div className="flex items-center justify-between">

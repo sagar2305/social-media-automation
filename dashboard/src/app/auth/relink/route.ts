@@ -20,10 +20,14 @@ export async function GET(request: Request) {
   const { origin, searchParams } = new URL(request.url);
   const fromCreator = searchParams.get("from") === "creator";
 
-  const link = await linkCreatorAccountAfterSignup().catch(() => ({ linked: false }));
+  const link = await linkCreatorAccountAfterSignup().catch((e) => {
+    console.error(`[relink] linker threw: ${e instanceof Error ? e.message : String(e)}`);
+    return { linked: false };
+  });
   if (link.linked) {
     return NextResponse.redirect(`${origin}/creator`);
   }
+  console.log(`[relink] not linked — reason=${"reason" in link ? link.reason : "unknown"}`);
 
   // Not linked — fall back to inspecting the role we already have so a
   // returning creator with an existing role='creator' still lands on

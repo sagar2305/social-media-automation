@@ -23,6 +23,7 @@
  */
 
 import { createClient } from "@/lib/supabase";
+import { encryptSecret } from "@/lib/credential-vault";
 
 interface LinkResult {
   linked: boolean;
@@ -45,13 +46,42 @@ export async function linkCreatorAccountAfterSignup(): Promise<LinkResult> {
 
   // Match on lower(email). createCreator() lowercases on insert so
   // the lookup is symmetric with the data we wrote.
-  const { data: candidate } = await supabase
+  let candidate = (await supabase
     .from("creators")
     .select("id, status, onboarded_at")
     .ilike("email", user.email)
     .is("auth_user_id", null)
-    .maybeSingle<{ id: string; status: string; onboarded_at: string | null }>();
-  if (!candidate) return { linked: false, reason: "no-matching-creator" };
+    .maybeSingle<{ id: string; status: string; onboarded_at: string | null }>()).data;
+
+  // Self-service signup path: no admin pre-invited this user. Create
+  // the creators row on-the-fly from auth metadata so the link below
+  // has something to attach to. The application-data sync block lower
+  // down then back-fills phone / TikTok / etc. on the same row.
+  if (!candidate) {
+    const md = user.user_metadata ?? {};
+    const fullName =
+      (typeof md.full_name === "string" && md.full_name) ||
+      user.email.split("@")[0];
+    const { data: created, error: insertErr } = await supabase
+      .from("creators")
+      .insert({
+        kind: "team_member", // internship signups via /creator/signup
+        legal_name: fullName,
+        email: user.email.toLowerCase(),
+        status: "invited", // promoted to onboarded by the link below
+        country: "in",
+        preferred_processor: "manual",
+      })
+      .select("id, status, onboarded_at")
+      .single<{ id: string; status: string; onboarded_at: string | null }>();
+    if (insertErr || !created) {
+      console.error(
+        `[link-creator] auto-create failed for ${user.email}: ${insertErr?.code} ${insertErr?.message}`,
+      );
+      return { linked: false, reason: `auto-create-failed: ${insertErr?.message ?? "no row returned"}` };
+    }
+    candidate = created;
+  }
 
   // Two writes; if either fails, leave the user as 'viewer' and let
   // the admin re-link manually rather than half-promote.
@@ -71,6 +101,41 @@ export async function linkCreatorAccountAfterSignup(): Promise<LinkResult> {
     .update({ role: "creator" })
     .eq("id", user.id);
   if (roleErr) return { linked: false, reason: `role-update-failed: ${roleErr.message}` };
+
+  // Best-effort: copy internship-application data from auth user_metadata
+  // (set by /creator/signup) onto the creators row so admins see the
+  // fields populated immediately on /creators/{id}. Failures here don't
+  // block the link — the link itself already succeeded above; an admin
+  // can edit/fill the application card manually if this write fails.
+  try {
+    const md = user.user_metadata ?? {};
+    const appPatch: Record<string, unknown> = {
+      phone: md.phone_number ?? null,
+      whatsapp: md.whatsapp_number ?? null,
+      tiktok_username: md.tiktok_username ?? null,
+      tiktok_email: md.tiktok_email ?? null,
+      youtube_gmail: md.youtube_gmail ?? null,
+      instagram_username: md.instagram_username ?? null,
+      facebook_url: md.facebook_url ?? null,
+    };
+    // Encrypt the four password fields before persisting. Skip on
+    // empty input so admins can clear later by saving an empty value.
+    const passwordPairs: Array<[string, string]> = [
+      ["tiktok_password", "tiktok_password_enc"],
+      ["tiktok_email_password", "tiktok_email_password_enc"],
+      ["youtube_password", "youtube_password_enc"],
+      ["instagram_password", "instagram_password_enc"],
+    ];
+    for (const [mdKey, col] of passwordPairs) {
+      const raw = md[mdKey];
+      if (typeof raw === "string" && raw.length > 0) {
+        appPatch[col] = encryptSecret(raw);
+      }
+    }
+    await supabase.from("creators").update(appPatch).eq("id", candidate.id);
+  } catch (e) {
+    console.error(`[link-creator] application-data sync failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   return { linked: true, creatorId: candidate.id };
 }

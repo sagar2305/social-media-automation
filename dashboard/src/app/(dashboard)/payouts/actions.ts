@@ -91,12 +91,35 @@ export async function createCreator(input: CreateCreatorInput): Promise<Result<{
   return { ok: true, data: { id: data.id } };
 }
 
-export async function updateCreator(input: { id: string } & Partial<Creator>): Promise<Result> {
+/**
+ * Map of plaintext password input keys → the ciphertext column on
+ * the creators table. The application-details editor sends raw
+ * passwords; we encrypt them here before persisting.
+ */
+const PASSWORD_FIELDS = {
+  tiktok_password: "tiktok_password_enc",
+  tiktok_email_password: "tiktok_email_password_enc",
+  youtube_password: "youtube_password_enc",
+  instagram_password: "instagram_password_enc",
+} as const;
+
+type PasswordInputKey = keyof typeof PASSWORD_FIELDS;
+
+export async function updateCreator(
+  input: { id: string } & Partial<Creator> & Partial<Record<PasswordInputKey, string | null>>,
+): Promise<Result> {
   const auth = await assertRole("admin");
   if (!auth.ok) return auth;
   const sb = await createClient();
   const patch: Record<string, unknown> = {};
-  for (const k of ["legal_name", "display_name", "email", "country", "preferred_processor", "manual_payout_notes", "owned_account_ids", "status"] as const) {
+  for (const k of [
+    // existing
+    "legal_name", "display_name", "email", "country", "preferred_processor",
+    "manual_payout_notes", "owned_account_ids", "status",
+    // application data (plaintext)
+    "phone", "whatsapp", "tiktok_username", "tiktok_email",
+    "youtube_gmail", "instagram_username", "facebook_url",
+  ] as const) {
     if (k in input && input[k] !== undefined) {
       // Strip leading "@" for the two name fields so paste-from-TikTok
       // doesn't leak the prefix into the DB. Other fields pass through.
@@ -107,12 +130,60 @@ export async function updateCreator(input: { id: string } & Partial<Creator>): P
       }
     }
   }
+  // Encrypt password fields before persisting. Empty string OR null
+  // clears the ciphertext (admin removed the value).
+  for (const [plainKey, cipherCol] of Object.entries(PASSWORD_FIELDS) as Array<[PasswordInputKey, string]>) {
+    if (plainKey in input) {
+      const raw = input[plainKey];
+      if (raw == null || raw === "") {
+        patch[cipherCol] = null;
+      } else {
+        try {
+          patch[cipherCol] = encryptSecret(raw);
+        } catch (e) {
+          return { ok: false, error: `Could not encrypt ${plainKey}: ${e instanceof Error ? e.message : String(e)}` };
+        }
+      }
+    }
+  }
   patch.updated_at = new Date().toISOString();
   const { error } = await sb.from("creators").update(patch).eq("id", input.id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/creators");
   revalidatePath(`/creators/${input.id}`);
   return { ok: true };
+}
+
+/**
+ * Admin-only: decrypt one of the four application password fields for
+ * the given creator. Used by the "reveal" eye icon on the
+ * Application Details editor. Returns null when the column is empty.
+ */
+export async function revealCreatorPassword(input: {
+  creatorId: string;
+  field: PasswordInputKey;
+}): Promise<Result<{ value: string | null }>> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
+  const cipherCol = PASSWORD_FIELDS[input.field];
+  if (!cipherCol) return { ok: false, error: `Unknown field "${input.field}"` };
+  const sb = await createClient();
+  const { data, error } = await sb
+    .from("creators")
+    .select(cipherCol)
+    .eq("id", input.creatorId)
+    .maybeSingle<Record<string, string | null>>();
+  if (error) return { ok: false, error: error.message };
+  const cipher = data?.[cipherCol] ?? null;
+  if (!cipher) return { ok: true, data: { value: null } };
+  try {
+    return { ok: true, data: { value: decryptSecret(cipher) } };
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Decryption failed (${e instanceof Error ? e.message : "vault key may have changed"})`,
+    };
+  }
 }
 
 /**
