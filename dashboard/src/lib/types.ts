@@ -192,6 +192,22 @@ export interface Creator {
   payment_upi_id: string | null;
   payment_screenshot_path: string | null;
   payment_screenshot_uploaded_at: string | null;
+
+  // Internship application data captured at /creator/signup. The
+  // *_enc columns hold ciphertext produced by encryptSecret(); use
+  // revealCreatorPassword() server action to decrypt on demand. Added
+  // via dashboard/migrations/add_creator_application_columns.sql.
+  phone: string | null;
+  whatsapp: string | null;
+  tiktok_username: string | null;
+  tiktok_password_enc: string | null;
+  tiktok_email: string | null;
+  tiktok_email_password_enc: string | null;
+  youtube_gmail: string | null;
+  youtube_password_enc: string | null;
+  instagram_username: string | null;
+  instagram_password_enc: string | null;
+  facebook_url: string | null;
 }
 
 export type AssignmentStatus =

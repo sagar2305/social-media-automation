@@ -198,6 +198,13 @@ async function load(slug: string): Promise<{
           owned_account_ids: [], status: "archived",
           invited_at: a.invited_at, onboarded_at: null, created_at: a.invited_at,
           payment_upi_id: null, payment_screenshot_path: null, payment_screenshot_uploaded_at: null,
+          // Application-data fields (null on a deleted-creator stub):
+          phone: null, whatsapp: null,
+          tiktok_username: null, tiktok_password_enc: null,
+          tiktok_email: null, tiktok_email_password_enc: null,
+          youtube_gmail: null, youtube_password_enc: null,
+          instagram_username: null, instagram_password_enc: null,
+          facebook_url: null,
         },
         posts_delivered: 0,
         posts_today: 0, posts_last7: 0, last_post_date: null,

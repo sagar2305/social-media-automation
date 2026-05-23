@@ -21,6 +21,7 @@ import type { Creator, Assignment, Campaign, PayoutWithJoins } from "@/lib/types
 import { PayoutsList } from "../../payouts/payouts-list";
 import { CreatorDangerZone } from "./danger-zone";
 import { OwnedAccountsEditor } from "./owned-accounts-editor";
+import { ApplicationDetailsEditor } from "./application-details-editor";
 import { AllPostsDropdown } from "./all-posts-collapsible";
 
 export const dynamic = "force-dynamic";
@@ -478,6 +479,11 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
           initialOwnedIds={creator.owned_account_ids}
         />
       )}
+
+      {/* Internship application fields submitted at /creator/signup
+          (TikTok / YouTube / Instagram / Facebook credentials, contact info).
+          Admin can edit; password fields are encrypted at rest. */}
+      <ApplicationDetailsEditor creator={creator} />
 
       {/* Per-campaign assignments — each row now also shows the views
           and likes this creator's posts pulled on that specific
