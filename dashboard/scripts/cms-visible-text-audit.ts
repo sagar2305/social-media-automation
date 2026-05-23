@@ -19,7 +19,9 @@ import { join } from "node:path";
 const TOKEN = process.argv[2];
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
-const REPO = "/Users/mohitkourav/Code/social-media-automation/dashboard";
+// process.cwd() = the directory tsx was invoked from. Always run from
+// `dashboard/` (matches the pattern in cms-style-coverage-audit.ts).
+const REPO = process.cwd();
 
 if (!TOKEN) {
   console.error("Usage: tsx scripts/cms-visible-text-audit.ts <SUPABASE_ACCESS_TOKEN>");

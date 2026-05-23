@@ -10,6 +10,11 @@ const TOKEN = process.argv[2];
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
 
+if (!TOKEN) {
+  console.error("Usage: tsx scripts/check-intern-handle-visibility.ts <SUPABASE_ACCESS_TOKEN>");
+  process.exit(1);
+}
+
 async function runSql(sql: string) {
   const r = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
     method: "POST",

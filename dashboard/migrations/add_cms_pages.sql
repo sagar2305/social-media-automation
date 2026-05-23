@@ -31,7 +31,9 @@ CREATE TRIGGER cms_pages_touch_updated_at
   BEFORE UPDATE ON public.cms_pages
   FOR EACH ROW EXECUTE FUNCTION public.cms_pages_touch_updated_at();
 
--- Auth/role gating happens in TypeScript (assertRole('admin') in
--- dashboard/src/app/(dashboard)/signup-control/actions.ts) — matches the
--- existing pattern in this codebase. No RLS policies added here to keep
--- behaviour consistent with the other tables in the schema.
+-- Auth/role gating is enforced in two layers:
+--   • TypeScript: assertRole('admin') in
+--     dashboard/src/app/(dashboard)/signup-control/actions.ts.
+--   • Database: Row-Level Security policies live in the companion
+--     migration dashboard/migrations/add_cms_rls.sql (public SELECT,
+--     admin-only writes). Apply both migrations together.

@@ -91,16 +91,23 @@ export function EditorShell<T>({
   async function handleSave() {
     setStatus("saving");
     setError(null);
-    const res = await onSave();
-    if (res.ok) {
-      setSavedSnapshot(value);
-      setStatus("saved");
-      setLivePathStamp(Date.now());
-      // Re-runs the server component so the "Last saved …" timestamp
-      // above the form reflects the row we just wrote.
-      router.refresh();
-    } else {
-      setError(res.error);
+    try {
+      const res = await onSave();
+      if (res.ok) {
+        setSavedSnapshot(value);
+        setStatus("saved");
+        setLivePathStamp(Date.now());
+        // Re-runs the server component so the "Last saved …" timestamp
+        // above the form reflects the row we just wrote.
+        router.refresh();
+      } else {
+        setError(res.error);
+        setStatus("error");
+      }
+    } catch (e) {
+      // Without this catch, status would stick on "saving" and the
+      // Save button would remain disabled forever.
+      setError(e instanceof Error ? e.message : "Save failed unexpectedly. Please retry.");
       setStatus("error");
     }
   }

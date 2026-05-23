@@ -20,7 +20,10 @@ import { join } from "node:path";
 const TOKEN = process.argv[2];
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
-const REPO = "/Users/mohitkourav/Code/social-media-automation/dashboard";
+// process.cwd() = the directory tsx was invoked from. We always run
+// these scripts from the `dashboard/` root, so this resolves source
+// files correctly on any machine / CI.
+const REPO = process.cwd();
 
 if (!TOKEN) {
   console.error("Usage: tsx scripts/cms-style-coverage-audit.ts <SUPABASE_ACCESS_TOKEN>");

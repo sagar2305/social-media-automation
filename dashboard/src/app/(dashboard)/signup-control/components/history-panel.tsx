@@ -35,9 +35,13 @@ export function HistoryPanel<T>({
 
   async function refresh() {
     setError(null);
-    const res = await listVersions(slug);
-    if (res.ok) setVersions(res.data);
-    else setError(res.error);
+    try {
+      const res = await listVersions(slug);
+      if (res.ok) setVersions(res.data);
+      else setError(res.error);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load history.");
+    }
   }
 
   useEffect(() => {
@@ -53,13 +57,20 @@ export function HistoryPanel<T>({
   async function handleRestore(id: number) {
     if (!confirm("Load this version back into the form? You still need to click Save to commit it.")) return;
     setRestoring(id);
-    const res = await getVersionContent(id);
-    setRestoring(null);
-    if (!res.ok) {
-      setError(res.error);
-      return;
+    try {
+      const res = await getVersionContent(id);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onRestore(res.data.content as T);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to restore version.");
+    } finally {
+      // Always clear the per-row spinner, even on error / catch — otherwise
+      // the restore button stays as a perpetual spinner.
+      setRestoring(null);
     }
-    onRestore(res.data.content as T);
   }
 
   return (

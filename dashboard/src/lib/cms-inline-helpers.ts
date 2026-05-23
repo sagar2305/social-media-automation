@@ -25,15 +25,36 @@ export function setAtPath<T>(root: T, path: Path, value: unknown): T {
       throw new Error(`setAtPath: cannot traverse non-object at index ${i} (key=${String(key)})`);
     }
     // Coerce array index strings to numbers when the cursor is an array.
-    const k = Array.isArray(cursor) ? Number(key) : (key as string);
+    // Reject NaN (e.g. path traversal accidentally hit a non-numeric
+    // segment while the cursor is an array — would otherwise create a
+    // string property on the array instead of writing to an index).
+    let k: string | number;
+    if (Array.isArray(cursor)) {
+      const idx = Number(key);
+      if (!Number.isInteger(idx) || idx < 0) {
+        throw new Error(`setAtPath: invalid array index at segment ${i} (key=${String(key)})`);
+      }
+      k = idx;
+    } else {
+      k = key as string;
+    }
     cursor = (cursor as Record<string | number, unknown>)[k];
   }
   if (cursor == null || typeof cursor !== "object") {
     throw new Error(`setAtPath: parent at ${path.slice(0, -1).join(".")} is not an object`);
   }
   const last = path[path.length - 1];
-  const k = Array.isArray(cursor) ? Number(last) : (last as string);
-  (cursor as Record<string | number, unknown>)[k] = value;
+  let lastKey: string | number;
+  if (Array.isArray(cursor)) {
+    const idx = Number(last);
+    if (!Number.isInteger(idx) || idx < 0) {
+      throw new Error(`setAtPath: invalid final array index (key=${String(last)})`);
+    }
+    lastKey = idx;
+  } else {
+    lastKey = last as string;
+  }
+  (cursor as Record<string | number, unknown>)[lastKey] = value;
   return next as T;
 }
 

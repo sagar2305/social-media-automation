@@ -33,7 +33,11 @@ function escape(s: string): string {
 
 function safeUrl(raw: string): string {
   const t = raw.trim();
-  if (/^(https?:|mailto:|\/)/i.test(t)) return t;
+  // Allow absolute http(s) + mailto, and path-relative URLs starting
+  // with a SINGLE "/". The negative lookahead rejects protocol-relative
+  // "//example.com" which would silently navigate cross-origin.
+  if (/^(?:https?:|mailto:)/i.test(t)) return t;
+  if (/^\/(?!\/)/.test(t)) return t;
   if (/^[\w.+-]+@[\w.-]+\.[a-z]{2,}$/i.test(t)) return `mailto:${t}`;
   return "#";
 }

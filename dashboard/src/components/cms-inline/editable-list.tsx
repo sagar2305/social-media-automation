@@ -89,14 +89,22 @@ function AdminEditableList<T>({
   async function commit(next: T[]) {
     setBusy("saving");
     setError(null);
-    const res = await updateCmsField(slug, path, next);
-    setBusy("idle");
-    if (!res.ok) {
-      setError(res.error);
+    try {
+      const res = await updateCmsField(slug, path, next);
+      if (!res.ok) {
+        setError(res.error);
+        return false;
+      }
+      router.refresh();
+      return true;
+    } catch (e) {
+      // Network/timeout/etc. — without this catch, busy would stick on
+      // "saving" forever and the list would be permanently disabled.
+      setError(e instanceof Error ? e.message : "Failed to save changes. Please retry.");
       return false;
+    } finally {
+      setBusy("idle");
     }
-    router.refresh();
-    return true;
   }
 
   function moveUp(i: number) {
@@ -125,10 +133,13 @@ function AdminEditableList<T>({
   return (
     <>
       {items.map((item, i) => (
-        <span key={i} className="relative block group/listrow">
+        // `div` (not `span`) — renderItem can return block-level
+        // children like `<div>` or `<details>`; wrapping those in a
+        // span produces invalid HTML and React hydration warnings.
+        <div key={i} className="relative group/listrow">
           {renderItem(item, i, true)}
           {showItemControls && (
-            <span
+            <div
               className="absolute top-2 right-2 hidden group-hover/listrow:inline-flex items-center gap-0.5 rounded-md bg-white shadow-md ring-1 ring-emerald-500/30 p-0.5 z-10"
               // Stop the toolbar from triggering parent click handlers (e.g. <summary>).
               onClick={(e) => e.stopPropagation()}
@@ -142,9 +153,9 @@ function AdminEditableList<T>({
               <ItemBtn onClick={() => remove(i)} disabled={busy === "saving"} title="Delete" destructive>
                 <Trash2 className="h-3.5 w-3.5" />
               </ItemBtn>
-            </span>
+            </div>
           )}
-        </span>
+        </div>
       ))}
       <button
         type="button"
