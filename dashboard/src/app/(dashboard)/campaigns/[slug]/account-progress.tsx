@@ -57,17 +57,30 @@ export function AccountProgress({ accounts }: Props) {
           {accounts.map((a) => {
             const onTrack = a.totalThisWeek >= a.target;
             return (
-              <div key={a.handle} className="grid grid-cols-[1fr_auto_auto] items-center gap-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">@{a.handle}</p>
-                  <p className="text-xs text-muted-foreground">{a.name}</p>
+              <div key={a.handle} className="flex flex-col gap-2 sm:grid sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4">
+                <div className="min-w-0 flex items-center justify-between sm:block">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">@{a.handle}</p>
+                    <p className="text-xs text-muted-foreground">{a.name}</p>
+                  </div>
+                  {/* Total moves up next to the handle on mobile so the
+                      week-dot row gets the full width below. */}
+                  <div className="text-right shrink-0 min-w-[80px] sm:hidden">
+                    <p className={`text-sm font-semibold tabular-nums ${onTrack ? "text-[#16a34a]" : ""}`}>
+                      {a.totalThisWeek}/{a.target}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {onTrack ? "on track" : "posts/week"}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {a.thisWeek.map((count, i) => (
                     <DayDot key={i} label={DAY_LABELS[i]} count={count} />
                   ))}
                 </div>
-                <div className="text-right shrink-0 min-w-[80px]">
+                {/* Desktop-only total (mobile shows it next to handle above). */}
+                <div className="hidden sm:block text-right shrink-0 min-w-[80px]">
                   <p className={`text-sm font-semibold tabular-nums ${onTrack ? "text-[#16a34a]" : ""}`}>
                     {a.totalThisWeek}/{a.target}
                   </p>

@@ -1,16 +1,13 @@
 /**
- * /creator/setup/tiktok — interactive 6-step TikTok account setup guide.
+ * Legacy URL — redirects to the Minutewise TikTok setup.
  *
- * Content fetched from CMS. Admins edit everything (text + styling)
- * via /signup-control/tiktok-setup.
+ * Pre-multi-campaign, /creator/setup/tiktok rendered the Minutewise
+ * content directly. Old bookmarks/links keep working by redirecting
+ * here.
  */
 
-import { getPageContent } from "@/lib/cms";
-import { TikTokSetupView } from "./view";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function TikTokSetupPage() {
-  const content = await getPageContent("tiktok-setup");
-  return <TikTokSetupView content={content} />;
+export default function CreatorTiktokSetupLegacyPage(): never {
+  redirect("/creator/minutewise/setup/tiktok");
 }

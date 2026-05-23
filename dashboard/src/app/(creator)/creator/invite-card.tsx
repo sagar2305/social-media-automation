@@ -156,11 +156,11 @@ export function InviteCard({ assignment, campaign, config }: Props) {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-3 items-baseline">
+    <div className="flex flex-col gap-1 sm:grid sm:grid-cols-[110px_1fr] sm:gap-3 sm:items-baseline">
       <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">
         {label}
       </span>
-      <span>{children}</span>
+      <span className="break-words">{children}</span>
     </div>
   );
 }

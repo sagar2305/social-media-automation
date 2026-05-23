@@ -33,13 +33,13 @@ export default async function WelcomePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link
           href={c.creatorCard.href}
-          className="group relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-emerald-500/[0.02] hover:from-emerald-500/[0.12] hover:to-emerald-500/[0.04] transition-colors p-6 sm:p-7 flex flex-col gap-3"
+          className="group relative overflow-hidden rounded-2xl border border-brand-500/30 bg-gradient-to-br from-brand-500/[0.08] to-brand-500/[0.02] hover:from-brand-500/[0.12] hover:to-brand-500/[0.04] transition-colors p-6 sm:p-7 flex flex-col gap-3"
         >
           <div className="flex items-center justify-between">
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <div className="h-10 w-10 rounded-xl bg-brand-500/15 flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-brand-600 dark:text-brand-400" />
             </div>
-            <ChevronRight className="h-5 w-5 text-emerald-600/60 dark:text-emerald-400/60 group-hover:translate-x-1 transition-transform" />
+            <ChevronRight className="h-5 w-5 text-brand-600/60 dark:text-brand-400/60 group-hover:translate-x-1 transition-transform" />
           </div>
           <div>
             <p className="text-lg font-semibold">
@@ -49,7 +49,7 @@ export default async function WelcomePage() {
               <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["creatorCard", "body"]} value={c.creatorCard.body} kind="textarea">{c.creatorCard.body}</Editable>
             </p>
           </div>
-          <p className="text-[11px] uppercase tracking-widest text-emerald-700/80 dark:text-emerald-400/80 font-medium mt-auto">
+          <p className="text-[11px] uppercase tracking-widest text-brand-700/80 dark:text-brand-400/80 font-medium mt-auto">
             <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["creatorCard", "eyebrow"]} value={c.creatorCard.eyebrow} kind="text">{c.creatorCard.eyebrow}</Editable>
           </p>
         </Link>

@@ -389,16 +389,111 @@ export const authFormSchema = z.object({
   styles: stylesMap.optional(),
 });
 
+/* ─── Brand theme — /signup-control/<campaign>/campaign-theme ── */
+
+/** Available preset themes. The "custom" entry pairs with an
+ *  optional `customColor` hex value so admins can pick any color,
+ *  not just the curated palette. New presets need a corresponding
+ *  `.theme-<name>` class in `globals.css` AND a default entry in
+ *  `campaignThemeDefaults` over in cms-defaults.ts. */
+export const THEME_PRESETS = ["emerald", "rose", "blue", "amber", "custom"] as const;
+export type ThemePreset = (typeof THEME_PRESETS)[number];
+
+/** Per-campaign brand-color picker. The `customColor` hex is only
+ *  consumed when `theme === "custom"` — the 4 presets ignore it. */
+export const campaignThemeSchema = z.object({
+  theme: z.enum(THEME_PRESETS),
+  /** #rrggbb hex when theme === "custom". Validated, but optional. */
+  customColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Use a 6-digit hex color (e.g. #2563eb)")
+    .optional(),
+});
+export type CampaignThemeContent = z.infer<typeof campaignThemeSchema>;
+
 /* ─── Slug registry ──────────────────────────────────────────── */
 
-export const CMS_SLUGS = ["brief", "tiktok-setup", "welcome", "auth-form"] as const;
+export const CMS_SLUGS = ["brief", "tiktok-setup", "welcome", "auth-form", "campaign-theme"] as const;
 export type CmsSlug = (typeof CMS_SLUGS)[number];
+
+/* ─── Campaign registry ──────────────────────────────────────── */
+
+/**
+ * Every creator URL is now keyed by campaign in addition to slug:
+ *   /creator/<campaign>/brief, /creator/<campaign>/setup/tiktok, …
+ * Admins edit each campaign independently from /signup-control/<campaign>.
+ */
+export const CAMPAIGNS = ["minutewise", "roastai", "call-recorder"] as const;
+export type Campaign = (typeof CAMPAIGNS)[number];
+
+/**
+ * Sentinel used in cms_pages.campaign for slugs that are NOT
+ * campaign-scoped. Today only `welcome` is shared (it's the chooser
+ * shown before any campaign is picked).
+ */
+export const SHARED_CAMPAIGN = "_shared" as const;
+
+/** Whether a slug stores per-campaign content or a single shared blob. */
+export const slugScope: Record<CmsSlug, "campaign" | "shared"> = {
+  brief: "campaign",
+  "tiktok-setup": "campaign",
+  "auth-form": "campaign",
+  welcome: "shared",
+  "campaign-theme": "campaign",
+};
+
+/**
+ * Display metadata for the campaign chooser cards (admin + public).
+ * The `appIcon` paths point at files committed in
+ * `dashboard/public/app-icons/`.
+ */
+export const campaignMeta: Record<Campaign, {
+  label: string;
+  description: string;
+  appIcon: string;
+}> = {
+  minutewise: {
+    label: "Minutewise",
+    description: "AI meeting & lecture summaries",
+    appIcon: "/app-icons/minutewise.png",
+  },
+  roastai: {
+    label: "Roast AI",
+    description: "Smart texting & conversation assistant",
+    appIcon: "/app-icons/roast-ai.png",
+  },
+  "call-recorder": {
+    label: "Call Recorder",
+    description: "Call recording & voice-note management",
+    appIcon: "/app-icons/call-recorder.png",
+  },
+};
+
+/**
+ * Resolve a campaign string to the actual key used in cms_pages.
+ * Shared slugs always read from SHARED_CAMPAIGN regardless of which
+ * campaign the caller passed in.
+ *
+ * Accepts any string so DB-driven campaigns (added via /campaigns/new)
+ * work end-to-end. The static `Campaign` literal union and
+ * `isCampaign()` narrowing guard remain available for places that
+ * specifically want the known-and-typed set (e.g. cms-defaults keys).
+ */
+export function resolveCampaignKey(slug: CmsSlug, campaign: string): string {
+  return slugScope[slug] === "shared" ? SHARED_CAMPAIGN : campaign;
+}
+
+/** Narrowing guard — `isCampaign(s)` lets TS treat `s` as `Campaign`. */
+export function isCampaign(value: string): value is Campaign {
+  return (CAMPAIGNS as readonly string[]).includes(value);
+}
 
 export const cmsSchemaBySlug = {
   brief: briefSchema,
   "tiktok-setup": tiktokSetupSchema,
   welcome: welcomeSchema,
   "auth-form": authFormSchema,
+  "campaign-theme": campaignThemeSchema,
 } as const;
 
 export type BriefContent = z.infer<typeof briefSchema>;
@@ -411,6 +506,7 @@ export type CmsContent = {
   "tiktok-setup": TiktokSetupContent;
   welcome: WelcomeContent;
   "auth-form": AuthFormContent;
+  "campaign-theme": CampaignThemeContent;
 };
 
 export type CmsContentFor<S extends CmsSlug> = CmsContent[S];
@@ -440,5 +536,10 @@ export const cmsPageMeta: Record<CmsSlug, { title: string; description: string; 
     title: "Login & Signup Form",
     description: "Copy shown on /creator/login and /creator/signup.",
     livePath: "/creator/signup",
+  },
+  "campaign-theme": {
+    title: "Brand Theme",
+    description: "Pick the brand color for this campaign's creator-facing pages.",
+    livePath: "/creator",
   },
 };

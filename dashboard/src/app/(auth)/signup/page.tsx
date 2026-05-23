@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import { ShieldCheck } from "lucide-react";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -68,12 +70,27 @@ export default function SignupPage() {
   return (
     <div className="w-full max-w-sm px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            MinuteWise
+        <div className="text-center space-y-3">
+          {/* Brewapps logo + admin badge — keeps signup visually
+              consistent with the /login page so admins know they're
+              still in the staff portal. */}
+          <Image
+            src="/brewapps-logo.png"
+            alt="Brewapps"
+            width={144}
+            height={144}
+            priority
+            className="h-14 sm:h-16 w-auto mx-auto"
+          />
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] uppercase tracking-widest font-semibold">
+            <ShieldCheck className="h-3 w-3" />
+            Admin
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+            Create admin account
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Create your account
+          <p className="text-sm text-muted-foreground">
+            Sign up to manage campaigns, creators, and payouts.
           </p>
         </div>
 
@@ -139,6 +156,17 @@ export default function SignupPage() {
             className="font-medium text-primary hover:underline"
           >
             Sign in
+          </Link>
+        </p>
+
+        {/* Centered "Back to portal chooser" link, matching the
+            /login + /welcome/campaign treatment. */}
+        <p className="text-center text-xs text-muted-foreground">
+          <Link
+            href="/welcome"
+            className="text-primary hover:underline"
+          >
+            ← Wrong portal? Back to chooser
           </Link>
         </p>
       </div>

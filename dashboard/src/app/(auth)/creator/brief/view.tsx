@@ -22,6 +22,7 @@ import { Md } from "@/lib/markdown";
 import { Heading, CustomSections } from "@/lib/cms-render";
 import { Editable } from "@/components/cms-inline/editable";
 import { EditableList } from "@/components/cms-inline/editable-list";
+import { InternVideoTile } from "./intern-video-tile";
 
 const PILL_ICON: Record<BriefContent["ctaHero"]["pills"][number]["icon"], LucideIcon> = {
   check: CheckCircle2,
@@ -49,7 +50,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
       {/* ─── Hero ────────────────────────────────────────────────── */}
       {!c.hero.hidden && (
         <header className="text-center space-y-3">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] uppercase tracking-widest font-semibold">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-500/10 text-brand-700 dark:text-brand-400 text-[10px] uppercase tracking-widest font-semibold">
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["hero", "eyebrow"]} value={c.hero.eyebrow} kind="text" label="Hero eyebrow">{c.hero.eyebrow}</Editable>
           </div>
           <Heading tokens={c.hero.headingTypography} fallbackLevel="h1" className="text-center">
@@ -67,7 +68,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
         <CardContent className="p-6 sm:p-8 space-y-5">
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-semibold inline-flex items-center gap-2 justify-center">
-              <Video className="h-5 w-5 text-emerald-600" />
+              <Video className="h-5 w-5 text-brand-600" />
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["briefVideo", "heading"]} value={c.briefVideo.heading} kind="text">{c.briefVideo.heading}</Editable>
             </h2>
             <p className="text-sm text-muted-foreground max-w-xl mx-auto">
@@ -86,7 +87,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
           </div>
           <div className="rounded-lg bg-muted/40 p-4 space-y-2">
             <p className="text-sm font-semibold inline-flex items-center gap-1.5">
-              <FileText className="h-4 w-4 text-emerald-600" />
+              <FileText className="h-4 w-4 text-brand-600" />
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["briefVideo", "learnHeading"]} value={c.briefVideo.learnHeading} kind="text">{c.briefVideo.learnHeading}</Editable>
             </p>
             <ul className="text-sm text-muted-foreground space-y-1.5 ml-1">
@@ -104,7 +105,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
       <Card>
         <CardContent className="p-6 sm:p-8 space-y-4">
           <h2 className="text-2xl font-semibold inline-flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-emerald-600" />
+            <Building2 className="h-5 w-5 text-brand-600" />
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["aboutUs", "heading"]} value={c.aboutUs.heading} kind="text">{c.aboutUs.heading}</Editable>
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -128,9 +129,9 @@ export function BriefView({ content: c }: { content: BriefContent }) {
                 href={app.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-emerald-500/[0.02] hover:from-emerald-500/[0.14] hover:to-emerald-500/[0.04] transition-colors px-3 py-2.5"
+                className="group flex items-center gap-3 rounded-xl border border-brand-500/30 bg-gradient-to-br from-brand-500/[0.08] to-brand-500/[0.02] hover:from-brand-500/[0.14] hover:to-brand-500/[0.04] transition-colors px-3 py-2.5"
               >
-                <div className="relative h-11 w-11 rounded-xl overflow-hidden bg-white ring-1 ring-emerald-500/20 shadow-sm shrink-0">
+                <div className="relative h-11 w-11 rounded-xl overflow-hidden bg-white ring-1 ring-brand-500/20 shadow-sm shrink-0">
                   {app.icon && (
                     // Use a plain <img> instead of next/image: app-card
                     // icons can be admin-uploaded to any Supabase Storage
@@ -150,11 +151,11 @@ export function BriefView({ content: c }: { content: BriefContent }) {
                   <p className="text-sm font-semibold leading-tight truncate">
                     <Editable styles={c.styles} isAdmin={false} slug="brief" path={["aboutUs", "appCards", i, "name"]} value={app.name} kind="text">{app.name}</Editable>
                   </p>
-                  <p className="text-[10.5px] text-emerald-700/80 dark:text-emerald-400/80 uppercase tracking-wider mt-0.5 font-medium">
+                  <p className="text-[10.5px] text-brand-700/80 dark:text-brand-400/80 uppercase tracking-wider mt-0.5 font-medium">
                     iOS App Store
                   </p>
                 </div>
-                <ArrowUpRight className="h-4 w-4 text-emerald-600/70 dark:text-emerald-400/70 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+                <ArrowUpRight className="h-4 w-4 text-brand-600/70 dark:text-brand-400/70 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-600" />
               </a>
             ))}
           </div>
@@ -168,7 +169,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
         <CardContent className="p-6 sm:p-8 space-y-4">
           <div>
             <h2 className="text-2xl font-semibold inline-flex items-center gap-2">
-              <Users className="h-5 w-5 text-emerald-600" />
+              <Users className="h-5 w-5 text-brand-600" />
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["internShowcase", "heading"]} value={c.internShowcase.heading} kind="text">{c.internShowcase.heading}</Editable>
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -179,26 +180,22 @@ export function BriefView({ content: c }: { content: BriefContent }) {
             {c.internShowcase.tiles.map((tile, i) => (
               <div key={`${tile.youtubeId}-${i}`} className="flex flex-col rounded-xl border border-border bg-muted/30 p-3 gap-2">
                 {tile.handle && (
-                  <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 px-1">
+                  <p className="text-[11px] font-medium text-brand-700 dark:text-brand-400 px-1">
                     <Editable styles={c.styles} isAdmin={false} slug="brief" path={["internShowcase", "tiles", i, "handle"]} value={tile.handle} kind="text">
                       {tile.handle}
                     </Editable>
                   </p>
                 )}
-                <div className="relative aspect-[9/16] w-full rounded-lg overflow-hidden bg-black">
-                  <iframe
-                    src={`https://www.youtube.com/embed/${tile.youtubeId}`}
-                    className="absolute inset-0 w-full h-full"
-                    title={`Intern post #${i + 1}`}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
-                </div>
+                <InternVideoTile
+                  youtubeId={tile.youtubeId}
+                  title={`Intern post #${i + 1}`}
+                />
+
                 <a
                   href={tile.tiktokUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-center text-emerald-700 dark:text-emerald-400 font-semibold inline-flex items-center gap-1.5 justify-center py-1.5 rounded-md border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-emerald-500/[0.02] hover:from-emerald-500/[0.16] hover:to-emerald-500/[0.05] transition-colors"
+                  className="text-xs text-center text-brand-700 dark:text-brand-400 font-semibold inline-flex items-center gap-1.5 justify-center py-1.5 rounded-md border border-brand-500/30 bg-gradient-to-br from-brand-500/[0.08] to-brand-500/[0.02] hover:from-brand-500/[0.16] hover:to-brand-500/[0.05] transition-colors"
                 >
                   <ExternalLink className="h-3 w-3" />
                   View on TikTok
@@ -216,10 +213,10 @@ export function BriefView({ content: c }: { content: BriefContent }) {
         <CardContent className="p-6 sm:p-8 space-y-5">
           <div>
             <h2 className="text-2xl font-semibold inline-flex items-center gap-2">
-              <Users className="h-5 w-5 text-emerald-600" />
+              <Users className="h-5 w-5 text-brand-600" />
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["internshipDetails", "heading"]} value={c.internshipDetails.heading} kind="text">{c.internshipDetails.heading}</Editable>
             </h2>
-            <p className="text-sm text-muted-foreground mt-2 rounded-md bg-emerald-500/[0.06] border border-emerald-500/20 px-3 py-2.5">
+            <p className="text-sm text-muted-foreground mt-2 rounded-md bg-brand-500/[0.06] border border-brand-500/20 px-3 py-2.5">
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["internshipDetails", "summary"]} value={c.internshipDetails.summary} kind="textarea">{c.internshipDetails.summary}</Editable>
             </p>
           </div>
@@ -229,12 +226,12 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               return (
                 <div key={i} className="rounded-lg border border-border bg-muted/30 p-5 space-y-3">
                   <h3 className="font-semibold inline-flex items-center gap-2">
-                    <Icon className="h-4 w-4 text-emerald-600" />
+                    <Icon className="h-4 w-4 text-brand-600" />
                     <Editable styles={c.styles} isAdmin={false} slug="brief" path={["internshipDetails", "panels", i, "heading"]} value={p.heading} kind="text">{p.heading}</Editable>
                   </h3>
                   <ul className="text-sm text-muted-foreground space-y-2">
                     {p.bullets.map((b, j) => (
-                      <li key={j} className="flex gap-2"><span className="text-emerald-600">✦</span> {b}</li>
+                      <li key={j} className="flex gap-2"><span className="text-brand-600">✦</span> {b}</li>
                     ))}
                   </ul>
                 </div>
@@ -250,7 +247,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
       <Card>
         <CardContent className="p-6 sm:p-8 space-y-5">
           <h2 className="text-2xl font-semibold inline-flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-emerald-600" />
+            <Sparkles className="h-5 w-5 text-brand-600" />
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["whatYoullDo", "heading"]} value={c.whatYoullDo.heading} kind="text">{c.whatYoullDo.heading}</Editable>
           </h2>
           <div className="grid sm:grid-cols-2 gap-6">
@@ -276,7 +273,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
       <Card>
         <CardContent className="p-6 sm:p-8 space-y-5">
           <h2 className="text-2xl font-semibold inline-flex items-center gap-2">
-            <GraduationCap className="h-5 w-5 text-emerald-600" />
+            <GraduationCap className="h-5 w-5 text-brand-600" />
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["internsWeLove", "heading"]} value={c.internsWeLove.heading} kind="text">{c.internsWeLove.heading}</Editable>
           </h2>
           <div className="grid sm:grid-cols-2 gap-6">
@@ -288,7 +285,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
                 <ul className="text-sm text-muted-foreground space-y-2">
                   {col.bullets.map((b, j) => (
                     <li key={j} className="flex gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                      <CheckCircle2 className="h-4 w-4 text-brand-600 mt-0.5 shrink-0" />
                       <span>{b}</span>
                     </li>
                   ))}
@@ -322,17 +319,17 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               renderItem={(item, i) => (
                 <details
                   key={i}
-                  className="group rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.06] to-emerald-500/[0.01] hover:from-emerald-500/[0.12] hover:to-emerald-500/[0.03] open:from-emerald-500/[0.14] open:to-emerald-500/[0.03] open:border-emerald-500/40 transition-colors px-4 py-3 [&_summary::-webkit-details-marker]:hidden"
+                  className="group rounded-xl border border-brand-500/25 bg-gradient-to-br from-brand-500/[0.06] to-brand-500/[0.01] hover:from-brand-500/[0.12] hover:to-brand-500/[0.03] open:from-brand-500/[0.14] open:to-brand-500/[0.03] open:border-brand-500/40 transition-colors px-4 py-3 [&_summary::-webkit-details-marker]:hidden"
                 >
                   <summary className="flex items-center justify-between gap-3 cursor-pointer text-sm font-semibold text-foreground select-none">
                     <span className="flex-1">
                       <Editable styles={c.styles} isAdmin={false} slug="brief" path={["faq", "items", i, "q"]} value={item.q} kind="text">{item.q}</Editable>
                     </span>
-                    <span className="shrink-0 h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/25 flex items-center justify-center transition-all duration-200 group-open:rotate-90 group-open:bg-emerald-500/25 group-open:ring-emerald-500/40 group-hover:bg-emerald-500/25">
+                    <span className="shrink-0 h-7 w-7 rounded-lg bg-brand-500/15 text-brand-700 dark:text-brand-300 ring-1 ring-brand-500/25 flex items-center justify-center transition-all duration-200 group-open:rotate-90 group-open:bg-brand-500/25 group-open:ring-brand-500/40 group-hover:bg-brand-500/25">
                       <ChevronRight className="h-4 w-4" strokeWidth={2.75} />
                     </span>
                   </summary>
-                  <div className="mt-3 pt-3 border-t border-emerald-500/20">
+                  <div className="mt-3 pt-3 border-t border-brand-500/20">
                     <div className="text-sm text-foreground/75 leading-relaxed">
                       <Editable styles={c.styles} isAdmin={false} slug="brief" path={["faq", "items", i, "a"]} value={item.a} kind="markdown" rows={5}>
                         <Md>{item.a}</Md>
@@ -361,13 +358,13 @@ export function BriefView({ content: c }: { content: BriefContent }) {
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["helpBlock", "contactNote"]} value={c.helpBlock.contactNote} kind="text">{c.helpBlock.contactNote}</Editable>
           </p>
           <p className="text-sm inline-flex items-center gap-2 justify-center">
-            <Mail className="h-4 w-4 text-emerald-600" />
+            <Mail className="h-4 w-4 text-brand-600" />
             Email:{" "}
             <a
               href={gmailHref(c.helpBlock.email)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-emerald-700 dark:text-emerald-400 hover:underline font-medium"
+              className="text-brand-700 dark:text-brand-400 hover:underline font-medium"
             >
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["helpBlock", "email"]} value={c.helpBlock.email} kind="text">{c.helpBlock.email}</Editable>
             </a>
@@ -377,7 +374,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               href={c.helpBlock.whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-10 items-center gap-1.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+              className="inline-flex h-10 items-center gap-1.5 px-4 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-colors"
             >
               <MessageSquare className="h-4 w-4" />
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["helpBlock", "whatsappLabel"]} value={c.helpBlock.whatsappLabel} kind="text">{c.helpBlock.whatsappLabel}</Editable>
@@ -393,7 +390,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
         <CardContent className="p-6 sm:p-8 space-y-5">
           <div className="text-center space-y-1">
             <h2 className="text-2xl font-semibold inline-flex items-center gap-2 justify-center">
-              <Rocket className="h-5 w-5 text-emerald-600" />
+              <Rocket className="h-5 w-5 text-brand-600" />
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["journey", "heading"]} value={c.journey.heading} kind="text">{c.journey.heading}</Editable>
             </h2>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
@@ -410,10 +407,10 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               renderItem={(s, i) => (
                 <div
                   key={i}
-                  className="group rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.06] to-emerald-500/[0.01] hover:from-emerald-500/[0.12] hover:to-emerald-500/[0.03] transition-colors p-4 space-y-2"
+                  className="group rounded-xl border border-brand-500/25 bg-gradient-to-br from-brand-500/[0.06] to-brand-500/[0.01] hover:from-brand-500/[0.12] hover:to-brand-500/[0.03] transition-colors p-4 space-y-2"
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className="h-7 w-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center shadow-sm shadow-emerald-600/20">
+                    <span className="h-7 w-7 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center shadow-sm shadow-brand-600/20">
                       {i + 1}
                     </span>
                     <h3 className="font-semibold text-sm leading-tight">
@@ -427,18 +424,18 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               )}
             />
           </div>
-          <div className="relative overflow-hidden rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.14] via-emerald-500/[0.08] to-emerald-500/[0.02] p-5 text-center space-y-1.5">
-            <div className="pointer-events-none absolute -top-10 -right-10 h-32 w-32 rounded-full bg-emerald-400/15 blur-2xl" />
-            <div className="pointer-events-none absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-emerald-400/10 blur-2xl" />
+          <div className="relative overflow-hidden rounded-xl border border-brand-500/40 bg-gradient-to-br from-brand-500/[0.14] via-brand-500/[0.08] to-brand-500/[0.02] p-5 text-center space-y-1.5">
+            <div className="pointer-events-none absolute -top-10 -right-10 h-32 w-32 rounded-full bg-brand-400/15 blur-2xl" />
+            <div className="pointer-events-none absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-brand-400/10 blur-2xl" />
             <div className="relative inline-flex items-center gap-2 justify-center">
-              <span className="h-7 w-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center shadow-sm shadow-emerald-600/30">
+              <span className="h-7 w-7 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center shadow-sm shadow-brand-600/30">
                 {c.journey.steps.length + 1}
               </span>
-              <h3 className="font-semibold text-emerald-900 dark:text-emerald-100">
+              <h3 className="font-semibold text-brand-900 dark:text-brand-100">
                 <Editable styles={c.styles} isAdmin={false} slug="brief" path={["journey", "finalStep", "title"]} value={c.journey.finalStep.title} kind="text">{c.journey.finalStep.title}</Editable>
               </h3>
             </div>
-            <p className="relative text-xs text-emerald-900/80 dark:text-emerald-100/80">
+            <p className="relative text-xs text-brand-900/80 dark:text-brand-100/80">
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["journey", "finalStep", "desc"]} value={c.journey.finalStep.desc} kind="textarea">{c.journey.finalStep.desc}</Editable>
             </p>
           </div>
@@ -452,19 +449,19 @@ export function BriefView({ content: c }: { content: BriefContent }) {
 
       {/* ─── Get Started CTA ─────────────────────────────────────── */}
       {!c.ctaHero.hidden && (
-      <Card className="relative overflow-hidden border-emerald-500/40 bg-gradient-to-br from-emerald-500/[0.14] via-emerald-500/[0.08] to-teal-500/[0.04] shadow-sm">
-        <div className="pointer-events-none absolute -top-24 -right-20 h-72 w-72 rounded-full bg-emerald-400/25 blur-3xl" />
+      <Card className="relative overflow-hidden border-brand-500/40 bg-gradient-to-br from-brand-500/[0.14] via-brand-500/[0.08] to-teal-500/[0.04] shadow-sm">
+        <div className="pointer-events-none absolute -top-24 -right-20 h-72 w-72 rounded-full bg-brand-400/25 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 -left-24 h-72 w-72 rounded-full bg-teal-400/20 blur-3xl" />
-        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 rounded-full bg-emerald-300/10 blur-3xl" />
-        <CardContent className="relative p-8 sm:p-12 text-center space-y-5">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10.5px] uppercase tracking-[0.15em] font-semibold border border-emerald-500/30">
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 rounded-full bg-brand-300/10 blur-3xl" />
+        <CardContent className="relative p-6 sm:p-12 text-center space-y-5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-300 text-[10.5px] uppercase tracking-[0.15em] font-semibold border border-brand-500/30">
             <Sparkles className="h-3 w-3" />
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "eyebrow"]} value={c.ctaHero.eyebrow} kind="text">{c.ctaHero.eyebrow}</Editable>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-emerald-950 dark:text-emerald-50">
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-brand-950 dark:text-brand-50">
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "heading"]} value={c.ctaHero.heading} kind="text">{c.ctaHero.heading}</Editable>
           </h2>
-          <p className="text-base sm:text-lg text-emerald-900/75 dark:text-emerald-100/85 max-w-xl mx-auto">
+          <p className="text-base sm:text-lg text-brand-900/75 dark:text-brand-100/85 max-w-xl mx-auto">
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "body"]} value={c.ctaHero.body} kind="textarea">{c.ctaHero.body}</Editable>
           </p>
           <div className="flex flex-wrap gap-2 justify-center pt-1">
@@ -473,7 +470,7 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               return (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-white/70 dark:bg-emerald-950/40 border border-emerald-500/25 text-emerald-800 dark:text-emerald-200 backdrop-blur-sm font-medium"
+                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-white/70 dark:bg-brand-950/40 border border-brand-500/25 text-brand-800 dark:text-brand-200 backdrop-blur-sm font-medium"
                 >
                   <Icon className="h-3 w-3" strokeWidth={2.5} />
                   <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "pills", i, "label"]} value={p.label} kind="text">{p.label}</Editable>
@@ -484,24 +481,24 @@ export function BriefView({ content: c }: { content: BriefContent }) {
           <div className="flex flex-col items-center gap-3 pt-4">
             <Link
               href={c.ctaHero.primaryHref}
-              className="group inline-flex h-14 items-center justify-center px-10 rounded-xl bg-white dark:bg-emerald-50 ring-1 ring-emerald-500/30 text-emerald-700 text-base font-semibold transition-all shadow-[0_8px_24px_-4px_rgba(16,185,129,0.35)] hover:shadow-[0_14px_32px_-6px_rgba(16,185,129,0.5)] hover:-translate-y-0.5 active:translate-y-0"
+              className="group inline-flex h-14 items-center justify-center px-10 rounded-xl bg-white dark:bg-brand-50 ring-1 ring-brand-500/30 text-brand-700 text-base font-semibold transition-all shadow-[0_8px_24px_-4px_rgba(16,185,129,0.35)] hover:shadow-[0_14px_32px_-6px_rgba(16,185,129,0.5)] hover:-translate-y-0.5 active:translate-y-0"
             >
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "primaryLabel"]} value={c.ctaHero.primaryLabel} kind="text">{c.ctaHero.primaryLabel}</Editable>
-              <span className="ml-2.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+              <span className="ml-2.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm">
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" strokeWidth={3} />
               </span>
             </Link>
-            <p className="text-sm text-emerald-900/70 dark:text-emerald-100/70">
+            <p className="text-sm text-brand-900/70 dark:text-brand-100/70">
               <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "secondaryText"]} value={c.ctaHero.secondaryText} kind="text">{c.ctaHero.secondaryText}</Editable>{" "}
               <Link
                 href={c.ctaHero.secondaryHref}
-                className="font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 underline-offset-4 hover:underline transition-colors"
+                className="font-semibold text-brand-700 dark:text-brand-300 hover:text-brand-800 dark:hover:text-brand-200 underline-offset-4 hover:underline transition-colors"
               >
                 <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "secondaryLinkLabel"]} value={c.ctaHero.secondaryLinkLabel} kind="text">{c.ctaHero.secondaryLinkLabel}</Editable>
               </Link>
             </p>
           </div>
-          <p className="text-xs text-emerald-900/60 dark:text-emerald-100/60 pt-1 inline-flex items-center gap-1.5 justify-center w-full">
+          <p className="text-xs text-brand-900/60 dark:text-brand-100/60 pt-1 inline-flex items-center gap-1.5 justify-center w-full">
             <Clock className="h-3.5 w-3.5" />
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["ctaHero", "footnote"]} value={c.ctaHero.footnote} kind="text">{c.ctaHero.footnote}</Editable>
           </p>
@@ -511,9 +508,9 @@ export function BriefView({ content: c }: { content: BriefContent }) {
 
       {/* ─── Got Questions ───────────────────────────────────────── */}
       {!c.gotQuestions.hidden && (
-      <Card className="relative overflow-hidden border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] via-emerald-500/[0.04] to-emerald-500/[0.01] shadow-sm">
-        <div className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-emerald-400/15 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
+      <Card className="relative overflow-hidden border-brand-500/30 bg-gradient-to-br from-brand-500/[0.08] via-brand-500/[0.04] to-brand-500/[0.01] shadow-sm">
+        <div className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-brand-400/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-brand-400/10 blur-3xl" />
         <CardContent className="relative p-6 sm:p-8 space-y-5 text-center">
           <div className="space-y-2">
             <h2 className="text-xl sm:text-2xl font-semibold tracking-tight">
@@ -528,38 +525,38 @@ export function BriefView({ content: c }: { content: BriefContent }) {
               href={gmailHref(c.gotQuestions.email)}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-white/70 dark:bg-emerald-950/30 hover:bg-white hover:border-emerald-500/50 dark:hover:bg-emerald-950/50 backdrop-blur-sm transition-colors px-4 py-3 text-left"
+              className="group flex items-center gap-3 rounded-xl border border-brand-500/30 bg-white/70 dark:bg-brand-950/30 hover:bg-white hover:border-brand-500/50 dark:hover:bg-brand-950/50 backdrop-blur-sm transition-colors px-4 py-3 text-left"
             >
-              <span className="shrink-0 h-9 w-9 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/25 flex items-center justify-center">
+              <span className="shrink-0 h-9 w-9 rounded-lg bg-brand-500/15 text-brand-700 dark:text-brand-300 ring-1 ring-brand-500/25 flex items-center justify-center">
                 <Mail className="h-4 w-4" strokeWidth={2.25} />
               </span>
               <span className="flex-1 min-w-0">
-                <span className="block text-[10.5px] uppercase tracking-widest font-semibold text-emerald-700/80 dark:text-emerald-400/80">
+                <span className="block text-[10.5px] uppercase tracking-widest font-semibold text-brand-700/80 dark:text-brand-400/80">
                   Email us
                 </span>
                 <span className="block text-sm font-medium truncate"><Editable styles={c.styles} isAdmin={false} slug="brief" path={["gotQuestions", "email"]} value={c.gotQuestions.email} kind="text">{c.gotQuestions.email}</Editable></span>
               </span>
-              <ArrowUpRight className="h-4 w-4 text-emerald-600/70 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-emerald-600 transition-all" />
+              <ArrowUpRight className="h-4 w-4 text-brand-600/70 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-600 transition-all" />
             </a>
             <a
               href={c.gotQuestions.whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-white/70 dark:bg-emerald-950/30 hover:bg-white hover:border-emerald-500/50 dark:hover:bg-emerald-950/50 backdrop-blur-sm transition-colors px-4 py-3 text-left"
+              className="group flex items-center gap-3 rounded-xl border border-brand-500/30 bg-white/70 dark:bg-brand-950/30 hover:bg-white hover:border-brand-500/50 dark:hover:bg-brand-950/50 backdrop-blur-sm transition-colors px-4 py-3 text-left"
             >
-              <span className="shrink-0 h-9 w-9 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/25 flex items-center justify-center">
+              <span className="shrink-0 h-9 w-9 rounded-lg bg-brand-500/15 text-brand-700 dark:text-brand-300 ring-1 ring-brand-500/25 flex items-center justify-center">
                 <MessageSquare className="h-4 w-4" strokeWidth={2.25} />
               </span>
               <span className="flex-1 min-w-0">
-                <span className="block text-[10.5px] uppercase tracking-widest font-semibold text-emerald-700/80 dark:text-emerald-400/80">
+                <span className="block text-[10.5px] uppercase tracking-widest font-semibold text-brand-700/80 dark:text-brand-400/80">
                   WhatsApp
                 </span>
                 <span className="block text-sm font-medium truncate"><Editable styles={c.styles} isAdmin={false} slug="brief" path={["gotQuestions", "whatsappLabel"]} value={c.gotQuestions.whatsappLabel} kind="text">{c.gotQuestions.whatsappLabel}</Editable></span>
               </span>
-              <ArrowUpRight className="h-4 w-4 text-emerald-600/70 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-emerald-600 transition-all" />
+              <ArrowUpRight className="h-4 w-4 text-brand-600/70 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-600 transition-all" />
             </a>
           </div>
-          <p className="text-xs text-emerald-900/60 dark:text-emerald-100/60">
+          <p className="text-xs text-brand-900/60 dark:text-brand-100/60">
             <Editable styles={c.styles} isAdmin={false} slug="brief" path={["gotQuestions", "footnote"]} value={c.gotQuestions.footnote} kind="text">{c.gotQuestions.footnote}</Editable>
           </p>
         </CardContent>

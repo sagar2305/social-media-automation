@@ -1,9 +1,31 @@
 /**
- * Defaults for every CMS-driven page. These mirror the current
- * hard-coded content on the creator-facing routes so that the pages
- * render byte-identically when no admin has saved content yet (or when
- * a row is missing / malformed). Editing this file effectively bumps
- * the "factory reset" content used as a fallback.
+ * Defaults for every CMS-driven page, keyed by (campaign, slug).
+ *
+ * Mirrors the original hard-coded content so creator pages render
+ * byte-identically when no admin has saved content yet (or when a row
+ * is missing / malformed). Editing this file effectively bumps the
+ * "factory reset" content used as a fallback.
+ *
+ *   cmsDefaults.brief.minutewise        — Minutewise brief
+ *   cmsDefaults.brief.roastai           — Roast AI brief
+ *   cmsDefaults["tiktok-setup"]["call-recorder"]
+ *
+ * The `welcome` slug is shared across campaigns (it's shown BEFORE the
+ * user picks a campaign), so it's stored as a single value, not a
+ * per-campaign record.
+ *
+ *   cmsDefaults.welcome                 — singleton (shared)
+ *
+ * Use `defaultsFor(slug, campaign)` if you have a generic slug and
+ * want the right default with no type acrobatics.
+ *
+ * Content authority for Roast AI / Call Recorder defaults: the team's
+ * existing public brief pages at creators-corner.netlify.app. The hero
+ * copy / about-us / FAQ / journey are intentionally identical to the
+ * Minutewise base (those source pages share the same generic BrewApps
+ * slideshow internship copy). Per-campaign overrides apply to the
+ * "featured app" order, TikTok username suggestions, and the
+ * "applying for the {App} team" branding on the auth form.
  */
 
 import type {
@@ -11,10 +33,14 @@ import type {
   TiktokSetupContent,
   WelcomeContent,
   AuthFormContent,
-  CmsContent,
+  CampaignThemeContent,
+  Campaign,
+  CmsSlug,
 } from "./cms-schemas";
 
-export const briefDefault: BriefContent = {
+/* ─────────────────────── Minutewise (base) ──────────────────── */
+
+const minutewiseBriefDefault: BriefContent = {
   hero: {
     eyebrow: "BrewApps Slideshow Internship",
     heading: "BrewApps Slideshow Internship",
@@ -233,10 +259,10 @@ export const briefDefault: BriefContent = {
       { icon: "rocket", label: "Step-by-step guide" },
     ],
     primaryLabel: "Get Started",
-    primaryHref: "/creator/setup/tiktok",
+    primaryHref: "/creator/minutewise/setup/tiktok",
     secondaryText: "Already have an account?",
     secondaryLinkLabel: "Sign in",
-    secondaryHref: "/creator/login",
+    secondaryHref: "/creator/minutewise/login",
     footnote: "Step-by-step TikTok setup guide included",
   },
   gotQuestions: {
@@ -254,7 +280,7 @@ export const briefDefault: BriefContent = {
   },
 };
 
-export const tiktokSetupDefault: TiktokSetupContent = {
+const minutewiseTiktokSetupDefault: TiktokSetupContent = {
   header: {
     brandTitle: "BrewApps LLC",
     productLine: "Minutewise · TikTok Account Setup",
@@ -473,7 +499,7 @@ export const tiktokSetupDefault: TiktokSetupContent = {
       heading: "Complete Your Application",
       body: "Now that your TikTok account is set up, you're ready to sign up for the portal. Please sign up there to request your offer letter, join our dedicated Slack channel, and get started with the internship.",
       signUpLabel: "Sign Up",
-      signUpHref: "/creator/signup",
+      signUpHref: "/creator/minutewise/signup",
     },
     needHelp: {
       heading: "Need Help?",
@@ -486,38 +512,14 @@ export const tiktokSetupDefault: TiktokSetupContent = {
   },
 };
 
-export const welcomeDefault: WelcomeContent = {
-  hero: {
-    title: "MinuteWise",
-    subtitle: "Choose how you're signing in.",
-  },
-  creatorCard: {
-    title: "I'm a Creator",
-    body: "Track your earnings, see payment status, and review the posts attributed to you.",
-    eyebrow: "Creator portal →",
-    href: "/creator/brief",
-  },
-  staffCard: {
-    title: "I'm on the Team",
-    body: "Run campaigns, manage creators, approve payouts, and operate the automation.",
-    eyebrow: "Staff dashboard →",
-    href: "/login",
-  },
-  footnote:
-    "Not sure? Pick \"Creator\" if you've been invited to be paid for posts.",
-};
-
-export const authFormDefault: AuthFormContent = {
+const minutewiseAuthFormDefault: AuthFormContent = {
   backLink: "Back to portal chooser",
   hero: {
     heading: "Join the Minutewise Team",
     subheading: "Apply for the Minutewise internship program",
     badge: "Minutewise Internship",
   },
-  tabs: {
-    signIn: "Sign In",
-    signUp: "Sign Up",
-  },
+  tabs: { signIn: "Sign In", signUp: "Sign Up" },
   signIn: {
     emailLabel: "Personal Email Address",
     emailPlaceholder: "Enter your personal email",
@@ -552,9 +554,280 @@ export const authFormDefault: AuthFormContent = {
   },
 };
 
-export const cmsDefaults: CmsContent = {
+/* ─────────────────────── Per-campaign deriver ───────────────── */
+
+interface CampaignBranding {
+  label: string;
+  /** Order index of this campaign's app in aboutUs.appCards (0-based). */
+  featuredAppIndex: number;
+  /** Suggestion text appended to TikTok step 4 username instruction. */
+  usernameSuggestions: string;
+  /** Single sentence used in TikTok step 4 description for "for the X internship". */
+  tiktokAccountDescription: string;
+  /** TikTok step 5 bio examples line. */
+  bioExamples: string;
+}
+
+const branding: Record<Campaign, CampaignBranding> = {
+  minutewise: {
+    label: "Minutewise",
+    featuredAppIndex: 0,
+    usernameSuggestions:
+      'Username suggestions: "Smart Note Taker", "Online Meeting Tips", "Take Good Notes" — simple, native-sounding names that match the app\'s functionality',
+    tiktokAccountDescription:
+      "Set up your TikTok account with the correct information for Minutewise.",
+    bioExamples:
+      'Bio: Use a short bio that fits the app\'s niche — for example: "Check out our AI meeting notes app on the App Store", "Try our AI texting assistant on the App Store", or "Explore our call recorder app on the App Store".',
+  },
+  roastai: {
+    label: "Roast AI",
+    featuredAppIndex: 2, // Roast AI is the 3rd card in the base list
+    usernameSuggestions:
+      'Username suggestions: "Smart Texting Tips", "AI Reply Helper", "Better DMs", "Texting Coach" — simple, native-sounding names that match the app\'s functionality',
+    tiktokAccountDescription:
+      "Set up your TikTok account with the correct information for Roast AI.",
+    bioExamples:
+      'Bio: Use a short bio that fits the app\'s niche — for example: "Try our AI texting assistant on the App Store", "Better replies, every time — Roast AI on iOS", or "AI that writes the perfect text reply".',
+  },
+  "call-recorder": {
+    label: "Call Recorder",
+    featuredAppIndex: 1, // Call Recorder is the 2nd card in the base list
+    usernameSuggestions:
+      'Username suggestions: "Call Recorder Tips", "Voice Note Hacks", "Phone Call Pro", "Record Smart" — simple, native-sounding names that match the app\'s functionality',
+    tiktokAccountDescription:
+      "Set up your TikTok account with the correct information for Call Recorder.",
+    bioExamples:
+      'Bio: Use a short bio that fits the app\'s niche — for example: "Record every call — Call Recorder on iOS", "Never miss a detail on a call", or "Explore our call recorder app on the App Store".',
+  },
+};
+
+/** Reorder appCards so the campaign's own app appears first. */
+function reorderAppCards(
+  base: BriefContent["aboutUs"]["appCards"],
+  featuredIndex: number,
+): BriefContent["aboutUs"]["appCards"] {
+  if (featuredIndex === 0 || featuredIndex >= base.length) return base.slice();
+  const featured = base[featuredIndex];
+  return [featured, ...base.filter((_, i) => i !== featuredIndex)];
+}
+
+function buildBriefDefault(campaign: Campaign): BriefContent {
+  const b = branding[campaign];
+  return {
+    ...minutewiseBriefDefault,
+    aboutUs: {
+      ...minutewiseBriefDefault.aboutUs,
+      appCards: reorderAppCards(
+        minutewiseBriefDefault.aboutUs.appCards,
+        b.featuredAppIndex,
+      ),
+    },
+    journey: {
+      ...minutewiseBriefDefault.journey,
+      subtitle:
+        `Follow these simple steps to join the ${b.label} team and start your internship journey.`,
+    },
+    ctaHero: {
+      ...minutewiseBriefDefault.ctaHero,
+      body: `Begin with setting up your TikTok account and join the ${b.label} team! 🌟`,
+      primaryHref: `/creator/${campaign}/setup/tiktok`,
+      secondaryHref: `/creator/${campaign}/login`,
+    },
+  };
+}
+
+function buildTiktokSetupDefault(campaign: Campaign): TiktokSetupContent {
+  const b = branding[campaign];
+  const base = minutewiseTiktokSetupDefault;
+  // Rewrite Step 4 (account creation) and Step 5 (profile setup) to use
+  // the campaign's username + bio guidance. All other steps are
+  // app-agnostic so they pass through unchanged.
+  const steps = base.steps.map((step, i) => {
+    if (i === 3) {
+      return {
+        ...step,
+        description: b.tiktokAccountDescription,
+        instructions: step.instructions.map((line, j) =>
+          j === step.instructions.length - 1 ? b.usernameSuggestions : line,
+        ),
+      };
+    }
+    if (i === 4) {
+      return {
+        ...step,
+        instructions: step.instructions.map((line, j) =>
+          j === step.instructions.length - 1 ? b.bioExamples : line,
+        ),
+      };
+    }
+    return step;
+  });
+  return {
+    ...base,
+    header: {
+      ...base.header,
+      productLine: `${b.label} · TikTok Account Setup`,
+    },
+    hero: {
+      ...base.hero,
+      description:
+        `Follow these detailed instructions to create and optimize your TikTok account for the ${b.label} slideshow internship.`,
+    },
+    steps,
+    finalFooter: {
+      ...base.finalFooter,
+      completeApp: {
+        ...base.finalFooter.completeApp,
+        signUpHref: `/creator/${campaign}/signup`,
+      },
+    },
+  };
+}
+
+function buildAuthFormDefault(campaign: Campaign): AuthFormContent {
+  const b = branding[campaign];
+  return {
+    ...minutewiseAuthFormDefault,
+    hero: {
+      heading: `Join the ${b.label} Team`,
+      subheading: `Apply for the ${b.label} internship program`,
+      badge: `${b.label} Internship`,
+    },
+    signUp: {
+      ...minutewiseAuthFormDefault.signUp,
+      applyingForTeamLabel: `${b.label} Team`,
+      applyingForBody: `You're applying for the ${b.label} internship program`,
+    },
+  };
+}
+
+/* ─────────────────────── Shared (welcome) ───────────────────── */
+
+export const welcomeDefault: WelcomeContent = {
+  hero: {
+    title: "BrewApps Creators",
+    subtitle: "Choose how you're signing in.",
+  },
+  creatorCard: {
+    title: "I'm a Creator",
+    body: "Track your earnings, see payment status, and review the posts attributed to you.",
+    eyebrow: "Creator portal →",
+    // Routes through the campaign chooser so the creator picks
+    // which app's program they're joining.
+    href: "/welcome/campaign",
+  },
+  staffCard: {
+    title: "I'm on the Team",
+    body: "Run campaigns, manage creators, approve payouts, and operate the automation.",
+    eyebrow: "Staff dashboard →",
+    href: "/login",
+  },
+  footnote:
+    "Not sure? Pick \"Creator\" if you've been invited to be paid for posts.",
+};
+
+/* ─────────────────────── Per-campaign maps ──────────────────── */
+
+export const briefDefaults: Record<Campaign, BriefContent> = {
+  minutewise: minutewiseBriefDefault,
+  roastai: buildBriefDefault("roastai"),
+  "call-recorder": buildBriefDefault("call-recorder"),
+};
+
+export const tiktokSetupDefaults: Record<Campaign, TiktokSetupContent> = {
+  minutewise: minutewiseTiktokSetupDefault,
+  roastai: buildTiktokSetupDefault("roastai"),
+  "call-recorder": buildTiktokSetupDefault("call-recorder"),
+};
+
+export const authFormDefaults: Record<Campaign, AuthFormContent> = {
+  minutewise: minutewiseAuthFormDefault,
+  roastai: buildAuthFormDefault("roastai"),
+  "call-recorder": buildAuthFormDefault("call-recorder"),
+};
+
+/**
+ * Per-campaign brand theme. Minutewise keeps the project's existing
+ * emerald palette; the other two ship with sensible non-emerald
+ * defaults so an admin who never visits the theme picker still gets
+ * visually distinct campaigns. Admins override via
+ * /signup-control/<campaign>/campaign-theme.
+ */
+export const campaignThemeDefaults: Record<Campaign, CampaignThemeContent> = {
+  minutewise: { theme: "emerald" },
+  roastai: { theme: "rose" },
+  "call-recorder": { theme: "blue" },
+};
+
+/* ─────────────────────── Resolver ───────────────────────────── */
+
+/**
+ * Resolve the default content for a (slug, campaign) pair. Shared
+ * slugs ignore the campaign argument and always return the singleton.
+ *
+ *   defaultsFor("brief", "roastai")           → Roast AI brief
+ *   defaultsFor("welcome", "minutewise")      → shared welcome (campaign ignored)
+ *
+ * `campaign` is typed as `string` so DB-driven campaigns added via
+ * /campaigns/new resolve cleanly. When the slug isn't one of the
+ * statically-known campaigns, we fall back to the Minutewise default
+ * so a brand-new campaign still renders SOMETHING until the admin
+ * edits its content in /signup-control. The card name on the welcome
+ * chooser does come from the DB row, so the visitor at least sees the
+ * right app name above the placeholder copy.
+ */
+export function defaultsFor<S extends CmsSlug>(
+  slug: S,
+  campaign: string,
+): {
+  brief: BriefContent;
+  "tiktok-setup": TiktokSetupContent;
+  welcome: WelcomeContent;
+  "auth-form": AuthFormContent;
+  "campaign-theme": CampaignThemeContent;
+}[S] {
+  // For per-campaign slugs, look up the campaign's own defaults; if
+  // the campaign isn't statically registered, fall back to Minutewise.
+  const fallback: Campaign = "minutewise";
+  switch (slug) {
+    case "brief": {
+      const d = briefDefaults[campaign as Campaign] ?? briefDefaults[fallback];
+      return d as ReturnType<typeof defaultsFor<S>>;
+    }
+    case "tiktok-setup": {
+      const d = tiktokSetupDefaults[campaign as Campaign] ?? tiktokSetupDefaults[fallback];
+      return d as ReturnType<typeof defaultsFor<S>>;
+    }
+    case "auth-form": {
+      const d = authFormDefaults[campaign as Campaign] ?? authFormDefaults[fallback];
+      return d as ReturnType<typeof defaultsFor<S>>;
+    }
+    case "welcome":
+      return welcomeDefault as ReturnType<typeof defaultsFor<S>>;
+    case "campaign-theme": {
+      const d = campaignThemeDefaults[campaign as Campaign] ?? campaignThemeDefaults[fallback];
+      return d as ReturnType<typeof defaultsFor<S>>;
+    }
+    default: {
+      // Exhaustiveness check — slug is `never` here.
+      const _exhaustive: never = slug;
+      throw new Error(`defaultsFor: unknown slug ${String(_exhaustive)}`);
+    }
+  }
+}
+
+/* ─────────────────────── Legacy single-campaign export ──────── */
+// Kept for back-compat with any caller that still does
+// `cmsDefaults[slug]` without a campaign arg. Routes to Minutewise.
+
+export const briefDefault: BriefContent = briefDefaults.minutewise;
+export const tiktokSetupDefault: TiktokSetupContent = tiktokSetupDefaults.minutewise;
+export const authFormDefault: AuthFormContent = authFormDefaults.minutewise;
+
+export const cmsDefaults = {
   brief: briefDefault,
   "tiktok-setup": tiktokSetupDefault,
   welcome: welcomeDefault,
   "auth-form": authFormDefault,
-};
+  "campaign-theme": campaignThemeDefaults.minutewise,
+} as const;

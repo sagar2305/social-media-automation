@@ -36,7 +36,13 @@ function gmailHref(email: string): string {
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}`;
 }
 
-export function TikTokSetupView({ content: c }: { content: TiktokSetupContent }) {
+export function TikTokSetupView({
+  content: c,
+  campaign = "minutewise",
+}: {
+  content: TiktokSetupContent;
+  campaign?: string;
+}) {
   const steps = c.steps;
   const totalSteps = steps.length;
   const [completed, setCompleted] = useState<Set<number>>(new Set());
@@ -92,7 +98,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
           </div>
         </div>
         <Link
-          href="/creator/brief"
+          href={`/creator/${campaign}/brief`}
           className="inline-flex items-center gap-1 text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -101,22 +107,22 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
       </header>
 
       {/* Hero */}
-      <header className="text-center space-y-3 pt-2">
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] uppercase tracking-widest font-semibold">
+      <header className="text-center space-y-2 sm:space-y-3 pt-2">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-500/10 text-brand-700 dark:text-brand-400 text-[10px] uppercase tracking-widest font-semibold">
           <Smartphone className="h-3 w-3" />
           <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["hero", "eyebrow"]} value={c.hero.eyebrow} kind="text">{c.hero.eyebrow}</Editable>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
+        <h1 className="text-2xl sm:text-4xl font-semibold tracking-tight">
           <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["hero", "heading"]} value={c.hero.heading} kind="text">{c.hero.heading}</Editable>
         </h1>
-        <p className="text-muted-foreground text-base max-w-2xl mx-auto">
+        <p className="text-muted-foreground text-sm sm:text-base max-w-2xl mx-auto">
           <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["hero", "description"]} value={c.hero.description} kind="textarea">{c.hero.description}</Editable>
         </p>
       </header>
 
       {/* Progress card */}
       <Card>
-        <CardContent className="p-6 sm:p-8 space-y-6">
+        <CardContent className="p-4 sm:p-8 space-y-5 sm:space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold"><Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["progressCard", "heading"]} value={c.progressCard.heading} kind="text">{c.progressCard.heading}</Editable></h2>
@@ -127,7 +133,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
               </p>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-emerald-600 leading-none">
+              <div className="text-2xl font-bold text-brand-600 leading-none">
                 {completedCount}<span className="text-muted-foreground text-base font-normal">/{totalSteps}</span>
               </div>
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
@@ -140,7 +146,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
           <div className="relative px-1 pt-2">
             <div className="absolute top-[18px] left-[28px] right-[28px] h-0.5 bg-muted rounded-full" />
             <div
-              className="absolute top-[18px] left-[28px] h-0.5 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full transition-all duration-700 ease-out"
+              className="absolute top-[18px] left-[28px] h-0.5 bg-gradient-to-r from-brand-500 to-brand-600 rounded-full transition-all duration-700 ease-out"
               style={{
                 width: `calc((100% - 56px) * ${
                   completedCount === 0 || totalSteps < 2
@@ -168,9 +174,9 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
                     <span
                       className={`relative z-10 h-9 w-9 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
                         isDone
-                          ? "bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                          ? "bg-brand-600 border-brand-600 text-white shadow-md shadow-brand-600/30"
                           : isCurrent
-                            ? "bg-white dark:bg-card border-emerald-500 text-emerald-700 dark:text-emerald-400 ring-4 ring-emerald-500/20"
+                            ? "bg-white dark:bg-card border-brand-500 text-brand-700 dark:text-brand-400 ring-4 ring-brand-500/20"
                             : isUnlocked
                               ? "bg-white dark:bg-card border-muted-foreground/30 text-muted-foreground group-hover:border-foreground/40"
                               : "bg-muted/40 border-muted-foreground/20 text-muted-foreground/60"
@@ -189,7 +195,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
                         isCurrent
                           ? "text-foreground"
                           : isDone
-                            ? "text-emerald-700 dark:text-emerald-400"
+                            ? "text-brand-700 dark:text-brand-400"
                             : "text-muted-foreground"
                       } hidden sm:block max-w-[80px] truncate`}
                     >
@@ -201,7 +207,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
             </div>
           </div>
 
-          <div className="rounded-lg bg-emerald-500/[0.06] border border-emerald-500/20 px-3.5 py-2.5 text-xs text-muted-foreground flex items-start gap-2">
+          <div className="rounded-lg bg-brand-500/[0.06] border border-brand-500/20 px-3.5 py-2.5 text-xs text-muted-foreground flex items-start gap-2">
             <span className="text-base leading-none">📖</span>
             <span><Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["progressCard", "helperBanner"]} value={c.progressCard.helperBanner} kind="textarea">{c.progressCard.helperBanner}</Editable></span>
           </div>
@@ -210,22 +216,25 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
 
       {/* Current step card */}
       <Card className="relative overflow-hidden">
-        <CardContent className="p-6 sm:p-8 space-y-6">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex items-start gap-4 min-w-0 flex-1">
+        <CardContent className="p-4 sm:p-8 space-y-5 sm:space-y-6">
+          {/* Header row stacks on phone (title gets full card width
+              instead of being squeezed alongside the shrink-0 button)
+              and flips to side-by-side at sm+. */}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
               <div className="relative shrink-0">
-                <div className="h-14 w-14 rounded-2xl bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
-                  <CurrentIcon className="h-6 w-6" strokeWidth={2.25} />
+                <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-xl sm:rounded-2xl bg-brand-500/15 ring-1 ring-brand-500/30 text-brand-700 dark:text-brand-300 flex items-center justify-center">
+                  <CurrentIcon className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2.25} />
                 </div>
-                <div className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-white dark:bg-card border-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold flex items-center justify-center shadow-sm">
+                <div className="absolute -top-1.5 -right-1.5 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-white dark:bg-card border-2 border-brand-500/40 text-brand-700 dark:text-brand-400 text-[9px] sm:text-[10px] font-bold flex items-center justify-center shadow-sm">
                   {currentStepId}
                 </div>
               </div>
-              <div className="min-w-0 flex-1 pt-1">
-                <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 mb-1.5">
+              <div className="min-w-0 flex-1 pt-0.5 sm:pt-1">
+                <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-700 dark:text-brand-400 border border-brand-500/30 mb-1.5">
                   Current Step
                 </span>
-                <h3 className="text-xl sm:text-2xl font-semibold leading-tight tracking-tight">
+                <h3 className="text-base sm:text-2xl font-semibold leading-tight tracking-tight break-words">
                   <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["steps", currentStepId - 1, "title"]} value={currentStep.title} kind="text">{currentStep.title}</Editable>
                 </h3>
                 {currentStep.badge && (
@@ -241,10 +250,10 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
               type="button"
               onClick={markComplete}
               disabled={isCurrentComplete}
-              className={`shrink-0 inline-flex h-10 items-center gap-1.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+              className={`inline-flex h-10 w-full sm:w-auto sm:shrink-0 items-center justify-center gap-1.5 px-4 rounded-lg text-sm font-semibold transition-all ${
                 isCurrentComplete
-                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/30 cursor-default"
-                  : "bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-500 hover:to-emerald-700 text-white ring-1 ring-inset ring-white/15 shadow-[0_4px_14px_-2px_rgba(16,185,129,0.45)] hover:shadow-[0_8px_22px_-4px_rgba(16,185,129,0.55)] hover:-translate-y-0.5 active:translate-y-0"
+                  ? "bg-brand-500/15 text-brand-700 dark:text-brand-400 ring-1 ring-brand-500/30 cursor-default"
+                  : "bg-gradient-to-b from-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-700 text-white ring-1 ring-inset ring-white/15 shadow-[0_4px_14px_-2px_rgba(16,185,129,0.45)] hover:shadow-[0_8px_22px_-4px_rgba(16,185,129,0.55)] hover:-translate-y-0.5 active:translate-y-0"
               }`}
             >
               <CheckCircle2 className="h-4 w-4" strokeWidth={2.5} />
@@ -293,7 +302,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
           {currentStep.downloads.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm font-semibold inline-flex items-center gap-1.5">
-                <Download className="h-4 w-4 text-emerald-600" />
+                <Download className="h-4 w-4 text-brand-600" />
                 Download VPN App
               </p>
               <div className="flex flex-wrap gap-2">
@@ -316,14 +325,14 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
           {currentStep.sections.map((section, si) => (
             <div
               key={si}
-              className="rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.06] to-emerald-500/[0.01] p-4 sm:p-5 space-y-3"
+              className="rounded-xl border border-brand-500/25 bg-gradient-to-br from-brand-500/[0.06] to-brand-500/[0.01] p-4 sm:p-5 space-y-3"
             >
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 rounded-lg bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                <div className="h-10 w-10 rounded-lg bg-brand-500/15 ring-1 ring-brand-500/30 text-brand-700 dark:text-brand-300 flex items-center justify-center shrink-0">
                   <Smartphone className="h-5 w-5" strokeWidth={2.25} />
                 </div>
                 <div className="min-w-0 pt-0.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-700/80 dark:text-emerald-400/80 mb-0.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-brand-700/80 dark:text-brand-400/80 mb-0.5">
                     {section.platform === "ios" ? "iOS / iPhone" : section.platform === "android" ? "Android" : "Setup"}
                   </p>
                   <p className="text-sm font-semibold leading-snug">
@@ -366,13 +375,13 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
 
           <div className="space-y-3 pt-1">
             <p className="text-sm font-semibold inline-flex items-center gap-1.5">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <CheckCircle2 className="h-4 w-4 text-brand-600" />
               Instructions
             </p>
             <ol className="space-y-2">
               {currentStep.instructions.map((it, i) => (
                 <li key={i} className="flex gap-3 items-start text-sm text-foreground/85 leading-relaxed">
-                  <span className="shrink-0 mt-0.5 h-5 w-5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold flex items-center justify-center">
+                  <span className="shrink-0 mt-0.5 h-5 w-5 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-400 text-[10px] font-bold flex items-center justify-center">
                     {i + 1}
                   </span>
                   <span>
@@ -393,7 +402,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
           type="button"
           onClick={goPrev}
           disabled={currentStepId === 1}
-          className="group inline-flex h-10 items-center gap-1.5 px-4 rounded-lg border border-emerald-500/30 bg-white/70 dark:bg-emerald-950/30 hover:bg-white hover:border-emerald-500/55 dark:hover:bg-emerald-950/50 backdrop-blur-sm text-emerald-800 dark:text-emerald-200 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/70 disabled:hover:border-emerald-500/30"
+          className="group inline-flex h-10 items-center gap-1.5 px-4 rounded-lg border border-brand-500/30 bg-white/70 dark:bg-brand-950/30 hover:bg-white hover:border-brand-500/55 dark:hover:bg-brand-950/50 backdrop-blur-sm text-brand-800 dark:text-brand-200 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/70 disabled:hover:border-brand-500/30"
         >
           <ChevronLeft className="h-4 w-4 group-enabled:group-hover:-translate-x-0.5 transition-transform" strokeWidth={2.5} />
           Previous Step
@@ -402,7 +411,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
           type="button"
           onClick={goNext}
           disabled={!canAdvance}
-          className="group inline-flex h-10 items-center gap-1.5 px-4 rounded-lg border border-emerald-500/30 bg-white/70 dark:bg-emerald-950/30 hover:bg-white hover:border-emerald-500/55 dark:hover:bg-emerald-950/50 backdrop-blur-sm text-emerald-800 dark:text-emerald-200 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/70 disabled:hover:border-emerald-500/30"
+          className="group inline-flex h-10 items-center gap-1.5 px-4 rounded-lg border border-brand-500/30 bg-white/70 dark:bg-brand-950/30 hover:bg-white hover:border-brand-500/55 dark:hover:bg-brand-950/50 backdrop-blur-sm text-brand-800 dark:text-brand-200 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/70 disabled:hover:border-brand-500/30"
         >
           {!canAdvance && currentStepId !== totalSteps && (
             <Lock className="h-3.5 w-3.5" />
@@ -423,7 +432,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
                 <p className="text-sm text-muted-foreground"><Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["finalFooter", "completeApp", "body"]} value={c.finalFooter.completeApp.body} kind="textarea">{c.finalFooter.completeApp.body}</Editable></p>
                 <Link
                   href={c.finalFooter.completeApp.signUpHref}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-colors"
                 >
                   <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["finalFooter", "completeApp", "signUpLabel"]} value={c.finalFooter.completeApp.signUpLabel} kind="text">{c.finalFooter.completeApp.signUpLabel}</Editable> <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -438,7 +447,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
                     href={gmailHref(c.finalFooter.needHelp.email)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-emerald-700 dark:text-emerald-400 font-medium hover:underline"
+                    className="text-brand-700 dark:text-brand-400 font-medium hover:underline"
                   >
                     <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["finalFooter", "needHelp", "email"]} value={c.finalFooter.needHelp.email} kind="text">{c.finalFooter.needHelp.email}</Editable>
                   </a>
@@ -448,7 +457,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
                     href={gmailHref(c.finalFooter.needHelp.email)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 text-sm font-semibold transition-colors"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-brand-600/40 text-brand-700 dark:text-brand-400 hover:bg-brand-500/10 text-sm font-semibold transition-colors"
                   >
                     <Mail className="h-4 w-4" />
                     <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["finalFooter", "needHelp", "emailLabel"]} value={c.finalFooter.needHelp.emailLabel} kind="text">{c.finalFooter.needHelp.emailLabel}</Editable>
@@ -457,7 +466,7 @@ export function TikTokSetupView({ content: c }: { content: TiktokSetupContent })
                     href={c.finalFooter.needHelp.whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-colors"
                   >
                     <MessageSquare className="h-4 w-4" />
                     <Editable styles={c.styles} isAdmin={false} slug="tiktok-setup" path={["finalFooter", "needHelp", "whatsappLabel"]} value={c.finalFooter.needHelp.whatsappLabel} kind="text">{c.finalFooter.needHelp.whatsappLabel}</Editable>
@@ -497,9 +506,9 @@ function ActionPill({ href, icon, label }: { href: string; icon: React.ReactNode
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="group inline-flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-lg border border-emerald-500/30 bg-white/70 dark:bg-emerald-950/30 hover:bg-white hover:border-emerald-500/55 dark:hover:bg-emerald-950/50 backdrop-blur-sm text-emerald-800 dark:text-emerald-200 text-xs font-semibold transition-colors shadow-sm hover:shadow"
+      className="group inline-flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-lg border border-brand-500/30 bg-white/70 dark:bg-brand-950/30 hover:bg-white hover:border-brand-500/55 dark:hover:bg-brand-950/50 backdrop-blur-sm text-brand-800 dark:text-brand-200 text-xs font-semibold transition-colors shadow-sm hover:shadow"
     >
-      <span className="h-6 w-6 rounded-md bg-emerald-500/15 ring-1 ring-emerald-500/25 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+      <span className="h-6 w-6 rounded-md bg-brand-500/15 ring-1 ring-brand-500/25 text-brand-700 dark:text-brand-300 flex items-center justify-center shrink-0">
         {icon}
       </span>
       <span className="truncate">{label}</span>

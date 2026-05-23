@@ -33,7 +33,10 @@ export function WelcomeEditor({
       baseline={initial}
       value={c}
       onChange={setC}
-      onSave={() => savePageContent("welcome", c)}
+      // Welcome is the SHARED_CAMPAIGN slug — the campaign arg is
+      // mandatory but ignored server-side (resolveCampaignKey routes
+      // shared slugs to "_shared" regardless of the value passed).
+      onSave={() => savePageContent("minutewise", "welcome", c)}
     >
       {updatedAt && (
         <p className="text-[11px] text-muted-foreground -mt-1">

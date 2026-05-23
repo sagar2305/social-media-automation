@@ -46,6 +46,139 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* ─────────────────────────────────────────────────────────────
+   *  Per-campaign brand color tokens — bridge pattern.
+   *
+   *  Tailwind v4 `@theme inline` substitutes the expression here
+   *  into the compiled utility classes, so `bg-brand-500` becomes
+   *  literally `background-color: var(--brand-500)`. The actual
+   *  --brand-N values live below in :root (defaults to emerald)
+   *  and .theme-rose / .theme-blue / .theme-amber override them
+   *  at runtime — which means switching theme just swaps a
+   *  className and every `bg-brand-*`, `text-brand-*`,
+   *  `from-brand-500/[0.08]`, dark-mode variant, etc. retints
+   *  automatically.
+   *
+   *  We use a separate --brand-N bridge (rather than
+   *  --color-brand-N) because Tailwind's own `--color-*` names
+   *  are themselves declared in its default theme; overriding
+   *  one of those would pollute the global namespace.
+   * ───────────────────────────────────────────────────────────── */
+  --color-brand-50:  var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+}
+
+/* ─── Default brand palette = emerald (Minutewise's look) ──────
+ *  Sits in :root so it cascades into every page. Theme overrides
+ *  below redefine the same vars inside their .theme-X scope.
+ * ─────────────────────────────────────────────────────────── */
+:root {
+  --brand-50:  var(--color-emerald-50);
+  --brand-100: var(--color-emerald-100);
+  --brand-200: var(--color-emerald-200);
+  --brand-300: var(--color-emerald-300);
+  --brand-400: var(--color-emerald-400);
+  --brand-500: var(--color-emerald-500);
+  --brand-600: var(--color-emerald-600);
+  --brand-700: var(--color-emerald-700);
+  --brand-800: var(--color-emerald-800);
+  --brand-900: var(--color-emerald-900);
+  --brand-950: var(--color-emerald-950);
+}
+
+/* ─── Theme overrides ────────────────────────────────────────
+ *  .theme-emerald is redundant (matches :root defaults) but
+ *  included so the editor's preview pane can explicitly opt-in
+ *  to emerald even inside a wrapping theme-rose / theme-blue
+ *  page context.
+ * ─────────────────────────────────────────────────────────── */
+
+.theme-emerald {
+  --brand-50:  var(--color-emerald-50);
+  --brand-100: var(--color-emerald-100);
+  --brand-200: var(--color-emerald-200);
+  --brand-300: var(--color-emerald-300);
+  --brand-400: var(--color-emerald-400);
+  --brand-500: var(--color-emerald-500);
+  --brand-600: var(--color-emerald-600);
+  --brand-700: var(--color-emerald-700);
+  --brand-800: var(--color-emerald-800);
+  --brand-900: var(--color-emerald-900);
+  --brand-950: var(--color-emerald-950);
+}
+
+.theme-rose {
+  --brand-50:  var(--color-rose-50);
+  --brand-100: var(--color-rose-100);
+  --brand-200: var(--color-rose-200);
+  --brand-300: var(--color-rose-300);
+  --brand-400: var(--color-rose-400);
+  --brand-500: var(--color-rose-500);
+  --brand-600: var(--color-rose-600);
+  --brand-700: var(--color-rose-700);
+  --brand-800: var(--color-rose-800);
+  --brand-900: var(--color-rose-900);
+  --brand-950: var(--color-rose-950);
+}
+
+.theme-blue {
+  --brand-50:  var(--color-blue-50);
+  --brand-100: var(--color-blue-100);
+  --brand-200: var(--color-blue-200);
+  --brand-300: var(--color-blue-300);
+  --brand-400: var(--color-blue-400);
+  --brand-500: var(--color-blue-500);
+  --brand-600: var(--color-blue-600);
+  --brand-700: var(--color-blue-700);
+  --brand-800: var(--color-blue-800);
+  --brand-900: var(--color-blue-900);
+  --brand-950: var(--color-blue-950);
+}
+
+.theme-amber {
+  --brand-50:  var(--color-amber-50);
+  --brand-100: var(--color-amber-100);
+  --brand-200: var(--color-amber-200);
+  --brand-300: var(--color-amber-300);
+  --brand-400: var(--color-amber-400);
+  --brand-500: var(--color-amber-500);
+  --brand-600: var(--color-amber-600);
+  --brand-700: var(--color-amber-700);
+  --brand-800: var(--color-amber-800);
+  --brand-900: var(--color-amber-900);
+  --brand-950: var(--color-amber-950);
+}
+
+/* ─── Custom hex color ─────────────────────────────────────────
+ *  When theme === "custom", the layout sets an inline
+ *  `--brand-custom: #xxxxxx` on this scope; the rule below
+ *  derives the full 50–950 ramp at runtime via color-mix() so
+ *  every existing `bg-brand-*` / `text-brand-*` class still
+ *  works without code changes. Falls back to emerald-500 if no
+ *  custom hex is set.
+ * ─────────────────────────────────────────────────────────── */
+.theme-custom {
+  --brand-500: var(--brand-custom, var(--color-emerald-500));
+  --brand-50:  color-mix(in oklab, var(--brand-500), white 92%);
+  --brand-100: color-mix(in oklab, var(--brand-500), white 85%);
+  --brand-200: color-mix(in oklab, var(--brand-500), white 70%);
+  --brand-300: color-mix(in oklab, var(--brand-500), white 50%);
+  --brand-400: color-mix(in oklab, var(--brand-500), white 25%);
+  --brand-600: color-mix(in oklab, var(--brand-500), black 12%);
+  --brand-700: color-mix(in oklab, var(--brand-500), black 28%);
+  --brand-800: color-mix(in oklab, var(--brand-500), black 44%);
+  --brand-900: color-mix(in oklab, var(--brand-500), black 60%);
+  --brand-950: color-mix(in oklab, var(--brand-500), black 75%);
 }
 
 :root {

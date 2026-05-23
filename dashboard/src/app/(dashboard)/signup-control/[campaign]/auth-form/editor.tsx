@@ -1,19 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { EditorShell, Section, FieldRow } from "../components/editor-shell";
-import { TextField, TextAreaField } from "../components/fields";
-import { CustomSectionsEditor } from "../components/custom-sections-editor";
-import { HistoryPanel } from "../components/history-panel";
-import { savePageContent } from "../actions";
+import { EditorShell, Section, FieldRow } from "../../components/editor-shell";
+import { TextField, TextAreaField } from "../../components/fields";
+import { CustomSectionsEditor } from "../../components/custom-sections-editor";
+import { HistoryPanel } from "../../components/history-panel";
+import { savePageContent } from "../../actions";
 import type { AuthFormContent, StylesMap } from "@/lib/cms-schemas";
 
 export function AuthFormEditor({
   initial,
   updatedAt,
+  campaign,
+  campaignLabel,
 }: {
   initial: AuthFormContent;
   updatedAt: string | null;
+  campaign: string;
+  campaignLabel: string;
 }) {
   const [c, setC] = useState<AuthFormContent>(initial);
 
@@ -32,12 +36,14 @@ export function AuthFormEditor({
 
   return (
     <EditorShell
-      title="Login & Signup Form"
-      livePath="/creator/signup"
+      title={`${campaignLabel} · Login & Signup Form`}
+      livePath={`/creator/${campaign}/signup`}
+      backHref={`/signup-control/${campaign}`}
+      backLabel={`Back to ${campaignLabel} editors`}
       baseline={initial}
       value={c}
       onChange={setC}
-      onSave={() => savePageContent("auth-form", c)}
+      onSave={() => savePageContent(campaign, "auth-form", c)}
     >
       {updatedAt && (
         <p className="text-[11px] text-muted-foreground -mt-1">
@@ -125,12 +131,9 @@ export function AuthFormEditor({
         </FieldRow>
       </Section>
 
-      <CustomSectionsEditor
-        value={c.customSections}
-        onChange={(v) => setC((prev) => ({ ...prev, customSections: v }))}
-      />
+      <CustomSectionsEditor value={c.customSections} onChange={(v) => setC((prev) => ({ ...prev, customSections: v }))} />
 
-      <HistoryPanel<AuthFormContent> slug="auth-form" onRestore={setC} />
+      <HistoryPanel<AuthFormContent> slug="auth-form" campaign={campaign} onRestore={setC} />
     </EditorShell>
   );
 }

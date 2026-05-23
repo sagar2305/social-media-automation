@@ -3,6 +3,17 @@ import { linkCreatorAccountAfterSignup } from "@/lib/link-creator";
 import { createClient } from "@/lib/supabase";
 
 /**
+ * Slug-shape regex matches what /campaigns/new's slugify() produces.
+ * We don't use the static isCampaign() allowlist here because campaigns
+ * added via the DB-only flow would otherwise get coerced back to
+ * "minutewise" on the relink hop. See callback/route.ts for the same
+ * helper duplicated.
+ */
+function isValidCampaignSlug(value: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{0,59}$/.test(value);
+}
+
+/**
  * Post-login relink endpoint. Used when a creator signs in with
  * password (the email-confirmation flow doesn't run because the user
  * already exists). Idempotent — if already linked, no-ops and routes
@@ -19,6 +30,10 @@ import { createClient } from "@/lib/supabase";
 export async function GET(request: Request) {
   const { origin, searchParams } = new URL(request.url);
   const fromCreator = searchParams.get("from") === "creator";
+  // Preserve the originating campaign so a Roast AI / Call Recorder
+  // sign-in that fails the creator gate returns to the correct login.
+  const campaignParam = searchParams.get("campaign");
+  const campaign = campaignParam && isValidCampaignSlug(campaignParam) ? campaignParam : "minutewise";
 
   const link = await linkCreatorAccountAfterSignup().catch((e) => {
     console.error(`[relink] linker threw: ${e instanceof Error ? e.message : String(e)}`);
@@ -50,7 +65,7 @@ export async function GET(request: Request) {
     if (fromCreator) {
       await supabase.auth.signOut();
       return NextResponse.redirect(
-        `${origin}/creator/login?reason=not-a-creator`,
+        `${origin}/creator/${campaign}/login?reason=not-a-creator`,
       );
     }
   }

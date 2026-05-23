@@ -45,34 +45,49 @@ export default async function CreatorLayout({
       />
 
       <header className="border-b border-border/40 bg-background/70 backdrop-blur-md sticky top-0 z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-          <Link href="/creator" className="flex items-center gap-3 group min-w-0">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-sm shrink-0">
-              {initials ? (
-                <span className="text-xs font-semibold tracking-wide">{initials}</span>
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold text-sm tracking-tight leading-none truncate">
-                {creator.display_name || creator.legal_name}
-              </p>
-              <p className="text-[10px] uppercase tracking-widest text-emerald-700/80 dark:text-emerald-400/70 font-medium mt-1">
-                Creator portal
-              </p>
-            </div>
-          </Link>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          {/* Top row: avatar + name on the left, log-out on the right.
+              On tablet+, the nav tabs sit on this same row (between
+              the two). On phone they wrap to row 2 below. */}
+          <div className="h-14 flex items-center justify-between gap-3">
+            <Link href="/creator" className="flex items-center gap-3 group min-w-0">
+              <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                {initials ? (
+                  <span className="text-xs font-semibold tracking-wide">{initials}</span>
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-sm tracking-tight leading-none truncate">
+                  {creator.display_name || creator.legal_name}
+                </p>
+                <p className="text-[10px] uppercase tracking-widest text-emerald-700/80 dark:text-emerald-400/70 font-medium mt-1">
+                  Creator portal
+                </p>
+              </div>
+            </Link>
 
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Nav tabs in the top row on tablet+; hidden on phone
+                  where they live in their own row below. */}
+              <div className="hidden sm:flex items-center gap-2">
+                <CreatorNav />
+                <span className="w-px h-5 bg-border/60 mx-1" />
+              </div>
+              <LogoutButton />
+            </div>
+          </div>
+
+          {/* Mobile-only second row: nav tabs with horizontal scroll
+              if they ever outgrow the viewport. */}
+          <div className="sm:hidden -mx-4 px-4 pb-2 overflow-x-auto">
             <CreatorNav />
-            <span className="hidden sm:block w-px h-5 bg-border/60 mx-1" />
-            <LogoutButton />
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
         {children}
       </main>
 

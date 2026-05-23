@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { CAMPAIGNS } from "@/lib/cms-schemas";
+
+const CAMPAIGN_SET: ReadonlySet<string> = new Set(CAMPAIGNS);
 
 const publicRoutes = [
   "/welcome",
@@ -7,10 +10,28 @@ const publicRoutes = [
   "/signup",
   "/auth/callback",
   "/auth/relink",
+  // Legacy single-campaign creator URLs — kept public because they
+  // 307-redirect to the per-campaign Minutewise equivalent below.
   "/creator/login",
   "/creator/signup",
   "/creator/brief",
   "/creator/setup",
+];
+
+/**
+ * Patterns for public, pre-auth pages whose path varies by campaign
+ * (or any other dynamic segment). The proxy treats anything matching
+ * one of these as unauthenticated — same as a literal publicRoutes
+ * entry. Keep these tight: each regex anchors the full path so an
+ * attacker can't smuggle through a nested admin route by tacking the
+ * suffix on.
+ */
+const publicRoutePatterns: RegExp[] = [
+  // Per-campaign creator onboarding pages
+  /^\/creator\/[a-z0-9-]+\/brief\/?$/,
+  /^\/creator\/[a-z0-9-]+\/setup\/tiktok\/?$/,
+  /^\/creator\/[a-z0-9-]+\/login\/?$/,
+  /^\/creator\/[a-z0-9-]+\/signup\/?$/,
 ];
 
 export default async function proxy(request: NextRequest) {
@@ -19,6 +40,7 @@ export default async function proxy(request: NextRequest) {
   // Allow public routes and shared dashboards
   if (
     publicRoutes.some((r) => pathname === r || pathname.startsWith(r + "/")) ||
+    publicRoutePatterns.some((re) => re.test(pathname)) ||
     pathname.startsWith("/share/")
   ) {
     return NextResponse.next();
@@ -62,10 +84,29 @@ export default async function proxy(request: NextRequest) {
 
   if (!user) {
     const url = request.nextUrl.clone();
-    // Anonymous creator-portal hits go straight to creator login — they
-    // already self-identified by URL. Everyone else gets the chooser at
-    // /welcome so we never assume "anonymous = staff" by default.
-    url.pathname = isCreatorPortal ? "/creator/login" : "/welcome";
+    //
+    // Routing the unauthed redirect:
+    //
+    //   • /creator/<known-campaign>/...  → /creator/<campaign>/login
+    //     (preserve campaign so a Roast AI applicant doesn't get
+    //     pushed onto the Minutewise login form)
+    //
+    //   • /creator/payments,/posts,/... (creator dashboard pages, no
+    //     campaign segment), bare /creator, or any /creator path whose
+    //     first segment isn't a recognised campaign → /welcome/campaign
+    //     (chooser; matches requireCreator()'s server-side redirect)
+    //
+    //   • everything else → /welcome (the staff-or-creator chooser)
+    //
+    if (isCreatorPortal) {
+      const campaignMatch = pathname.match(/^\/creator\/([a-z0-9-]+)(\/|$)/);
+      const campaignSeg = campaignMatch?.[1];
+      url.pathname = campaignSeg && CAMPAIGN_SET.has(campaignSeg)
+        ? `/creator/${campaignSeg}/login`
+        : "/welcome/campaign";
+    } else {
+      url.pathname = "/welcome";
+    }
     return NextResponse.redirect(url);
   }
 

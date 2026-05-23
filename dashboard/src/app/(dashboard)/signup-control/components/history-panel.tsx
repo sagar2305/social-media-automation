@@ -21,12 +21,14 @@ import type { CmsSlug } from "@/lib/cms-schemas";
 
 export function HistoryPanel<T>({
   slug,
+  campaign = "minutewise",
   // Load a snapshot back into the editor form. The parent owns the
   // form state and decides whether to keep it (admin clicks Save) or
   // discard (admin clicks Revert).
   onRestore,
 }: {
   slug: CmsSlug;
+  campaign?: string;
   onRestore: (content: T) => void;
 }) {
   const [versions, setVersions] = useState<VersionRow[] | null>(null);
@@ -36,7 +38,7 @@ export function HistoryPanel<T>({
   async function refresh() {
     setError(null);
     try {
-      const res = await listVersions(slug);
+      const res = await listVersions(campaign, slug);
       if (res.ok) setVersions(res.data);
       else setError(res.error);
     } catch (e) {
@@ -46,21 +48,32 @@ export function HistoryPanel<T>({
 
   useEffect(() => {
     // Intentional fetch-on-mount pattern. The async refresh() calls
-    // setState after `await listVersions(slug)` — that's the standard
-    // "load data when the component mounts / slug changes" idiom. The
-    // React 19 lint rule flags this as a possible cascading render,
-    // but the cascade is bounded to a single re-render per slug change.
+    // setState after `await listVersions(campaign, slug)` — that's the
+    // standard "load data when the component mounts / key changes"
+    // idiom. The React 19 lint rule flags this as a possible cascading
+    // render, but the cascade is bounded to a single re-render per
+    // (campaign, slug) change.
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [slug, campaign]);
 
   async function handleRestore(id: number) {
     if (!confirm("Load this version back into the form? You still need to click Save to commit it.")) return;
     setRestoring(id);
     try {
-      const res = await getVersionContent(id);
+      // Pass (campaign, slug) so the server can reject a version id
+      // that belongs to a different (campaign, slug) pair. Defense in
+      // depth: even if the user managed to inject a foreign id, the
+      // server won't return the content.
+      const res = await getVersionContent(id, campaign, slug);
       if (!res.ok) {
         setError(res.error);
+        return;
+      }
+      // Belt-and-braces client check — the server should have already
+      // rejected a mismatched row.
+      if (res.data.slug !== slug) {
+        setError("Version slug does not match the current editor. Refresh and try again.");
         return;
       }
       onRestore(res.data.content as T);
