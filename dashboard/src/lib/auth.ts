@@ -28,6 +28,18 @@ export async function requireAuth() {
   return user;
 }
 
+/**
+ * Lightweight viewer check for the inline CMS editor. Returns the
+ * minimum info needed to decide whether to render edit affordances on
+ * a public creator page. Never throws / redirects — safe to call from
+ * any route, including anonymous ones.
+ */
+export async function getViewerForCms(): Promise<{ isAdmin: boolean; email: string | null }> {
+  const user = await getUser();
+  if (!user) return { isAdmin: false, email: null };
+  return { isAdmin: user.role === "admin", email: user.email || null };
+}
+
 export async function requireRole(minRole: "admin" | "editor" | "viewer") {
   const user = await requireAuth();
   // 'creator' is a parallel role (their own portal at /creator) — not part

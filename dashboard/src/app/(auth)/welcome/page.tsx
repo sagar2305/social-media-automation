@@ -1,38 +1,38 @@
 /**
  * /welcome — portal chooser.
  *
- * The first stop for any anonymous visitor. Two cards: "I'm a Creator"
- * (creator portal at /creator/*) and "I'm on the Team" (staff dashboard
- * at /). Each routes to the right login form, so a creator never sees
- * the admin login (and vice versa).
- *
- * Design intent: the chooser should make the two audiences feel like
- * different products — visible from the colour and copy. Creator card
- * leans emerald (money / partnership), staff card leans slate (tools).
+ * Two cards: "I'm a Creator" and "I'm on the Team". Content + styling
+ * fetched from the CMS. Admins edit at /signup-control/welcome.
  */
 
 import Link from "next/link";
 import { Sparkles, ShieldCheck, ChevronRight } from "lucide-react";
+import { getPageContent } from "@/lib/cms";
+import { CustomSections } from "@/lib/cms-render";
+import { Editable } from "@/components/cms-inline/editable";
 
-export default function WelcomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function WelcomePage() {
+  const c = await getPageContent("welcome");
+  // The <Editable> wrappers here serve only to apply per-text styles
+  // from the CMS styles map to public visitors. isAdmin is hard-false
+  // so no pencils/edit UI ever render. Editing lives at
+  // /signup-control/welcome.
   return (
     <div className="w-full max-w-3xl px-4 space-y-10">
       <div className="text-center space-y-2">
         <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight">
-          MinuteWise
+          <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["hero", "title"]} value={c.hero.title} kind="text">{c.hero.title}</Editable>
         </h1>
         <p className="text-muted-foreground text-base">
-          Choose how you&apos;re signing in.
+          <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["hero", "subtitle"]} value={c.hero.subtitle} kind="text">{c.hero.subtitle}</Editable>
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Creator card — emerald accent, partner tone. Now routes through
-            /creator/brief so first-time visitors read the internship brief
-            before signing up. Returning creators tap "Sign in" on the brief
-            page itself to reach /creator/login. */}
         <Link
-          href="/creator/brief"
+          href={c.creatorCard.href}
           className="group relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-emerald-500/[0.02] hover:from-emerald-500/[0.12] hover:to-emerald-500/[0.04] transition-colors p-6 sm:p-7 flex flex-col gap-3"
         >
           <div className="flex items-center justify-between">
@@ -42,20 +42,20 @@ export default function WelcomePage() {
             <ChevronRight className="h-5 w-5 text-emerald-600/60 dark:text-emerald-400/60 group-hover:translate-x-1 transition-transform" />
           </div>
           <div>
-            <p className="text-lg font-semibold">I&apos;m a Creator</p>
+            <p className="text-lg font-semibold">
+              <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["creatorCard", "title"]} value={c.creatorCard.title} kind="text">{c.creatorCard.title}</Editable>
+            </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Track your earnings, see payment status, and review the posts
-              attributed to you.
+              <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["creatorCard", "body"]} value={c.creatorCard.body} kind="textarea">{c.creatorCard.body}</Editable>
             </p>
           </div>
           <p className="text-[11px] uppercase tracking-widest text-emerald-700/80 dark:text-emerald-400/80 font-medium mt-auto">
-            Creator portal →
+            <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["creatorCard", "eyebrow"]} value={c.creatorCard.eyebrow} kind="text">{c.creatorCard.eyebrow}</Editable>
           </p>
         </Link>
 
-        {/* Staff card — neutral, tooling tone. */}
         <Link
-          href="/login"
+          href={c.staffCard.href}
           className="group relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-muted/40 to-muted/0 hover:from-muted/60 hover:to-muted/10 transition-colors p-6 sm:p-7 flex flex-col gap-3"
         >
           <div className="flex items-center justify-between">
@@ -65,25 +65,24 @@ export default function WelcomePage() {
             <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
           </div>
           <div>
-            <p className="text-lg font-semibold">I&apos;m on the Team</p>
+            <p className="text-lg font-semibold">
+              <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["staffCard", "title"]} value={c.staffCard.title} kind="text">{c.staffCard.title}</Editable>
+            </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Run campaigns, manage creators, approve payouts, and operate the
-              automation.
+              <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["staffCard", "body"]} value={c.staffCard.body} kind="textarea">{c.staffCard.body}</Editable>
             </p>
           </div>
           <p className="text-[11px] uppercase tracking-widest text-muted-foreground font-medium mt-auto">
-            Staff dashboard →
+            <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["staffCard", "eyebrow"]} value={c.staffCard.eyebrow} kind="text">{c.staffCard.eyebrow}</Editable>
           </p>
         </Link>
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        Not sure?{" "}
-        <span className="text-foreground">
-          Pick &quot;Creator&quot; if you&apos;ve been invited to be paid for
-          posts.
-        </span>
+        <Editable styles={c.styles} isAdmin={false} slug="welcome" path={["footnote"]} value={c.footnote} kind="textarea">{c.footnote}</Editable>
       </p>
+
+      <CustomSections list={c.customSections} />
     </div>
   );
 }

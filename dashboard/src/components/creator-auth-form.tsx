@@ -3,16 +3,14 @@
 /**
  * Unified Sign In / Sign Up form for the creator portal.
  *
- * Replaces the old separate /creator/login + /creator/signup screens
- * with a single tabbed flow that matches the brief at
- * creators-corner.netlify.app. The Sign Up tab collects internship-
- * application metadata (TikTok credentials, social platforms, etc.) —
- * those fields ride into Supabase user_metadata via auth.signUp's
- * options.data, so the backend team can later sync them to the
- * `creators` row without breaking the existing auth flow.
+ * All user-visible copy (heading, subheading, badge, tab labels, field
+ * labels, placeholders, success state) comes from the CMS via the
+ * `copy` prop. The two route pages (/creator/login, /creator/signup)
+ * fetch that copy and pass it in. Admins can edit every label from
+ * /signup-control/auth-form.
  *
- * Tab navigation rewrites the URL via router.replace so the route stays
- * canonical (/creator/login vs /creator/signup) and bookmarkable.
+ * Behavioural pieces (Supabase auth.signIn / auth.signUp, validation,
+ * router redirects) stay hard-coded — only the visible text is editable.
  */
 
 import { useState } from "react";
@@ -20,11 +18,22 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
-import { Eye, EyeOff, CheckCircle2, ChevronLeft, Sparkles, AlertTriangle, Mail, Music2, Video, Camera, Users } from "lucide-react";
+import {
+  Eye, EyeOff, CheckCircle2, ChevronLeft, Sparkles, AlertTriangle, Mail,
+  Music2, Video, Camera, Users,
+} from "lucide-react";
+import type { AuthFormContent } from "@/lib/cms-schemas";
+import { Editable } from "@/components/cms-inline/editable";
 
 type Tab = "signin" | "signup";
 
-export function CreatorAuthForm({ defaultTab }: { defaultTab: Tab }) {
+export function CreatorAuthForm({
+  defaultTab,
+  copy,
+}: {
+  defaultTab: Tab;
+  copy: AuthFormContent;
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(defaultTab);
 
@@ -41,12 +50,11 @@ export function CreatorAuthForm({ defaultTab }: { defaultTab: Tab }) {
         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
-        Back to portal chooser
+        <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["backLink"]} value={copy.backLink} kind="text">{copy.backLink}</Editable>
       </Link>
 
       <div className="rounded-2xl border border-border bg-card shadow-sm">
         <div className="p-7 sm:p-9 space-y-7">
-          {/* BrewApps brand mark — uses the official PNG (includes wordmark) */}
           <div className="flex justify-center">
             <Image
               src="/brewapps-logo.png"
@@ -58,27 +66,33 @@ export function CreatorAuthForm({ defaultTab }: { defaultTab: Tab }) {
             />
           </div>
 
-          {/* Hero */}
           <div className="text-center space-y-2.5">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Join the Minutewise Team
+              <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["hero", "heading"]} value={copy.hero.heading} kind="text">{copy.hero.heading}</Editable>
             </h1>
             <p className="text-sm text-muted-foreground">
-              Apply for the Minutewise internship program
+              <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["hero", "subheading"]} value={copy.hero.subheading} kind="text">{copy.hero.subheading}</Editable>
             </p>
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-xs font-medium">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium">
               <Sparkles className="h-3 w-3" />
-              Minutewise Internship
+              <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["hero", "badge"]} value={copy.hero.badge} kind="text">{copy.hero.badge}</Editable>
             </span>
           </div>
 
-          {/* Tab switcher */}
           <div className="flex border-b border-border">
-            <TabButton active={tab === "signin"} onClick={() => switchTab("signin")} label="Sign In" />
-            <TabButton active={tab === "signup"} onClick={() => switchTab("signup")} label="Sign Up" />
+            <TabButton
+              active={tab === "signin"}
+              onClick={() => switchTab("signin")}
+              label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["tabs", "signIn"]} value={copy.tabs.signIn} kind="text">{copy.tabs.signIn}</Editable>}
+            />
+            <TabButton
+              active={tab === "signup"}
+              onClick={() => switchTab("signup")}
+              label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["tabs", "signUp"]} value={copy.tabs.signUp} kind="text">{copy.tabs.signUp}</Editable>}
+            />
           </div>
 
-          {tab === "signin" ? <SignInForm /> : <SignUpForm />}
+          {tab === "signin" ? <SignInForm copy={copy} /> : <SignUpForm copy={copy} />}
         </div>
       </div>
     </div>
@@ -87,7 +101,7 @@ export function CreatorAuthForm({ defaultTab }: { defaultTab: Tab }) {
 
 /* ─── Sign In ─────────────────────────────────────────────────── */
 
-function SignInForm() {
+function SignInForm({ copy }: { copy: AuthFormContent }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reason = searchParams.get("reason");
@@ -103,7 +117,6 @@ function SignInForm() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
     const sb = createBrowserSupabase();
     const { error: err } = await sb.auth.signInWithPassword({ email, password });
     if (err) {
@@ -111,7 +124,6 @@ function SignInForm() {
       setLoading(false);
       return;
     }
-    // Existing creator-link flow (same as the old login page).
     router.push("/auth/relink?from=creator");
     router.refresh();
   }
@@ -139,8 +151,6 @@ function SignInForm() {
     setResendStatus("sent");
   }
 
-  // Map of reason codes (set by /auth/callback and /auth/relink) to a
-  // friendly explanation + whether the resend-email action should show.
   const banner = reason ? reasonBanner(reason) : null;
 
   return (
@@ -179,18 +189,18 @@ function SignInForm() {
           )}
         </div>
       )}
-      <Field label="Personal Email Address" required>
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signIn", "emailLabel"]} value={copy.signIn.emailLabel} kind="text">{copy.signIn.emailLabel}</Editable>} required>
         <TextInput
           type="email"
-          placeholder="Enter your personal email"
+          placeholder={copy.signIn.emailPlaceholder}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
         />
       </Field>
-      <Field label="Password" required>
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signIn", "passwordLabel"]} value={copy.signIn.passwordLabel} kind="text">{copy.signIn.passwordLabel}</Editable>} required>
         <PasswordInput
-          placeholder="Enter your password"
+          placeholder={copy.signIn.passwordPlaceholder}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           show={showPw}
@@ -200,7 +210,9 @@ function SignInForm() {
       </Field>
       {error && <ErrorRow>{error}</ErrorRow>}
       <PrimaryButton disabled={loading}>
-        {loading ? "Signing in…" : "Sign In"}
+        {loading
+          ? <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signIn", "submitLoading"]} value={copy.signIn.submitLoading} kind="text">{copy.signIn.submitLoading}</Editable>
+          : <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signIn", "submitIdle"]} value={copy.signIn.submitIdle} kind="text">{copy.signIn.submitIdle}</Editable>}
       </PrimaryButton>
     </form>
   );
@@ -283,7 +295,7 @@ const EMPTY_FORM: SignupFormState = {
   dashboardPassword: "",
 };
 
-function SignUpForm() {
+function SignUpForm({ copy }: { copy: AuthFormContent }) {
   const [form, setForm] = useState<SignupFormState>(EMPTY_FORM);
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -312,9 +324,6 @@ function SignUpForm() {
       password: form.dashboardPassword,
       options: {
         emailRedirectTo: `${origin}/auth/callback?from=creator`,
-        // All application fields ride into Supabase user_metadata so the
-        // backend team can sync them onto the creators row later without
-        // a schema change here.
         data: {
           full_name: form.fullName,
           phone_number: form.phone,
@@ -348,10 +357,12 @@ function SignUpForm() {
         <div className="h-12 w-12 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 flex items-center justify-center mx-auto">
           <CheckCircle2 className="h-6 w-6" strokeWidth={2.25} />
         </div>
-        <h3 className="text-lg font-semibold">Check your email</h3>
+        <h3 className="text-lg font-semibold">
+          <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "successHeading"]} value={copy.signUp.successHeading} kind="text">{copy.signUp.successHeading}</Editable>
+        </h3>
         <p className="text-sm text-muted-foreground">
-          We sent a confirmation link to <strong>{form.personalEmail}</strong>.
-          Click it to activate your account.
+          <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "successBodyPrefix"]} value={copy.signUp.successBodyPrefix} kind="text">{copy.signUp.successBodyPrefix}</Editable> <strong>{form.personalEmail}</strong>.
+          {" "}<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "successBodySuffix"]} value={copy.signUp.successBodySuffix} kind="text">{copy.signUp.successBodySuffix}</Editable>
         </p>
       </div>
     );
@@ -359,47 +370,44 @@ function SignUpForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <Field label="Full Name" required>
-        <TextInput placeholder="Enter your full name" required value={form.fullName} onChange={setField("fullName")} />
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "fullNameLabel"]} value={copy.signUp.fullNameLabel} kind="text">{copy.signUp.fullNameLabel}</Editable>} required>
+        <TextInput placeholder={copy.signUp.fullNamePlaceholder} required value={form.fullName} onChange={setField("fullName")} />
       </Field>
-      <Field label="Personal Email Address" required>
-        <TextInput type="email" placeholder="Enter your personal email" required value={form.personalEmail} onChange={setField("personalEmail")} />
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "emailLabel"]} value={copy.signUp.emailLabel} kind="text">{copy.signUp.emailLabel}</Editable>} required>
+        <TextInput type="email" placeholder={copy.signUp.emailPlaceholder} required value={form.personalEmail} onChange={setField("personalEmail")} />
       </Field>
-      <Field label="Phone Number">
-        <TextInput type="tel" placeholder="Enter your phone number" value={form.phone} onChange={setField("phone")} />
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "phoneLabel"]} value={copy.signUp.phoneLabel} kind="text">{copy.signUp.phoneLabel}</Editable>}>
+        <TextInput type="tel" placeholder={copy.signUp.phonePlaceholder} value={form.phone} onChange={setField("phone")} />
       </Field>
-      <Field label="WhatsApp Number">
-        <TextInput type="tel" placeholder="Enter your WhatsApp number" value={form.whatsapp} onChange={setField("whatsapp")} />
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "whatsappLabel"]} value={copy.signUp.whatsappLabel} kind="text">{copy.signUp.whatsappLabel}</Editable>}>
+        <TextInput type="tel" placeholder={copy.signUp.whatsappPlaceholder} value={form.whatsapp} onChange={setField("whatsapp")} />
       </Field>
 
-      {/* Applying For — auto-selected card */}
       <div>
-        <p className="text-sm font-medium mb-1.5">Applying For</p>
-        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/[0.06] p-3 flex items-center gap-3">
-          <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 text-xs font-semibold whitespace-nowrap">
-            Minutewise Team
+        <p className="text-sm font-medium mb-1.5"><Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForLabel"]} value={copy.signUp.applyingForLabel} kind="text">{copy.signUp.applyingForLabel}</Editable></p>
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-3 flex items-center gap-3">
+          <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-xs font-semibold whitespace-nowrap">
+            <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForTeamLabel"]} value={copy.signUp.applyingForTeamLabel} kind="text">{copy.signUp.applyingForTeamLabel}</Editable>
           </span>
-          <p className="text-xs text-indigo-700/90 dark:text-indigo-300/90 leading-snug">
-            You&apos;re applying for the Minutewise internship program
+          <p className="text-xs text-emerald-700/90 dark:text-emerald-300/90 leading-snug">
+            <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForBody"]} value={copy.signUp.applyingForBody} kind="text">{copy.signUp.applyingForBody}</Editable>
           </p>
         </div>
         <p className="text-[11px] text-muted-foreground mt-1">
-          This was automatically selected from your referral link
+          <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForFootnote"]} value={copy.signUp.applyingForFootnote} kind="text">{copy.signUp.applyingForFootnote}</Editable>
         </p>
       </div>
 
       <div className="pt-3 border-t border-border space-y-1">
-        <h3 className="text-sm font-semibold">Social Media Platform Credentials</h3>
-        <p className="text-xs text-muted-foreground">
-          Provide login details for each platform we&apos;ll post to
-        </p>
+        <h3 className="text-sm font-semibold"><Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "platformsHeading"]} value={copy.signUp.platformsHeading} kind="text">{copy.signUp.platformsHeading}</Editable></h3>
+        <p className="text-xs text-muted-foreground"><Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "platformsHint"]} value={copy.signUp.platformsHint} kind="text">{copy.signUp.platformsHint}</Editable></p>
       </div>
 
       <PlatformGroup
         icon={<Music2 className="h-3.5 w-3.5" />}
         name="TikTok"
         tint="rose"
-        hint="The TikTok account you created following our setup guide"
+        hint={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "tiktokHint"]} value={copy.signUp.tiktokHint} kind="text">{copy.signUp.tiktokHint}</Editable>}
       >
         <Field label="Username">
           <TextInput placeholder="@username" value={form.tiktokUsername} onChange={setField("tiktokUsername")} />
@@ -415,11 +423,7 @@ function SignUpForm() {
         </Field>
       </PlatformGroup>
 
-      <PlatformGroup
-        icon={<Video className="h-3.5 w-3.5" />}
-        name="YouTube"
-        tint="red"
-      >
+      <PlatformGroup icon={<Video className="h-3.5 w-3.5" />} name="YouTube" tint="red">
         <Field label="Page Gmail ID">
           <TextInput type="email" placeholder="Gmail linked to your YouTube page" value={form.youtubeGmail} onChange={setField("youtubeGmail")} />
         </Field>
@@ -428,11 +432,7 @@ function SignUpForm() {
         </Field>
       </PlatformGroup>
 
-      <PlatformGroup
-        icon={<Camera className="h-3.5 w-3.5" />}
-        name="Instagram"
-        tint="pink"
-      >
+      <PlatformGroup icon={<Camera className="h-3.5 w-3.5" />} name="Instagram" tint="pink">
         <Field label="Username">
           <TextInput placeholder="@username" value={form.instagramUsername} onChange={setField("instagramUsername")} />
         </Field>
@@ -441,19 +441,15 @@ function SignUpForm() {
         </Field>
       </PlatformGroup>
 
-      <PlatformGroup
-        icon={<Users className="h-3.5 w-3.5" />}
-        name="Facebook"
-        tint="blue"
-      >
+      <PlatformGroup icon={<Users className="h-3.5 w-3.5" />} name="Facebook" tint="blue">
         <Field label="Page URL">
           <TextInput type="url" placeholder="https://facebook.com/yourpage" value={form.facebookUrl} onChange={setField("facebookUrl")} />
         </Field>
       </PlatformGroup>
 
-      <Field label="Dashboard Password" required>
+      <Field label={<Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "dashboardPasswordLabel"]} value={copy.signUp.dashboardPasswordLabel} kind="text">{copy.signUp.dashboardPasswordLabel}</Editable>} required>
         <PasswordInput
-          placeholder="Create a password for the dashboard"
+          placeholder={copy.signUp.dashboardPasswordPlaceholder}
           required
           value={form.dashboardPassword}
           onChange={setField("dashboardPassword")}
@@ -465,7 +461,9 @@ function SignUpForm() {
       {error && <ErrorRow>{error}</ErrorRow>}
 
       <PrimaryButton disabled={loading}>
-        {loading ? "Creating account…" : "Create Account"}
+        {loading
+          ? <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "submitLoading"]} value={copy.signUp.submitLoading} kind="text">{copy.signUp.submitLoading}</Editable>
+          : <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "submitIdle"]} value={copy.signUp.submitIdle} kind="text">{copy.signUp.submitIdle}</Editable>}
       </PrimaryButton>
     </form>
   );
@@ -480,7 +478,7 @@ function TabButton({
 }: {
   active: boolean;
   onClick: () => void;
-  label: string;
+  label: React.ReactNode;
 }) {
   return (
     <button
@@ -488,7 +486,7 @@ function TabButton({
       onClick={onClick}
       className={`flex-1 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
         active
-          ? "border-indigo-600 text-indigo-700 dark:text-indigo-400"
+          ? "border-emerald-600 text-emerald-700 dark:text-emerald-400"
           : "border-transparent text-muted-foreground hover:text-foreground"
       }`}
     >
@@ -503,7 +501,7 @@ function Field({
   required,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   hint?: string;
   required?: boolean;
   children: React.ReactNode;
@@ -533,7 +531,7 @@ function PlatformGroup({
   icon: React.ReactNode;
   name: string;
   tint: keyof typeof TINT_CLASSES;
-  hint?: string;
+  hint?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const t = TINT_CLASSES[tint];
@@ -555,7 +553,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/60 transition-shadow"
+      className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-shadow"
     />
   );
 }
@@ -573,7 +571,7 @@ function PasswordInput({
       <input
         {...rest}
         type={show ? "text" : "password"}
-        className="w-full h-10 pl-3 pr-10 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/60 transition-shadow"
+        className="w-full h-10 pl-3 pr-10 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-shadow"
       />
       <button
         type="button"
@@ -598,7 +596,7 @@ function PrimaryButton({
     <button
       type="submit"
       disabled={disabled}
-      className="w-full h-11 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+      className="w-full h-11 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
     >
       {children}
     </button>
