@@ -4,14 +4,15 @@
  * visible <body> markup vs inside <script> tags.
  */
 
-import { cmsDefaults } from "../src/lib/cms-defaults";
+import { defaultsFor } from "../src/lib/cms-defaults";
 
 const TOKEN = process.argv[2];
+const CAMPAIGN = (process.argv[3] ?? "minutewise") as "minutewise" | "roastai" | "call-recorder";
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
 
 if (!TOKEN) {
-  console.error("Usage: tsx scripts/check-intern-handle-visibility.ts <SUPABASE_ACCESS_TOKEN>");
+  console.error("Usage: tsx scripts/check-intern-handle-visibility.ts <SUPABASE_ACCESS_TOKEN> [campaign=minutewise]");
   process.exit(1);
 }
 
@@ -26,17 +27,18 @@ async function runSql(sql: string) {
 
 (async () => {
   const MARK = "@INTERN-HANDLE-CHECK-XYZ";
+  const base = defaultsFor("brief", CAMPAIGN);
   const content = {
-    ...cmsDefaults.brief,
+    ...base,
     internShowcase: {
-      heading: cmsDefaults.brief.internShowcase.heading,
-      subtitle: cmsDefaults.brief.internShowcase.subtitle,
+      heading: base.internShowcase.heading,
+      subtitle: base.internShowcase.subtitle,
       tiles: [{ handle: MARK, youtubeId: "TESTID", tiktokUrl: "https://tiktok.com/x" }],
     },
   };
-  await runSql(`INSERT INTO public.cms_pages (slug, content) VALUES ('brief', $tag$${JSON.stringify(content)}$tag$::jsonb) ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`);
+  await runSql(`INSERT INTO public.cms_pages (campaign, slug, content) VALUES ('${CAMPAIGN}', 'brief', $tag$${JSON.stringify(content)}$tag$::jsonb) ON CONFLICT (campaign, slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`);
 
-  const html = await (await fetch(`${HOST}/creator/brief?_=${Date.now()}`, { cache: "no-store" })).text();
+  const html = await (await fetch(`${HOST}/creator/${CAMPAIGN}/brief?_=${Date.now()}`, { cache: "no-store" })).text();
 
   // Count occurrences in <script> RSC payloads vs everywhere else.
   const scriptRegex = /<script[^>]*>[\s\S]*?<\/script>/g;
@@ -51,6 +53,6 @@ async function runSql(sql: string) {
   if (visible > 0) console.log("✓ Handle IS rendered as visible text.");
   else console.log("✗ Handle is in the data but NOT shown as visible text on the page.");
 
-  await runSql(`DELETE FROM public.cms_pages WHERE slug='brief'; DELETE FROM public.cms_page_versions WHERE slug='brief';`);
+  await runSql(`DELETE FROM public.cms_pages WHERE campaign='${CAMPAIGN}' AND slug='brief'; DELETE FROM public.cms_page_versions WHERE campaign='${CAMPAIGN}' AND slug='brief';`);
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

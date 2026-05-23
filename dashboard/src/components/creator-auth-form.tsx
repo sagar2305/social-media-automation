@@ -30,9 +30,17 @@ type Tab = "signin" | "signup";
 export function CreatorAuthForm({
   defaultTab,
   copy,
+  campaign = "minutewise",
 }: {
   defaultTab: Tab;
   copy: AuthFormContent;
+  /** Which campaign the creator is signing up for. Determines the
+   *  `applying_for` flag stored in auth user_metadata, the URL the
+   *  Sign In/Sign Up tab toggle navigates to, and the campaign that
+   *  flows through to /auth/callback after email confirmation.
+   *  Typed as string so DB-driven campaigns (added via /campaigns/new)
+   *  work without a code change. */
+  campaign?: string;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(defaultTab);
@@ -40,7 +48,9 @@ export function CreatorAuthForm({
   function switchTab(next: Tab) {
     if (next === tab) return;
     setTab(next);
-    router.replace(next === "signin" ? "/creator/login" : "/creator/signup");
+    router.replace(next === "signin"
+      ? `/creator/${campaign}/login`
+      : `/creator/${campaign}/signup`);
   }
 
   return (
@@ -73,7 +83,7 @@ export function CreatorAuthForm({
             <p className="text-sm text-muted-foreground">
               <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["hero", "subheading"]} value={copy.hero.subheading} kind="text">{copy.hero.subheading}</Editable>
             </p>
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-brand-500/10 text-brand-700 dark:text-brand-400 text-xs font-medium">
               <Sparkles className="h-3 w-3" />
               <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["hero", "badge"]} value={copy.hero.badge} kind="text">{copy.hero.badge}</Editable>
             </span>
@@ -92,7 +102,9 @@ export function CreatorAuthForm({
             />
           </div>
 
-          {tab === "signin" ? <SignInForm copy={copy} /> : <SignUpForm copy={copy} />}
+          {tab === "signin"
+            ? <SignInForm copy={copy} campaign={campaign} />
+            : <SignUpForm copy={copy} campaign={campaign} />}
         </div>
       </div>
     </div>
@@ -101,7 +113,7 @@ export function CreatorAuthForm({
 
 /* ─── Sign In ─────────────────────────────────────────────────── */
 
-function SignInForm({ copy }: { copy: AuthFormContent }) {
+function SignInForm({ copy, campaign }: { copy: AuthFormContent; campaign: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reason = searchParams.get("reason");
@@ -124,7 +136,7 @@ function SignInForm({ copy }: { copy: AuthFormContent }) {
       setLoading(false);
       return;
     }
-    router.push("/auth/relink?from=creator");
+    router.push(`/auth/relink?from=creator&campaign=${encodeURIComponent(campaign)}`);
     router.refresh();
   }
 
@@ -141,7 +153,12 @@ function SignInForm({ copy }: { copy: AuthFormContent }) {
     const { error: err } = await sb.auth.resend({
       type: "signup",
       email,
-      options: { emailRedirectTo: `${origin}/auth/callback?from=creator` },
+      options: {
+        // Mirror the campaign through to /auth/callback so a re-issued
+        // confirmation email returns the creator to their own login,
+        // not bare /creator/login (which only resolves to Minutewise).
+        emailRedirectTo: `${origin}/auth/callback?from=creator&campaign=${encodeURIComponent(campaign)}`,
+      },
     });
     if (err) {
       setResendError(err.message);
@@ -167,7 +184,7 @@ function SignInForm({ copy }: { copy: AuthFormContent }) {
           {banner.showResend && (
             <div className="pt-1 pl-6">
               {resendStatus === "sent" ? (
-                <p className="text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1">
+                <p className="text-brand-700 dark:text-brand-400 inline-flex items-center gap-1">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   New confirmation email sent. Check your inbox (and spam).
                 </p>
@@ -295,7 +312,7 @@ const EMPTY_FORM: SignupFormState = {
   dashboardPassword: "",
 };
 
-function SignUpForm({ copy }: { copy: AuthFormContent }) {
+function SignUpForm({ copy, campaign }: { copy: AuthFormContent; campaign: string }) {
   const [form, setForm] = useState<SignupFormState>(EMPTY_FORM);
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -323,12 +340,16 @@ function SignUpForm({ copy }: { copy: AuthFormContent }) {
       email: form.personalEmail,
       password: form.dashboardPassword,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?from=creator`,
+        // `&campaign=<slug>` is read back by /auth/callback so the
+        // confirmation-email landing page returns the creator to
+        // /creator/<campaign>/login instead of dumping every campaign
+        // onto Minutewise.
+        emailRedirectTo: `${origin}/auth/callback?from=creator&campaign=${encodeURIComponent(campaign)}`,
         data: {
           full_name: form.fullName,
           phone_number: form.phone,
           whatsapp_number: form.whatsapp,
-          applying_for: "minutewise",
+          applying_for: campaign,
           tiktok_username: form.tiktokUsername,
           tiktok_password: form.tiktokPassword,
           tiktok_email: form.tiktokEmail,
@@ -354,7 +375,7 @@ function SignUpForm({ copy }: { copy: AuthFormContent }) {
   if (success) {
     return (
       <div className="text-center space-y-3 py-4">
-        <div className="h-12 w-12 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 flex items-center justify-center mx-auto">
+        <div className="h-12 w-12 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-400 flex items-center justify-center mx-auto">
           <CheckCircle2 className="h-6 w-6" strokeWidth={2.25} />
         </div>
         <h3 className="text-lg font-semibold">
@@ -385,11 +406,11 @@ function SignUpForm({ copy }: { copy: AuthFormContent }) {
 
       <div>
         <p className="text-sm font-medium mb-1.5"><Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForLabel"]} value={copy.signUp.applyingForLabel} kind="text">{copy.signUp.applyingForLabel}</Editable></p>
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-3 flex items-center gap-3">
-          <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-xs font-semibold whitespace-nowrap">
+        <div className="rounded-lg border border-brand-500/30 bg-brand-500/[0.06] p-3 flex items-center gap-3">
+          <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-md bg-brand-500/15 text-brand-700 dark:text-brand-400 text-xs font-semibold whitespace-nowrap">
             <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForTeamLabel"]} value={copy.signUp.applyingForTeamLabel} kind="text">{copy.signUp.applyingForTeamLabel}</Editable>
           </span>
-          <p className="text-xs text-emerald-700/90 dark:text-emerald-300/90 leading-snug">
+          <p className="text-xs text-brand-700/90 dark:text-brand-300/90 leading-snug">
             <Editable styles={copy.styles} isAdmin={false} slug="auth-form" path={["signUp", "applyingForBody"]} value={copy.signUp.applyingForBody} kind="text">{copy.signUp.applyingForBody}</Editable>
           </p>
         </div>
@@ -486,7 +507,7 @@ function TabButton({
       onClick={onClick}
       className={`flex-1 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
         active
-          ? "border-emerald-600 text-emerald-700 dark:text-emerald-400"
+          ? "border-brand-600 text-brand-700 dark:text-brand-400"
           : "border-transparent text-muted-foreground hover:text-foreground"
       }`}
     >
@@ -553,7 +574,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-shadow"
+      className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/60 transition-shadow"
     />
   );
 }
@@ -571,7 +592,7 @@ function PasswordInput({
       <input
         {...rest}
         type={show ? "text" : "password"}
-        className="w-full h-10 pl-3 pr-10 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-shadow"
+        className="w-full h-10 pl-3 pr-10 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/60 transition-shadow"
       />
       <button
         type="button"
@@ -596,7 +617,7 @@ function PrimaryButton({
     <button
       type="submit"
       disabled={disabled}
-      className="w-full h-11 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+      className="w-full h-11 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-not-allowed"
     >
       {children}
     </button>

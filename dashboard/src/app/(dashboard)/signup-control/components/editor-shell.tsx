@@ -36,6 +36,10 @@ import { HiddenToggle } from "./fields";
 interface EditorShellProps<T> {
   title: string;
   livePath: string;
+  /** Where the "Back to …" link in the header points. Defaults to /signup-control. */
+  backHref?: string;
+  /** Label for that back link. Defaults to "Back to Signup Control". */
+  backLabel?: string;
   baseline: T;
   value: T;
   onChange: (next: T) => void;
@@ -46,6 +50,8 @@ interface EditorShellProps<T> {
 export function EditorShell<T>({
   title,
   livePath,
+  backHref = "/signup-control",
+  backLabel = "Back to Signup Control",
   baseline,
   value,
   onChange,
@@ -124,11 +130,11 @@ export function EditorShell<T>({
       {/* Header */}
       <header className="space-y-3">
         <Link
-          href="/signup-control"
+          href={backHref}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
-          Back to Signup Control
+          {backLabel}
         </Link>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="space-y-1">

@@ -7,6 +7,7 @@ import { SearchBar } from "@/components/search-bar";
 import { PostDrawerMount } from "@/components/post-drawer-mount";
 import { SupabaseErrorSuppressor } from "@/components/supabase-error-suppressor";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { MobileSidebar } from "@/components/mobile-sidebar";
 
 // CampaignFilter intentionally removed from the header. Per-page
 // filtering is done via the explicit /campaigns/<slug>/* route group
@@ -23,8 +24,8 @@ export default async function DashboardLayout({
 }) {
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-50 w-60 border-r border-border/40 bg-card flex flex-col">
+      {/* Desktop sidebar — hidden below md so the mobile drawer can take over. */}
+      <aside className="hidden md:flex fixed inset-y-0 left-0 z-50 w-60 border-r border-border/40 bg-card flex-col">
         <div className="px-6 py-6">
           <Link href="/" className="block">
             <h1 className="text-xl font-bold tracking-tight text-foreground">
@@ -56,11 +57,37 @@ export default async function DashboardLayout({
         </div>
       </aside>
 
-      {/* Main area */}
-      <div className="flex-1 ml-60 flex flex-col">
+      {/* Main area — sidebar offset only at md+ since the aside is hidden on mobile. */}
+      <div className="flex-1 md:ml-60 flex flex-col">
         <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-xl border-b border-border/40">
-          <div className="flex items-center justify-between h-14 px-8">
-            <SearchBar />
+          <div className="flex items-center justify-between h-14 px-4 sm:px-6 lg:px-8 gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              {/* Hamburger + slide-in drawer for < md. Hosts the same
+                  nav block as the desktop aside so the two surfaces
+                  stay in sync without duplicating link config. */}
+              <MobileSidebar>
+                <nav className="flex-1 px-3 overflow-y-auto">
+                  <Suspense>
+                    <SidebarNav />
+                  </Suspense>
+                </nav>
+                <div className="px-3 pb-4 border-t border-border/40 pt-3 space-y-1">
+                  <Link
+                    href="/settings/alerts"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" /></svg>
+                    Help
+                  </Link>
+                  <div className="px-3 py-2">
+                    <UserNav />
+                  </div>
+                </div>
+              </MobileSidebar>
+              <div className="hidden sm:block flex-1 min-w-0">
+                <SearchBar />
+              </div>
+            </div>
             <div className="flex items-center gap-3">
               {/* Notifications bell — server component fetches pending
                   account requests + pending payouts and feeds the
@@ -75,7 +102,7 @@ export default async function DashboardLayout({
           </div>
         </header>
 
-        <main className="flex-1 px-8 py-8">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           {children}
         </main>
       </div>

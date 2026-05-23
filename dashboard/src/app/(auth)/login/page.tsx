@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
+import { ShieldCheck } from "lucide-react";
 import { createBrowserSupabase } from "@/lib/supabase-browser";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -38,20 +40,31 @@ export default function LoginPage() {
   return (
     <div className="w-full max-w-sm space-y-6 px-4">
       <div className="space-y-6">
-        <div className="text-center">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            MinuteWise
+        <div className="text-center space-y-3">
+          {/* Brewapps logo, centered above the heading — mirrors the
+              /welcome/campaign and creator auth form pattern so every
+              entry point has a consistent brand mark. */}
+          <Image
+            src="/brewapps-logo.png"
+            alt="Brewapps"
+            width={144}
+            height={144}
+            priority
+            className="h-14 sm:h-16 w-auto mx-auto"
+          />
+          {/* Admin-context badge: makes it unambiguous this is the
+              internal staff portal, not the creator one. */}
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] uppercase tracking-widest font-semibold">
+            <ShieldCheck className="h-3 w-3" />
+            Admin
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+            Admin sign in
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Staff dashboard sign in
+          <p className="text-sm text-muted-foreground">
+            Sign in to manage campaigns, creators, and payouts.
           </p>
         </div>
-        <Link
-          href="/welcome"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-        >
-          ← Wrong portal? Back to chooser
-        </Link>
 
         <Card>
           <CardContent className="pt-6">
@@ -103,6 +116,18 @@ export default function LoginPage() {
             className="font-medium text-primary hover:underline"
           >
             Sign up
+          </Link>
+        </p>
+
+        {/* "Back to portal chooser" — centered, primary-tinted, same
+            treatment as the creator-side chooser page so the two
+            entry surfaces feel consistent. */}
+        <p className="text-center text-xs text-muted-foreground">
+          <Link
+            href="/welcome"
+            className="text-primary hover:underline"
+          >
+            ← Wrong portal? Back to chooser
           </Link>
         </p>
       </div>

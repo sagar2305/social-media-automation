@@ -36,11 +36,13 @@ import {
 } from "lucide-react";
 import { updateCmsField } from "@/app/(dashboard)/signup-control/actions";
 import type { Path } from "@/lib/cms-inline-helpers";
-import type { CmsSlug } from "@/lib/cms-schemas";
+import type { CmsSlug, Campaign } from "@/lib/cms-schemas";
 
 interface EditableListProps<T> {
   isAdmin: boolean;
   slug: CmsSlug;
+  /** Campaign owning this row. Shared slugs (welcome) ignore this. */
+  campaign?: Campaign;
   path: Path;
   items: T[];
   newItem: () => T;
@@ -52,6 +54,7 @@ interface EditableListProps<T> {
 export function EditableList<T>({
   isAdmin,
   slug,
+  campaign = "minutewise",
   path,
   items,
   newItem,
@@ -65,6 +68,7 @@ export function EditableList<T>({
   return (
     <AdminEditableList
       slug={slug}
+      campaign={campaign}
       path={path}
       items={items}
       newItem={newItem}
@@ -76,12 +80,13 @@ export function EditableList<T>({
 
 function AdminEditableList<T>({
   slug,
+  campaign,
   path,
   items,
   newItem,
   renderItem,
   showItemControls,
-}: Omit<EditableListProps<T>, "isAdmin">) {
+}: Omit<EditableListProps<T>, "isAdmin"> & { campaign: Campaign }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"idle" | "saving">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +95,7 @@ function AdminEditableList<T>({
     setBusy("saving");
     setError(null);
     try {
-      const res = await updateCmsField(slug, path, next);
+      const res = await updateCmsField(campaign, slug, path, next);
       if (!res.ok) {
         setError(res.error);
         return false;

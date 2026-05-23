@@ -103,7 +103,15 @@ export function CampaignCalendar({ campaigns }: { campaigns: CampaignSummary[] }
 
   return (
     <div className="space-y-6">
-      <Card>
+      {/* Mobile: vertical card list (gantt is unreadable below sm). */}
+      <div className="sm:hidden space-y-2">
+        {dated.map((c) => (
+          <MobileCalendarCard key={c.id} c={c} />
+        ))}
+      </div>
+
+      {/* Gantt: hidden on mobile, shown at sm+. */}
+      <Card className="hidden sm:block">
         <CardContent className="pt-6 pb-2">
           {/* Axis */}
           <div className="relative h-6 mb-2 select-none">
@@ -231,6 +239,45 @@ export function CampaignCalendar({ campaigns }: { campaigns: CampaignSummary[] }
 
       {undated.length > 0 && <UndatedSection campaigns={undated} />}
     </div>
+  );
+}
+
+function MobileCalendarCard({ c }: { c: CampaignSummary }) {
+  const startMs = new Date(c.start_date!).getTime();
+  const endMs = new Date(c.end_date!).getTime();
+  const dotClass = c.status === "active"
+    ? "bg-[#16a34a]"
+    : c.status === "paused"
+      ? "bg-[#bf4800]"
+      : "bg-muted-foreground/40";
+  return (
+    <Link
+      href={`/campaigns/${c.slug}`}
+      className="block rounded-xl border border-border bg-card p-3 hover:bg-muted/40 transition-colors"
+    >
+      <div className="flex items-start gap-3">
+        <div className="relative h-9 w-9 rounded-md bg-muted overflow-hidden shrink-0 flex items-center justify-center">
+          {c.image_url ? (
+            <Image src={c.image_url} alt={c.name} fill className="object-cover" sizes="36px" />
+          ) : (
+            <ImageIcon className="h-4 w-4 text-muted-foreground/50" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
+            <p className="text-sm font-medium truncate">{c.name}</p>
+          </div>
+          <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
+            {formatDate(new Date(startMs))} → {formatDate(new Date(endMs))}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {c.posts_count}{c.posts_target_total > 0 ? `/${c.posts_target_total}` : ""} posts
+            <span className="uppercase ml-1.5 tracking-wider">· {c.status}</span>
+          </p>
+        </div>
+      </div>
+    </Link>
   );
 }
 

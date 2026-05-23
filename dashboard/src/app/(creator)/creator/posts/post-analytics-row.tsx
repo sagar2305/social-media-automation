@@ -116,8 +116,9 @@ export function PostAnalyticsRow({ post, avgViews }: Props) {
 
       {open && (
         <div className="mt-4 pt-4 border-t border-border/40 space-y-4">
-          {/* Five-metric grid — full breakdown of engagement */}
-          <div className="grid grid-cols-5 gap-2">
+          {/* Five-metric grid — wraps to 2 cols on phones (3-2 split),
+              opens to a single row at sm+. */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <Stat label="Views" value={views} />
             <Stat label="Likes" value={post.likes ?? 0} />
             <Stat label="Saves" value={post.saves ?? 0} />

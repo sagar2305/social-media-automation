@@ -80,7 +80,10 @@ export async function assertCreator(): Promise<
 /**
  * Creator-portal gate. Use at the top of every page in the (creator)
  * route group. Redirects:
- *   - anonymous → /creator/login
+ *   - anonymous → /welcome/campaign  (chooser — preserves no campaign
+ *     context but lets the visitor re-pick rather than silently
+ *     landing on the Minutewise login, which is what bare
+ *     /creator/login routes to today)
  *   - staff (admin/editor/viewer) → / (the staff dashboard)
  *
  * Returns the resolved creator row so callers don't have to round-trip
@@ -88,7 +91,7 @@ export async function assertCreator(): Promise<
  */
 export async function requireCreator() {
   const user = await getUser();
-  if (!user) redirect("/creator/login");
+  if (!user) redirect("/welcome/campaign");
   if (user.role !== "creator") redirect("/");
 
   const supabase = await createClient();
@@ -99,8 +102,10 @@ export async function requireCreator() {
     .maybeSingle();
 
   // Edge case: user has role='creator' but the creators row was deleted
-  // or never linked. Send them to login with a hint; admin can re-invite.
-  if (!creator) redirect("/creator/login?reason=unlinked");
+  // or never linked. Send them back to the chooser; once they pick a
+  // campaign and try to log in, the auth flow will surface a clear
+  // "account not linked" banner.
+  if (!creator) redirect("/welcome/campaign?reason=unlinked");
 
   return { user, creator };
 }

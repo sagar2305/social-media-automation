@@ -499,7 +499,7 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
                 <Link
                   key={r.assignment.id}
                   href={`/campaigns/${r.campaign.slug}/creators`}
-                  className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 py-3 hover:bg-muted/40 -mx-4 px-4 transition-colors"
+                  className="flex flex-col gap-3 sm:grid sm:grid-cols-[1fr_auto_auto_auto] sm:items-center sm:gap-4 py-3 hover:bg-muted/40 -mx-4 px-4 transition-colors"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{r.campaign.name}</p>
@@ -511,17 +511,21 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
                       )}
                     </p>
                   </div>
-                  <div className="text-right tabular-nums">
-                    <p className="text-sm font-medium">{r.views.toLocaleString("en-US")}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">views</p>
-                  </div>
-                  <div className="text-right tabular-nums">
-                    <p className="text-sm font-medium">{r.likes.toLocaleString("en-US")}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">likes</p>
-                  </div>
-                  <div className="text-right tabular-nums">
-                    <p className="text-sm font-semibold">{fmtUsd(r.earned_cents)}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">earned</p>
+                  {/* Metrics: stay side-by-side on mobile (3-col mini-grid),
+                      flatten into parent grid columns 2-4 on desktop via `contents`. */}
+                  <div className="grid grid-cols-3 gap-3 sm:contents">
+                    <div className="text-right tabular-nums">
+                      <p className="text-sm font-medium">{r.views.toLocaleString("en-US")}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">views</p>
+                    </div>
+                    <div className="text-right tabular-nums">
+                      <p className="text-sm font-medium">{r.likes.toLocaleString("en-US")}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">likes</p>
+                    </div>
+                    <div className="text-right tabular-nums">
+                      <p className="text-sm font-semibold">{fmtUsd(r.earned_cents)}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">earned</p>
+                    </div>
                   </div>
                 </Link>
               ))}

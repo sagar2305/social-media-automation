@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { linkCreatorAccountAfterSignup } from "@/lib/link-creator";
 import { createClient } from "@/lib/supabase";
+import { isCampaign } from "@/lib/cms-schemas";
 
 /**
  * Post-login relink endpoint. Used when a creator signs in with
@@ -19,6 +20,10 @@ import { createClient } from "@/lib/supabase";
 export async function GET(request: Request) {
   const { origin, searchParams } = new URL(request.url);
   const fromCreator = searchParams.get("from") === "creator";
+  // Preserve the originating campaign so a Roast AI / Call Recorder
+  // sign-in that fails the creator gate returns to the correct login.
+  const campaignParam = searchParams.get("campaign");
+  const campaign = campaignParam && isCampaign(campaignParam) ? campaignParam : "minutewise";
 
   const link = await linkCreatorAccountAfterSignup().catch((e) => {
     console.error(`[relink] linker threw: ${e instanceof Error ? e.message : String(e)}`);
@@ -50,7 +55,7 @@ export async function GET(request: Request) {
     if (fromCreator) {
       await supabase.auth.signOut();
       return NextResponse.redirect(
-        `${origin}/creator/login?reason=not-a-creator`,
+        `${origin}/creator/${campaign}/login?reason=not-a-creator`,
       );
     }
   }

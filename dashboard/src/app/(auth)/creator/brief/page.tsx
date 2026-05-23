@@ -1,18 +1,12 @@
 /**
- * /creator/brief — long-scroll internship brief.
+ * Legacy URL — redirects to the Minutewise brief.
  *
- * Thin server-component shell. All content (headings, body, video, FAQ,
- * journey, etc. — including per-text styling) is fetched from the CMS
- * (public.cms_pages, slug "brief") and passed to BriefView. Admins
- * edit everything via /signup-control/brief.
+ * Pre-multi-campaign, /creator/brief rendered the Minutewise content
+ * directly. Old bookmarks/links keep working by redirecting here.
  */
 
-import { getPageContent } from "@/lib/cms";
-import { BriefView } from "./view";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function CreatorBriefPage() {
-  const content = await getPageContent("brief");
-  return <BriefView content={content} />;
+export default function CreatorBriefLegacyPage(): never {
+  redirect("/creator/minutewise/brief");
 }

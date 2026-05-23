@@ -306,8 +306,9 @@ function DrawerBody({ data }: { data: Loaded }) {
 
   return (
     <>
-      {/* Top: thumbnail + metrics */}
-      <div className="grid grid-cols-[180px_1fr] gap-4">
+      {/* Top: thumbnail + metrics. Stacks on mobile so the thumbnail
+          isn't crushed to 1/4 of a phone width. */}
+      <div className="flex flex-col sm:grid sm:grid-cols-[180px_1fr] gap-4">
         <Thumbnail post={post} />
         <MetricsCard post={post} eng={eng} />
       </div>

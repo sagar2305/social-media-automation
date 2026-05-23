@@ -3,14 +3,15 @@
  *   npx tsx scripts/test-intern-showcase.ts <SUPABASE_ACCESS_TOKEN>
  */
 
-import { cmsDefaults } from "../src/lib/cms-defaults";
+import { defaultsFor } from "../src/lib/cms-defaults";
 
 const TOKEN = process.argv[2];
+const CAMPAIGN = (process.argv[3] ?? "minutewise") as "minutewise" | "roastai" | "call-recorder";
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
 
 if (!TOKEN) {
-  console.error("Usage: tsx scripts/test-intern-showcase.ts <SUPABASE_ACCESS_TOKEN>");
+  console.error("Usage: tsx scripts/test-intern-showcase.ts <SUPABASE_ACCESS_TOKEN> [campaign=minutewise]");
   process.exit(1);
 }
 
@@ -25,8 +26,9 @@ async function runSql(sql: string) {
 
 (async () => {
   // Build a content blob that exercises the intern showcase
+  const base = defaultsFor("brief", CAMPAIGN);
   const content = {
-    ...cmsDefaults.brief,
+    ...base,
     internShowcase: {
       heading: "SHOWCASE-HEAD-XYZ",
       subtitle: "SHOWCASE-SUB-XYZ",
@@ -37,10 +39,10 @@ async function runSql(sql: string) {
   };
 
   const jsonLit = JSON.stringify(content);
-  await runSql(`INSERT INTO public.cms_pages (slug, content) VALUES ('brief', $tag$${jsonLit}$tag$::jsonb) ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`);
+  await runSql(`INSERT INTO public.cms_pages (campaign, slug, content) VALUES ('${CAMPAIGN}', 'brief', $tag$${jsonLit}$tag$::jsonb) ON CONFLICT (campaign, slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`);
   console.log("Wrote test row.");
 
-  const html = await (await fetch(`${HOST}/creator/brief?_=${Date.now()}`, { cache: "no-store" })).text();
+  const html = await (await fetch(`${HOST}/creator/${CAMPAIGN}/brief?_=${Date.now()}`, { cache: "no-store" })).text();
 
   const checks: [string, RegExp][] = [
     ["Showcase heading 'SHOWCASE-HEAD-XYZ'         ", /SHOWCASE-HEAD-XYZ/],
@@ -57,7 +59,7 @@ async function runSql(sql: string) {
     console.log(`  ${ok ? "✓" : "✗"} ${label}`);
   }
 
-  await runSql(`DELETE FROM public.cms_pages WHERE slug='brief'; DELETE FROM public.cms_page_versions WHERE slug='brief';`);
+  await runSql(`DELETE FROM public.cms_pages WHERE campaign='${CAMPAIGN}' AND slug='brief'; DELETE FROM public.cms_page_versions WHERE campaign='${CAMPAIGN}' AND slug='brief';`);
   console.log("\nCleanup done.");
   console.log(allPass ? "\nALL PASS ✅" : "\nSOME FIELDS DON'T RENDER ❌");
   process.exit(allPass ? 0 : 1);

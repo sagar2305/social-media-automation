@@ -10,14 +10,15 @@
  * 3. Cleans up.
  */
 
-import { cmsDefaults } from "../src/lib/cms-defaults";
+import { defaultsFor } from "../src/lib/cms-defaults";
 
 const TOKEN = process.argv[2];
+const CAMPAIGN = (process.argv[3] ?? "minutewise") as "minutewise" | "roastai" | "call-recorder";
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
 
 if (!TOKEN) {
-  console.error("Usage: tsx scripts/cms-style-proof.ts <SUPABASE_ACCESS_TOKEN>");
+  console.error("Usage: tsx scripts/cms-style-proof.ts <SUPABASE_ACCESS_TOKEN> [campaign=minutewise]");
   process.exit(1);
 }
 
@@ -35,9 +36,10 @@ async function runSql(sql: string) {
 }
 
 (async () => {
+  const base = defaultsFor("brief", CAMPAIGN);
   const styled = {
-    ...cmsDefaults.brief,
-    hero: { ...cmsDefaults.brief.hero, heading: "STYLED HEADING TEST" },
+    ...base,
+    hero: { ...base.hero, heading: "STYLED HEADING TEST" },
     styles: {
       "hero.heading": {
         size: "4.5rem",
@@ -52,10 +54,10 @@ async function runSql(sql: string) {
   // Inline the JSON with dollar-quoted Postgres strings (no escaping).
   const jsonLiteral = JSON.stringify(styled);
   await runSql(
-    `INSERT INTO public.cms_pages (slug, content) VALUES ('brief', $tag$${jsonLiteral}$tag$::jsonb) ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`,
+    `INSERT INTO public.cms_pages (campaign, slug, content) VALUES ('${CAMPAIGN}', 'brief', $tag$${jsonLiteral}$tag$::jsonb) ON CONFLICT (campaign, slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`,
   );
 
-  const url = `${HOST}/creator/brief?_=${Date.now()}`;
+  const url = `${HOST}/creator/${CAMPAIGN}/brief?_=${Date.now()}`;
   const res = await fetch(url, { cache: "no-store" });
   const html = await res.text();
 
@@ -76,7 +78,7 @@ async function runSql(sql: string) {
   }
 
   // Cleanup
-  await runSql("DELETE FROM public.cms_pages WHERE slug='brief'; DELETE FROM public.cms_page_versions WHERE slug='brief';");
+  await runSql(`DELETE FROM public.cms_pages WHERE campaign='${CAMPAIGN}' AND slug='brief'; DELETE FROM public.cms_page_versions WHERE campaign='${CAMPAIGN}' AND slug='brief';`);
 
   console.log("");
   console.log(pass ? "ALL CHECKS PASS ✅" : "FAILURES ❌");

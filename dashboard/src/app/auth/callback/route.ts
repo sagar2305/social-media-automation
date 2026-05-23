@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { linkCreatorAccountAfterSignup } from "@/lib/link-creator";
+import { isCampaign } from "@/lib/cms-schemas";
 
 /**
  * Auth callback — runs after Supabase redirects back from the magic
@@ -22,6 +23,12 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const next = searchParams.get("next");
   const fromCreator = searchParams.get("from") === "creator";
+  // Campaign segment preserved across the email-confirmation hop so
+  // Roast AI / Call Recorder signups don't get dumped onto the
+  // Minutewise login when their link is bad / unrecognised.
+  const campaignParam = searchParams.get("campaign");
+  const campaign = campaignParam && isCampaign(campaignParam) ? campaignParam : "minutewise";
+  const creatorLogin = `/creator/${campaign}/login`;
   const supabaseError = searchParams.get("error");
   const supabaseErrorCode = searchParams.get("error_code");
 
@@ -30,13 +37,13 @@ export async function GET(request: Request) {
   // login page instead of silently redirecting — the user needs to
   // know to request a fresh confirmation email.
   if (supabaseError) {
-    const dest = fromCreator ? "/creator/login" : "/login";
+    const dest = fromCreator ? creatorLogin : "/login";
     const reason = supabaseErrorCode || supabaseError;
     return NextResponse.redirect(`${origin}${dest}?reason=${encodeURIComponent(reason)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}${fromCreator ? "/creator/login" : "/login"}`);
+    return NextResponse.redirect(`${origin}${fromCreator ? creatorLogin : "/login"}`);
   }
 
   const cookieStore = await cookies();
@@ -57,7 +64,7 @@ export async function GET(request: Request) {
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    return NextResponse.redirect(`${origin}${fromCreator ? "/creator/login" : "/login"}`);
+    return NextResponse.redirect(`${origin}${fromCreator ? creatorLogin : "/login"}`);
   }
 
   // Try the link. Non-fatal on any error path — we don't want to
@@ -74,7 +81,7 @@ export async function GET(request: Request) {
   // wrong portal, then surface the same banner the password flow uses.
   if (fromCreator) {
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/creator/login?reason=not-a-creator`);
+    return NextResponse.redirect(`${origin}${creatorLogin}?reason=not-a-creator`);
   }
 
   return NextResponse.redirect(`${origin}${next ?? "/"}`);
