@@ -2,7 +2,20 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { linkCreatorAccountAfterSignup } from "@/lib/link-creator";
-import { isCampaign } from "@/lib/cms-schemas";
+
+/**
+ * Validates a campaign slug from a URL parameter.
+ *
+ * Uses a slug-shape regex instead of the static `isCampaign()` allowlist
+ * because campaigns added via /campaigns/new live only in the DB — the
+ * static allowlist would reject those and dump signups onto the
+ * Minutewise login. The regex matches what the slugify() helper in
+ * /campaigns/new/actions.ts produces (lowercase alphanum + hyphens,
+ * starting with alphanum, max 60 chars).
+ */
+function isValidCampaignSlug(value: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{0,59}$/.test(value);
+}
 
 /**
  * Auth callback — runs after Supabase redirects back from the magic
@@ -27,7 +40,7 @@ export async function GET(request: Request) {
   // Roast AI / Call Recorder signups don't get dumped onto the
   // Minutewise login when their link is bad / unrecognised.
   const campaignParam = searchParams.get("campaign");
-  const campaign = campaignParam && isCampaign(campaignParam) ? campaignParam : "minutewise";
+  const campaign = campaignParam && isValidCampaignSlug(campaignParam) ? campaignParam : "minutewise";
   const creatorLogin = `/creator/${campaign}/login`;
   const supabaseError = searchParams.get("error");
   const supabaseErrorCode = searchParams.get("error_code");

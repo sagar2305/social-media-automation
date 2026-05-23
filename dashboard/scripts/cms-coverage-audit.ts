@@ -124,18 +124,20 @@ async function auditProbe(p: Probe): Promise<{ label: string; missing: string[];
        SET content = EXCLUDED.content, updated_at = now();`,
   );
 
-  const allHtml = (await Promise.all(p.livePaths.map(fetchHtml))).join("\n");
-  const missing: string[] = [];
-  for (const [path, marker] of markers) {
-    if (!allHtml.includes(marker)) missing.push(path);
+  try {
+    const allHtml = (await Promise.all(p.livePaths.map(fetchHtml))).join("\n");
+    const missing: string[] = [];
+    for (const [path, marker] of markers) {
+      if (!allHtml.includes(marker)) missing.push(path);
+    }
+    return { label, missing, total: markers.size };
+  } finally {
+    // Cleanup always runs so probe rows don't accumulate across runs.
+    await runSql(
+      `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
+       DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
+    );
   }
-
-  await runSql(
-    `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
-     DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
-  );
-
-  return { label, missing, total: markers.size };
 }
 
 (async () => {

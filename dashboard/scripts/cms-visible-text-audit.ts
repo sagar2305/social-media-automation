@@ -173,40 +173,43 @@ async function fetchHtml(path: string): Promise<string> {
          SET content = EXCLUDED.content, updated_at = now();`,
     );
 
-    const rawHtml = (await Promise.all(p.livePaths.map(fetchHtml))).join("\n");
-    const visible = visibleTextOnly(rawHtml);
-    const viewSrc = p.viewSources.map((vp) => readFileSync(join(REPO, vp), "utf8")).join("\n");
+    try {
+      const rawHtml = (await Promise.all(p.livePaths.map(fetchHtml))).join("\n");
+      const visible = visibleTextOnly(rawHtml);
+      const viewSrc = p.viewSources.map((vp) => readFileSync(join(REPO, vp), "utf8")).join("\n");
 
-    const visibleNow: string[] = [];
-    const wrappedConditional: string[] = [];
-    const placeholderOnly: string[] = [];
-    const trulyBroken: string[] = [];
+      const visibleNow: string[] = [];
+      const wrappedConditional: string[] = [];
+      const placeholderOnly: string[] = [];
+      const trulyBroken: string[] = [];
 
-    for (const [path, marker] of markers) {
-      if (visible.includes(marker)) {
-        visibleNow.push(path);
-      } else if (pathToRegex(path).test(viewSrc) || pathToFlexibleRegex(path).test(viewSrc)) {
-        wrappedConditional.push(path);
-      } else if (isReferencedAsPlaceholder(path, viewSrc)) {
-        placeholderOnly.push(path);
-      } else {
-        trulyBroken.push(path);
+      for (const [path, marker] of markers) {
+        if (visible.includes(marker)) {
+          visibleNow.push(path);
+        } else if (pathToRegex(path).test(viewSrc) || pathToFlexibleRegex(path).test(viewSrc)) {
+          wrappedConditional.push(path);
+        } else if (isReferencedAsPlaceholder(path, viewSrc)) {
+          placeholderOnly.push(path);
+        } else {
+          trulyBroken.push(path);
+        }
       }
-    }
 
-    const truly = trulyBroken.length;
-    if (truly === 0) {
-      console.log(`✓ ${label.padEnd(28)} ${markers.size} fields OK  (visible=${visibleNow.length}, conditional=${wrappedConditional.length}, placeholder=${placeholderOnly.length})`);
-    } else {
-      overallOk = false;
-      console.log(`✗ ${label.padEnd(28)} ${truly} truly broken (visible=${visibleNow.length}, conditional=${wrappedConditional.length}, placeholder=${placeholderOnly.length}, BROKEN=${truly}):`);
-      for (const path of trulyBroken) console.log(`    • ${path}`);
+      const truly = trulyBroken.length;
+      if (truly === 0) {
+        console.log(`✓ ${label.padEnd(28)} ${markers.size} fields OK  (visible=${visibleNow.length}, conditional=${wrappedConditional.length}, placeholder=${placeholderOnly.length})`);
+      } else {
+        overallOk = false;
+        console.log(`✗ ${label.padEnd(28)} ${truly} truly broken (visible=${visibleNow.length}, conditional=${wrappedConditional.length}, placeholder=${placeholderOnly.length}, BROKEN=${truly}):`);
+        for (const path of trulyBroken) console.log(`    • ${path}`);
+      }
+    } finally {
+      // Cleanup runs even if fetch/parse threw mid-probe.
+      await runSql(
+        `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
+         DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
+      );
     }
-
-    await runSql(
-      `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
-       DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
-    );
   }
 
   console.log(`\n${overallOk ? "ALL EDITABLE TEXT IS VISIBLE ✅" : "SOME FIELDS SAVED BUT INVISIBLE ❌"}`);

@@ -5,8 +5,16 @@
 
 import { defaultsFor } from "../src/lib/cms-defaults";
 
+const ALLOWED_CAMPAIGNS = ["minutewise", "roastai", "call-recorder"] as const;
+type AllowedCampaign = (typeof ALLOWED_CAMPAIGNS)[number];
+
 const TOKEN = process.argv[2];
-const CAMPAIGN = (process.argv[3] ?? "minutewise") as "minutewise" | "roastai" | "call-recorder";
+const campaignArg = process.argv[3] ?? "minutewise";
+if (!ALLOWED_CAMPAIGNS.includes(campaignArg as AllowedCampaign)) {
+  console.error(`Invalid campaign "${campaignArg}". Expected one of: ${ALLOWED_CAMPAIGNS.join(", ")}`);
+  process.exit(1);
+}
+const CAMPAIGN: AllowedCampaign = campaignArg as AllowedCampaign;
 const PROJECT_REF = "mkqarsodftnlcuscsrii";
 const HOST = "http://localhost:3000";
 
@@ -42,25 +50,29 @@ async function runSql(sql: string) {
   await runSql(`INSERT INTO public.cms_pages (campaign, slug, content) VALUES ('${CAMPAIGN}', 'brief', $tag$${jsonLit}$tag$::jsonb) ON CONFLICT (campaign, slug) DO UPDATE SET content = EXCLUDED.content, updated_at = now();`);
   console.log("Wrote test row.");
 
-  const html = await (await fetch(`${HOST}/creator/${CAMPAIGN}/brief?_=${Date.now()}`, { cache: "no-store" })).text();
+  let allPass = false;
+  try {
+    const html = await (await fetch(`${HOST}/creator/${CAMPAIGN}/brief?_=${Date.now()}`, { cache: "no-store" })).text();
 
-  const checks: [string, RegExp][] = [
-    ["Showcase heading 'SHOWCASE-HEAD-XYZ'         ", /SHOWCASE-HEAD-XYZ/],
-    ["Showcase subtitle 'SHOWCASE-SUB-XYZ'         ", /SHOWCASE-SUB-XYZ/],
-    ["Tile handle '@TEST-HANDLE-UNIQUE-XYZ'        ", /@TEST-HANDLE-UNIQUE-XYZ/],
-    ["YouTube embed src=TESTYOUTUBEID              ", /embed\/TESTYOUTUBEID/],
-    ["TikTok href contains TEST-TIKTOK-URL-XYZ     ", /TEST-TIKTOK-URL-XYZ/],
-  ];
+    const checks: [string, RegExp][] = [
+      ["Showcase heading 'SHOWCASE-HEAD-XYZ'         ", /SHOWCASE-HEAD-XYZ/],
+      ["Showcase subtitle 'SHOWCASE-SUB-XYZ'         ", /SHOWCASE-SUB-XYZ/],
+      ["Tile handle '@TEST-HANDLE-UNIQUE-XYZ'        ", /@TEST-HANDLE-UNIQUE-XYZ/],
+      ["YouTube embed src=TESTYOUTUBEID              ", /embed\/TESTYOUTUBEID/],
+      ["TikTok href contains TEST-TIKTOK-URL-XYZ     ", /TEST-TIKTOK-URL-XYZ/],
+    ];
 
-  let allPass = true;
-  for (const [label, re] of checks) {
-    const ok = re.test(html);
-    if (!ok) allPass = false;
-    console.log(`  ${ok ? "✓" : "✗"} ${label}`);
+    allPass = true;
+    for (const [label, re] of checks) {
+      const ok = re.test(html);
+      if (!ok) allPass = false;
+      console.log(`  ${ok ? "✓" : "✗"} ${label}`);
+    }
+  } finally {
+    // Always clean up the probe row, even if the fetch/check threw.
+    await runSql(`DELETE FROM public.cms_pages WHERE campaign='${CAMPAIGN}' AND slug='brief'; DELETE FROM public.cms_page_versions WHERE campaign='${CAMPAIGN}' AND slug='brief';`);
+    console.log("\nCleanup done.");
   }
-
-  await runSql(`DELETE FROM public.cms_pages WHERE campaign='${CAMPAIGN}' AND slug='brief'; DELETE FROM public.cms_page_versions WHERE campaign='${CAMPAIGN}' AND slug='brief';`);
-  console.log("\nCleanup done.");
   console.log(allPass ? "\nALL PASS ✅" : "\nSOME FIELDS DON'T RENDER ❌");
   process.exit(allPass ? 0 : 1);
 })().catch((e) => {

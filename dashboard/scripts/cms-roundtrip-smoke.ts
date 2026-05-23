@@ -149,12 +149,17 @@ async function runProbe(p: Probe): Promise<boolean> {
        SET content = EXCLUDED.content, updated_at = now();`,
   );
 
-  const seenMarker = await htmlIncludes(p.livePath, marker);
-
-  await runSql(
-    `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
-     DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
-  );
+  let seenMarker = false;
+  try {
+    seenMarker = await htmlIncludes(p.livePath, marker);
+  } finally {
+    // Always delete the probe row, even if htmlIncludes threw —
+    // leftover rows would skew the next probe's defaults check.
+    await runSql(
+      `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
+       DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
+    );
+  }
 
   const seenDefault = await htmlIncludes(p.livePath, p.defaultMarker);
 

@@ -73,8 +73,22 @@ UPDATE public.cms_pages
 -- columns, so they continue to work unchanged. The admin-write +
 -- public-read split applies identically to every (campaign, slug) row.
 
--- Rollback (instant, zero data loss — restores the original single-
--- campaign layout):
+-- Rollback (restores the original single-campaign layout).
+--
+-- CAVEAT: zero data loss ONLY when there is at most one row per slug
+-- across all campaigns. Once admin has saved content for more than one
+-- campaign (e.g. minutewise/brief AND roastai/brief), recreating
+-- PRIMARY KEY (slug) will fail with a duplicate-key error. Before
+-- running the rollback in that case you MUST reconcile the duplicates
+-- first — either delete the per-campaign rows you don't want to keep
+-- or merge their content into a single row per slug.
+--
+-- Find duplicates first:
+--   SELECT slug, count(*)
+--     FROM public.cms_pages
+--    GROUP BY slug HAVING count(*) > 1;
+--
+-- Once duplicates are resolved (or you've confirmed there are none):
 --   ALTER TABLE public.cms_pages DROP CONSTRAINT cms_pages_pkey;
 --   ALTER TABLE public.cms_pages ADD PRIMARY KEY (slug);
 --   ALTER TABLE public.cms_pages DROP COLUMN campaign;

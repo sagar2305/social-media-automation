@@ -45,6 +45,10 @@ const CMS_BUCKET = "cms-uploads";
 async function bumpRevalidatePaths(slug: CmsSlug, campaign: string) {
   if (slugScope[slug] === "shared") {
     revalidatePath(cmsPageMeta[slug].livePath, "layout");
+    // The shared admin editor lives at /signup-control/<slug>, NOT
+    // under /signup-control/${campaign}/<slug>. Revalidate it too so
+    // the editor view doesn't keep serving the pre-save content.
+    revalidatePath(`/signup-control/${slug}`, "layout");
   } else if (slug === "campaign-theme") {
     // The theme cascades from the (creator)/[campaign] LAYOUT down to
     // every page under it. Revalidate each of the 4 pages so the new

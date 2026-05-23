@@ -73,9 +73,13 @@ export function MobileSidebar({ children }: { children: React.ReactNode }) {
         }`}
       />
 
-      {/* Drawer */}
+      {/* Drawer — when closed, mark as inert + hidden from accessibility
+          tree so keyboard tab-navigation skips the off-screen nav links
+          and screen readers don't announce them. */}
       <aside
         data-open={open}
+        inert={!open}
+        aria-hidden={!open}
         className={`fixed inset-y-0 left-0 z-50 w-72 bg-card border-r border-border/40 flex flex-col transition-transform md:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}

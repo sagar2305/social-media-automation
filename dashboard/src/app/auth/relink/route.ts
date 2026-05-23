@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 import { linkCreatorAccountAfterSignup } from "@/lib/link-creator";
 import { createClient } from "@/lib/supabase";
-import { isCampaign } from "@/lib/cms-schemas";
+
+/**
+ * Slug-shape regex matches what /campaigns/new's slugify() produces.
+ * We don't use the static isCampaign() allowlist here because campaigns
+ * added via the DB-only flow would otherwise get coerced back to
+ * "minutewise" on the relink hop. See callback/route.ts for the same
+ * helper duplicated.
+ */
+function isValidCampaignSlug(value: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{0,59}$/.test(value);
+}
 
 /**
  * Post-login relink endpoint. Used when a creator signs in with
@@ -23,7 +33,7 @@ export async function GET(request: Request) {
   // Preserve the originating campaign so a Roast AI / Call Recorder
   // sign-in that fails the creator gate returns to the correct login.
   const campaignParam = searchParams.get("campaign");
-  const campaign = campaignParam && isCampaign(campaignParam) ? campaignParam : "minutewise";
+  const campaign = campaignParam && isValidCampaignSlug(campaignParam) ? campaignParam : "minutewise";
 
   const link = await linkCreatorAccountAfterSignup().catch((e) => {
     console.error(`[relink] linker threw: ${e instanceof Error ? e.message : String(e)}`);

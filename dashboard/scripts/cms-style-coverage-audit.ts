@@ -151,32 +151,36 @@ async function auditProbe(p: Probe): Promise<{ label: string; total: number; mis
        SET content = EXCLUDED.content, updated_at = now();`,
   );
 
-  const html = (await Promise.all(p.livePaths.map(fetchHtml))).join("\n");
-  const viewSrc = p.viewSources
-    .map((vp) => readFileSync(join(REPO, vp), "utf8"))
-    .join("\n");
+  try {
+    const html = (await Promise.all(p.livePaths.map(fetchHtml))).join("\n");
+    const viewSrc = p.viewSources
+      .map((vp) => readFileSync(join(REPO, vp), "utf8"))
+      .join("\n");
 
-  function pathToRegex(pathStr: string): RegExp {
-    const segments = pathStr.split(".").map((s) => /^\d+$/.test(s) ? s : `"${s}"`);
-    const joined = segments.join(",\\s*");
-    return new RegExp(`path\\s*=\\s*\\{\\s*\\[\\s*${joined.replace(/"/g, '\\"')}\\s*\\]\\s*\\}`);
+    function pathToRegex(pathStr: string): RegExp {
+      const segments = pathStr.split(".").map((s) => /^\d+$/.test(s) ? s : `"${s}"`);
+      const joined = segments.join(",\\s*");
+      return new RegExp(`path\\s*=\\s*\\{\\s*\\[\\s*${joined.replace(/"/g, '\\"')}\\s*\\]\\s*\\}`);
+    }
+
+    const missing: string[] = [];
+    for (const [path, marker] of expectedMarker) {
+      const inHtml =
+        html.includes(`letter-spacing:${marker}`) ||
+        html.includes(`letter-spacing: ${marker}`);
+      const wrappedInSource = pathToRegex(path).test(viewSrc);
+      if (!inHtml && !wrappedInSource) missing.push(`${path}  (expected ${marker})`);
+    }
+
+    return { label, total: paths.length, missing };
+  } finally {
+    // Cleanup runs even if fetch/read threw, so probe rows don't
+    // leak between audit runs.
+    await runSql(
+      `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
+       DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
+    );
   }
-
-  const missing: string[] = [];
-  for (const [path, marker] of expectedMarker) {
-    const inHtml =
-      html.includes(`letter-spacing:${marker}`) ||
-      html.includes(`letter-spacing: ${marker}`);
-    const wrappedInSource = pathToRegex(path).test(viewSrc);
-    if (!inHtml && !wrappedInSource) missing.push(`${path}  (expected ${marker})`);
-  }
-
-  await runSql(
-    `DELETE FROM public.cms_pages WHERE campaign='${campaignKey}' AND slug='${p.slug}';
-     DELETE FROM public.cms_page_versions WHERE campaign='${campaignKey}' AND slug='${p.slug}';`,
-  );
-
-  return { label, total: paths.length, missing };
 }
 
 (async () => {

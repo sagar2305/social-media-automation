@@ -33,15 +33,27 @@ export function ChooserToggle({
     e.preventDefault();
     e.stopPropagation();
 
+    // Drop overlapping clicks while a write is in flight so two fast
+    // taps can't race and leave the final state opposite of the last
+    // click (the button is also disabled below, this is belt-and-braces).
+    if (pending) return;
+
     const next = !show;
     setShow(next); // optimistic
     setError(null);
 
     startTransition(async () => {
-      const result = await setChooserVisibility(slug, next);
-      if (!result.ok) {
-        setShow(!next); // rollback
-        setError(result.error);
+      try {
+        const result = await setChooserVisibility(slug, next);
+        if (!result.ok) {
+          setShow(!next); // rollback on returned error
+          setError(result.error);
+        }
+      } catch (e) {
+        // Roll back on thrown errors too (network blip, server crash,
+        // anything that doesn't come back as a structured Result).
+        setShow(!next);
+        setError(e instanceof Error ? e.message : "Could not update visibility.");
       }
     });
   }
@@ -51,7 +63,9 @@ export function ChooserToggle({
       <button
         type="button"
         onClick={handleClick}
+        disabled={pending}
         aria-pressed={show}
+        aria-busy={pending}
         title={
           show
             ? "Visible on /welcome/campaign — click to hide"

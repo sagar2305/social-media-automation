@@ -27,14 +27,34 @@ export interface CampaignRow {
 }
 
 /**
+ * Postgres error code "42703" = undefined_column. PostgREST surfaces it
+ * in the error.code field on the response.
+ */
+const PG_UNDEFINED_COLUMN = "42703";
+
+/**
+ * True iff the Supabase error indicates the show_on_chooser column
+ * doesn't exist yet (migration not applied). We use this to decide
+ * whether to retry the legacy SELECT vs surface the error.
+ */
+function isMissingChooserColumn(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; message?: string };
+  return e.code === PG_UNDEFINED_COLUMN
+    || (typeof e.message === "string" && e.message.includes("show_on_chooser"));
+}
+
+/**
  * Fetch every non-archived campaign, ordered for stable card layout.
- * Falls back to the static `campaignMeta` registry when the DB is
- * unreachable so the chooser never goes empty — the visitor still sees
- * the known apps even if Supabase is down.
  *
- * `show_on_chooser` is optional in the SELECT — if the column doesn't
- * exist (migration not yet applied) we retry without it and synthesize
- * the field as false for every row.
+ * Fallback strategy:
+ *   • Missing show_on_chooser column → retry without it and synthesize
+ *     show_on_chooser=false. This only kicks in when the migration in
+ *     add_campaign_show_on_chooser.sql hasn't been applied yet.
+ *   • Any OTHER error (network, RLS, DB down) → return the static
+ *     campaignMeta fallback. We do NOT mutate show_on_chooser to false
+ *     for these cases because that would hide legitimately-published
+ *     campaigns from the chooser on a transient failure.
  */
 export async function listActiveCampaigns(): Promise<CampaignRow[]> {
   noStore();
@@ -48,14 +68,21 @@ export async function listActiveCampaigns(): Promise<CampaignRow[]> {
     if (!full.error && full.data) {
       return full.data as CampaignRow[];
     }
-    // Column missing (or any other error) → retry without show_on_chooser.
-    const legacy = await sb
-      .from("campaigns")
-      .select("slug, name, description, image_url, status")
-      .neq("status", "archived")
-      .order("name", { ascending: true });
-    if (legacy.error || !legacy.data) return staticFallback();
-    return legacy.data.map((r) => ({ ...r, show_on_chooser: false }) as CampaignRow);
+    if (isMissingChooserColumn(full.error)) {
+      // Legacy schema — column not yet migrated. Retry without it.
+      const legacy = await sb
+        .from("campaigns")
+        .select("slug, name, description, image_url, status")
+        .neq("status", "archived")
+        .order("name", { ascending: true });
+      if (!legacy.error && legacy.data) {
+        return legacy.data.map((r) => ({ ...r, show_on_chooser: false }) as CampaignRow);
+      }
+    }
+    // Genuine error (RLS, network, transient DB failure). Fall back to
+    // the static registry so the 3 known apps stay visible rather than
+    // disappearing on a hiccup.
+    return staticFallback();
   } catch {
     return staticFallback();
   }
@@ -81,17 +108,20 @@ export async function getCampaignBySlug(slug: string): Promise<CampaignRow | nul
       if (full.data.status === "archived") return null;
       return full.data as CampaignRow;
     }
-    // Column missing or any other error — retry without show_on_chooser.
-    const legacy = await sb
-      .from("campaigns")
-      .select("slug, name, description, image_url, status")
-      .eq("slug", slug)
-      .maybeSingle();
-    if (legacy.error || !legacy.data) {
-      return isCampaign(slug) ? staticRow(slug) : null;
+    if (isMissingChooserColumn(full.error)) {
+      // Legacy schema — retry without show_on_chooser.
+      const legacy = await sb
+        .from("campaigns")
+        .select("slug, name, description, image_url, status")
+        .eq("slug", slug)
+        .maybeSingle();
+      if (!legacy.error && legacy.data) {
+        if (legacy.data.status === "archived") return null;
+        return { ...legacy.data, show_on_chooser: false } as CampaignRow;
+      }
     }
-    if (legacy.data.status === "archived") return null;
-    return { ...legacy.data, show_on_chooser: false } as CampaignRow;
+    // Any other failure — fall back to static row for known slugs only.
+    return isCampaign(slug) ? staticRow(slug) : null;
   } catch {
     return isCampaign(slug) ? staticRow(slug) : null;
   }
