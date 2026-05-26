@@ -24,7 +24,7 @@ export function UserNav() {
     const supabase = createBrowserSupabase();
     supabase.auth.getSession().then(({ data: { session } }) => {
       setEmail(session?.user?.email ?? null);
-    });
+    }).catch(() => {});
   }, []);
 
   async function handleLogout() {

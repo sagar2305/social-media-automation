@@ -259,7 +259,7 @@ def main():
     image_path = sys.argv[1]
     text_json = sys.argv[2]
     output_path = sys.argv[3]
-    emoji_char = sys.argv[4] if len(sys.argv) > 4 else None
+    emoji_char = os.environ.get('OVERLAY_EMOJI') or (sys.argv[4] if len(sys.argv) > 4 else None)
 
     if not os.path.exists(image_path):
         print(f"Error: Image not found: {image_path}")

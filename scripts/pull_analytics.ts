@@ -6,7 +6,8 @@ import { classifyError } from './auto_fix/classifier.js';
 import { logClassified } from './auto_fix/audit_logger.js';
 import { maybeNotify } from './auto_fix/notifier.js';
 import { createClient } from '@supabase/supabase-js';
-import { dataPath } from './lib/campaign-paths.js';
+import { dataPath, getCampaignSlug } from './lib/campaign-paths.js';
+import { getCampaign } from './lib/campaigns.js';
 import { recomputePendingPayoutsForAllActiveCampaigns } from './lib/payouts/runner.js';
 
 // Direct upsert helper so the dashboard sees the EXACT upstream error
@@ -351,9 +352,18 @@ function applyTierVideos(
 
   const applyMetrics = (row: TrackerRow, v: ProfileVideo) => {
     const s = v.statistics;
-    row.views = String(s.play_count || 0);
-    row.likes = String(s.digg_count || 0);
-    row.saves = String(s.collect_count || 0);
+    const oldViews = parseInt(row.views) || 0;
+    const oldLikes = parseInt(row.likes) || 0;
+    const oldSaves = parseInt(row.saves) || 0;
+    const newViews = s.play_count || 0;
+    const newLikes = s.digg_count || 0;
+    const newSaves = s.collect_count || 0;
+    if (oldViews > 0 && newViews < oldViews) log(`  ⚠ Metrics decreased for post ${row.postId}: views went from ${oldViews} to ${newViews}`);
+    if (oldLikes > 0 && newLikes < oldLikes) log(`  ⚠ Metrics decreased for post ${row.postId}: likes went from ${oldLikes} to ${newLikes}`);
+    if (oldSaves > 0 && newSaves < oldSaves) log(`  ⚠ Metrics decreased for post ${row.postId}: saves went from ${oldSaves} to ${newSaves}`);
+    row.views = String(newViews);
+    row.likes = String(newLikes);
+    row.saves = String(newSaves);
     row.shares = String(s.share_count || 0);
     row.comments = String(s.comment_count || 0);
     row.saveRate =
@@ -416,6 +426,93 @@ function applyTierVideos(
   return { urlsResolved, metricsUpdated };
 }
 
+// ─── Milestone Alerts ────────────────────────────────────────
+//
+// After metrics are updated, check if any post crossed a milestone
+// view threshold for the first time. If so, fire a notification
+// to the campaign's Slack/Discord webhooks. We track which
+// milestones have already fired in a Supabase table so we only
+// alert once per post per threshold.
+
+async function checkMilestoneAlerts(
+  rows: TrackerRow[],
+  thresholds: number[],
+  slackUrl: string | null,
+  discordUrl: string | null,
+  campaignName: string,
+): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return;
+  const sb = createClient(url, key);
+
+  // Load already-fired milestones for this campaign's posts
+  const postIds = rows.map(r => r.postId).filter(Boolean);
+  if (!postIds.length) return;
+
+  const { data: firedRows } = await sb
+    .from('milestone_alerts_fired')
+    .select('post_id, threshold')
+    .in('post_id', postIds);
+  const firedSet = new Set((firedRows ?? []).map(r => `${r.post_id}:${r.threshold}`));
+
+  const sorted = [...thresholds].sort((a, b) => b - a);
+  let alertCount = 0;
+
+  for (const row of rows) {
+    const views = parseInt(row.views) || 0;
+    if (views <= 0) continue;
+
+    for (const t of sorted) {
+      if (views < t) continue;
+      const firedKey = `${row.postId}:${t}`;
+      if (firedSet.has(firedKey)) continue;
+
+      const msg = `${campaignName}: post ${row.postId} hit ${t.toLocaleString()} views (now at ${views.toLocaleString()})`;
+      log(`  Milestone alert: ${msg}`);
+
+      // Claim the DB row BEFORE sending the webhook to avoid duplicate alerts.
+      const { error: insertErr } = await sb.from('milestone_alerts_fired').insert({
+        post_id: row.postId,
+        threshold: t,
+        views_at_fire: views,
+        fired_at: new Date().toISOString(),
+      });
+      if (insertErr) {
+        // 23505 = unique violation — another process already fired this milestone; skip.
+        if (insertErr.code === '23505') continue;
+        log(`  WARNING: milestone insert failed: ${insertErr.message}`);
+        continue;
+      }
+      firedSet.add(firedKey);
+
+      if (slackUrl) {
+        try {
+          await fetch(slackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: msg }),
+          });
+        } catch { /* non-fatal */ }
+      }
+      if (discordUrl) {
+        try {
+          await fetch(discordUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: msg }),
+          });
+        } catch { /* non-fatal */ }
+      }
+
+      alertCount++;
+      break; // only alert the highest crossed threshold per post per run
+    }
+  }
+
+  if (alertCount > 0) log(`Milestone alerts sent: ${alertCount}`);
+}
+
 // ─── Main Export ─────────────────────────────────────────────
 
 export async function measurePerformance(): Promise<PostMetrics[]> {
@@ -463,6 +560,23 @@ export async function measurePerformance(): Promise<PostMetrics[]> {
   } catch (err) {
     // Non-fatal — analytics shouldn't fail because the history sidecar errored.
     log(`Metrics history write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Step 4.6: Milestone alerts — check if any post crossed a view threshold
+  // and send Slack/Discord notifications. Non-fatal.
+  try {
+    const slug = getCampaignSlug();
+    const campaign = await getCampaign(slug);
+    if (campaign) {
+      const thresholds = campaign.milestone_thresholds ?? [];
+      const slackUrl = campaign.slack_webhook;
+      const discordUrl = campaign.discord_webhook;
+      if (thresholds.length > 0 && (slackUrl || discordUrl)) {
+        await checkMilestoneAlerts(rows, thresholds, slackUrl, discordUrl, campaign.name);
+      }
+    }
+  } catch (err) {
+    log(`Milestone alerts failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Step 5: Account dashboard — update if stats tier fired this run

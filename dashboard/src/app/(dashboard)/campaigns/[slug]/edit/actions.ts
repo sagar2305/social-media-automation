@@ -42,10 +42,10 @@ function parseResourceLines(input: string | undefined): Array<{ label: string; u
   for (const raw of input.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
-    const pipe = line.indexOf("|");
-    if (pipe > 0) {
-      const label = line.slice(0, pipe).trim();
-      const url = line.slice(pipe + 1).trim();
+    const sep = line.indexOf(" | ");
+    if (sep > 0) {
+      const label = line.slice(0, sep).trim();
+      const url = line.slice(sep + 3).trim();
       if (url) out.push({ label: label || url, url });
     } else {
       out.push({ label: line, url: line });
@@ -80,7 +80,12 @@ export async function updateCampaignAction(formData: FormData): Promise<Result> 
     visual_style_prompt: String(formData.get("visual_style_prompt") ?? "").trim() || null,
     tone_of_voice: String(formData.get("tone_of_voice") ?? "").trim() || null,
     owner_email: String(formData.get("owner_email") ?? "").trim() || null,
-    target_posts_per_week: Number(formData.get("target_posts_per_week") ?? 3) || 3,
+    target_posts_per_week: (() => {
+      const raw = formData.get("target_posts_per_week");
+      if (raw == null || String(raw).trim() === "") return 3;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : 3;
+    })(),
     branded_hashtags: csvHashtags(String(formData.get("branded_hashtags") ?? "")),
     tracked_hashtags: csvHashtags(String(formData.get("tracked_hashtags") ?? "")),
 
@@ -91,6 +96,13 @@ export async function updateCampaignAction(formData: FormData): Promise<Result> 
     // Email reports
     email_recipients: csv(String(formData.get("email_recipients") ?? "")),
     email_frequency: String(formData.get("email_frequency") ?? "weekly"),
+    email_include: {
+      kpis: formData.get("email_include_kpis") === "on",
+      top_posts: formData.get("email_include_top_posts") === "on",
+      ai_insights: formData.get("email_include_ai_insights") === "on",
+      failed_posts: formData.get("email_include_failed_posts") === "on",
+      account_growth: formData.get("email_include_account_growth") === "on",
+    },
 
     // Flows — single-select radio. Exactly one is true; weights mirror
     // the same one-hot so any code that still reads flow_weights stays
@@ -248,6 +260,8 @@ export async function addCampaignTrainingImage(input: {
   slug: string;
   formData: FormData;
 }): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const file = input.formData.get("file") as File | null;
   if (!file || file.size === 0) return { ok: false, error: "No file provided" };
   if (file.size > 10 * 1024 * 1024) return { ok: false, error: "File must be ≤ 10 MB (Supabase bucket limit)" };
@@ -294,6 +308,8 @@ export async function removeCampaignTrainingImage(input: {
   slug: string;
   url: string;
 }): Promise<Result> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const sb = await createClient();
   const { data: campaign } = await sb
     .from("campaigns")
@@ -336,6 +352,8 @@ export async function removeCampaignTrainingImage(input: {
 export async function distillCampaignStyle(input: {
   slug: string;
 }): Promise<{ ok: true; distillation: string } | { ok: false; error: string }> {
+  const auth = await assertRole("admin");
+  if (!auth.ok) return auth;
   const sb = await createClient();
   const { data: campaign } = await sb
     .from("campaigns")

@@ -15,7 +15,7 @@ export function AvatarLink() {
       const u = session?.user;
       const seed = u?.email ?? (typeof u?.user_metadata?.name === "string" ? u.user_metadata.name : "?");
       setInitial(seed.charAt(0).toUpperCase());
-    });
+    }).catch(() => {});
   }, []);
 
   return (

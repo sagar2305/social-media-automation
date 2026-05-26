@@ -148,6 +148,7 @@ async function pickImplicitCampaignSlug(): Promise<string> {
 
 function parseArgs(): {
   flows: FlowType[];
+  flowExplicit: boolean;
   postingPath: PostingPath;
   delayMinutes: number;
   postIntervalMinutes: number;
@@ -159,7 +160,10 @@ function parseArgs(): {
   const args = process.argv.slice(2);
 
   // Determine flows — accepts single (`--flow=1`) or comma-separated (`--flow=1,2`).
+  // When no --flow flag is given, flowExplicit=false so the caller can fall back
+  // to the campaign's flows_enabled from the database.
   let flows: FlowType[] = ['photorealistic', 'animated', 'emoji_overlay'];
+  let flowExplicit = false;
   const flowMap: Record<string, FlowType> = {
     '1': 'photorealistic', 'photorealistic': 'photorealistic',
     '2': 'animated', 'animated': 'animated',
@@ -167,6 +171,7 @@ function parseArgs(): {
   };
   const flowArg = args.find(a => a.startsWith('--flow='));
   if (flowArg) {
+    flowExplicit = true;
     const val = flowArg.split('=')[1];
     if (val === 'all') {
       flows = ['photorealistic', 'animated', 'emoji_overlay'];
@@ -264,7 +269,7 @@ function parseArgs(): {
     postsPerFlow = Math.max(1, n);
   }
 
-  return { flows, postingPath, delayMinutes, postIntervalMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow };
+  return { flows, flowExplicit, postingPath, delayMinutes, postIntervalMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow };
 }
 
 async function cleanup(filePaths: string[]): Promise<void> {
@@ -344,7 +349,27 @@ async function runCycle(): Promise<void> {
 
   // 3) Now parseArgs sees the right accounts list when computing the default
   //    accountIndices (= "all loaded accounts" pre-cap).
-  const { flows, postingPath, delayMinutes, postIntervalMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow } = parseArgs();
+  const parsed = parseArgs();
+  let { flows } = parsed;
+  const { flowExplicit, postingPath, delayMinutes, postIntervalMinutes, scheduledAt, skipResearch, accountIndices, postsPerFlow } = parsed;
+
+  // If no --flow= flag was passed, use the campaign's flows_enabled from the
+  // dashboard. This lets operators pick a single flow per campaign in the UI
+  // and have the engine respect it without needing CLI flags.
+  if (!flowExplicit && campaign?.flows_enabled) {
+    const fe = campaign.flows_enabled;
+    const fromDb: FlowType[] = [];
+    if (fe.photorealistic) fromDb.push('photorealistic');
+    if (fe.animated) fromDb.push('animated');
+    if (fe.emoji_overlay) fromDb.push('emoji_overlay');
+    if (fromDb.length > 0) {
+      flows = fromDb;
+      log(`[campaign] Using flows from dashboard: ${fromDb.join(', ')}`);
+    } else {
+      log(`[campaign] WARNING: all flows are disabled in dashboard for "${campaign.slug}" — nothing to run. Exiting.`);
+      return;
+    }
+  }
 
   const pathLabel = postingPath === 'draft' ? 'UPLOAD (TikTok drafts)' : 'DIRECT_POST (publish)';
   const flowNames = flows.map(f => f === 'photorealistic' ? 'Flow 1' : f === 'animated' ? 'Flow 2' : 'Flow 3');
@@ -406,6 +431,8 @@ async function runCycle(): Promise<void> {
       // ignore — telemetry never breaks the cycle
     }
   }
+
+  const allTempFiles: string[] = [];
 
   try {
   // Phase 1: Analytics
@@ -471,7 +498,6 @@ async function runCycle(): Promise<void> {
     isRetry: boolean;
     originalPostId?: string;
   }[] = [];
-  const allTempFiles: string[] = [];
 
   await setCurrentPhase(runId, 'generating');
 
@@ -568,7 +594,7 @@ async function runCycle(): Promise<void> {
   // result — e.g., postAllDrafts crashed mid-batch — still surfaces as a
   // 'post_failed' timeline event instead of vanishing silently.
   if (results.length !== allPostData.length) {
-    log(`⚠ Post result/input mismatch: ${results.length} results vs ${allPostData.length} inputs — missing rows will be reported as failures.`);
+    log(`⚠ Post result/input mismatch: ${results.length} results vs ${allPostData.length} inputs — unmatched entries are telemetry-only (tracker updated by postAllDrafts).`);
   }
   for (let i = 0; i < allPostData.length; i++) {
     const d = allPostData[i];
@@ -661,6 +687,7 @@ async function runCycle(): Promise<void> {
     const isCancellation = err instanceof Error && err.message === 'CYCLE_CANCELLED_BY_DASHBOARD';
     if (isCancellation) {
       await reportEvent(runId, 'info', 'Cycle cancelled', 'Admin clicked Cancel on the dashboard. Exited at next phase boundary.');
+      await cleanup(allTempFiles);
       // Status was already 'cancelled' in DB; just record ended_at.
       const { createClient: cc } = await import('@supabase/supabase-js');
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

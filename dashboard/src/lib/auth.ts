@@ -13,7 +13,7 @@ export async function getUser() {
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
   return {
     id: user.id,

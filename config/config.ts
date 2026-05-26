@@ -19,22 +19,31 @@ const tiktokAccounts: TikTokAccount[] = [
   { id: '37047',                    name: '@grow.with.claudia',  handle: 'grow.with.claudia' },
 ];
 
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) {
+    console.error(`FATAL: Missing required environment variable ${name}. Check .env.local`);
+    process.exit(1);
+  }
+  return val;
+}
+
 export const config = {
-  // API Keys
+  // API Keys — all required. Cycle fails fast at startup if any are missing.
   virlo: {
-    apiKey: process.env.VIRLO_API_KEY!,
+    apiKey: requireEnv('VIRLO_API_KEY'),
     baseUrl: 'https://api.virlo.ai/v1',
   },
   gemini: {
-    apiKey: process.env.GEMINI_API_KEY!,
+    apiKey: requireEnv('GEMINI_API_KEY'),
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
   },
   blotato: {
-    apiKey: process.env.BLOTATO_API_KEY || '',
+    apiKey: requireEnv('BLOTATO_API_KEY'),
     baseUrl: 'https://backend.blotato.com/v2',
   },
   scrapeCreators: {
-    apiKey: process.env.SCRAPECREATORS_API_KEY || '',
+    apiKey: requireEnv('SCRAPECREATORS_API_KEY'),
     baseUrl: 'https://api.scrapecreators.com',
   },
 

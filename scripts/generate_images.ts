@@ -1,9 +1,9 @@
-import { mkdir, writeFile, unlink } from 'fs/promises';
+import { mkdir, writeFile, unlink, stat, readFile } from 'fs/promises';
 import { join } from 'path';
 import { config, FlowType } from '../config/config.js';
 import { log } from './api-client.js';
 import type { GeneratedContent } from './text_overlay.js';
-import { getCampaignSlug } from './lib/campaign-paths.js';
+import { getCampaignSlug, campaignCtaPath } from './lib/campaign-paths.js';
 import { getCampaign, type Campaign } from './lib/campaigns.js';
 import { reportEvent, getCurrentRunId } from './cycle_reporter.js';
 
@@ -532,16 +532,27 @@ async function generateImage(prompt: string, maxRetries = 3): Promise<Buffer> {
   const url = `${config.gemini.baseUrl}/models/gemini-2.5-flash-image:generateContent?key=${config.gemini.apiKey}`;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseModalities: ['IMAGE', 'TEXT'],
-        },
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ['IMAGE', 'TEXT'],
+          },
+        }),
+        signal: AbortSignal.timeout(90_000),
+      });
+    } catch (err) {
+      if (attempt < maxRetries) {
+        log(`  Gemini fetch error (attempt ${attempt}/${maxRetries}): ${err} — retrying...`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      throw err;
+    }
 
     if (!response.ok) {
       const errText = await response.text();
@@ -683,6 +694,11 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
       try {
         const resp = await fetch(ctaImageUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${ctaImageUrl}`);
+        const contentType = resp.headers.get('content-type') || '';
+        if (!contentType.startsWith('image/')) {
+          log(`  WARNING: CTA image URL returned Content-Type "${contentType}" instead of image/*; falling back to Gemini-rendered CTA`);
+          throw new Error(`Invalid Content-Type: ${contentType}`);
+        }
         const buf = Buffer.from(await resp.arrayBuffer());
         const rawPath = join(slidesDir, `raw_${timestamp}_a${accountIndex}_${i + 1}.png`);
         await writeFile(rawPath, buf);
@@ -691,8 +707,22 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
         log(`  Uploaded CTA image saved (${(buf.length / 1024).toFixed(0)}KB)`);
         continue;
       } catch (err) {
-        log(`  WARNING: failed to use uploaded CTA image (${err}); falling back to Gemini-rendered CTA with brandName="${brandName}"`);
-        // Fall through to Gemini-rendered CTA below.
+        log(`  WARNING: failed to use uploaded CTA image (${err}); trying local bundled CTA...`);
+        // Try local bundled CTA before falling through to Gemini
+        try {
+          const localCtaFile = campaignCtaPath(campaignSlug);
+          await stat(localCtaFile);
+          const buf = await readFile(localCtaFile);
+          const rawPath = join(slidesDir, `raw_${timestamp}_a${accountIndex}_${i + 1}.png`);
+          await writeFile(rawPath, buf);
+          rawPaths.push(rawPath);
+          ctaImageSlides.add(i);
+          log(`  Local bundled CTA image used (${(buf.length / 1024).toFixed(0)}KB)`);
+          continue;
+        } catch {
+          log(`  WARNING: local CTA not available either; falling back to Gemini-rendered CTA with brandName="${brandName}"`);
+          // Fall through to Gemini-rendered CTA below.
+        }
       }
     }
 
@@ -791,24 +821,23 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
     const textLines = preparedTexts[i].split('\n');
     const textJson = JSON.stringify(textLines);
 
-    // For emoji_overlay flow, pass the emoji as a 4th argument
+    // For emoji_overlay flow, pass the emoji via environment variable to avoid shell injection
     const emoji = flow === 'emoji_overlay' ? (content.slides[i]?.emoji || '') : '';
-    const emojiArg = emoji ? ` "${emoji}"` : '';
 
     try {
       await execAsync(
-        `python3 scripts/overlay-text.py "${rawPath}" '${textJson.replace(/'/g, "'\\''")}' "${finalPath}"${emojiArg}`,
-        { cwd: process.cwd() },
+        `python3 scripts/overlay-text.py "${rawPath}" '${textJson.replace(/'/g, "'\\''")}' "${finalPath}"`,
+        { cwd: process.cwd(), env: { ...process.env, OVERLAY_EMOJI: emoji } },
       );
       finalPaths.push(finalPath);
       log(`  Slide ${i + 1}: text overlaid${emoji ? ` + emoji ${emoji}` : ''}`);
     } catch (err) {
       log(`  ERROR overlaying text on slide ${i + 1}: ${err}`);
       throw err;
+    } finally {
+      // Remove raw image even if overlay fails
+      await unlink(rawPath).catch(() => {});
     }
-
-    // Remove raw image
-    await unlink(rawPath).catch(() => {});
   }
 
   log(`=== COMPLETE (${finalPaths.length} slides with text) ===`);

@@ -215,11 +215,23 @@ async function fireBatch(batch: CycleBatch, today: string): Promise<void> {
     return;
   }
 
-  // Mark last_run_date FIRST so a crash mid-spawn doesn't re-fire on the next tick.
-  await supabase
+  // Atomic claim: only succeed if no other tick already set today's date.
+  // Prevents duplicate cycles when two ticks race on the same batch.
+  // Use .or() to also match rows where last_run_date IS NULL (first run).
+  const { data: claimed, error: claimErr } = await supabase
     .from('cycle_batches')
     .update({ last_run_date: today, updated_at: new Date().toISOString() })
-    .eq('id', batch.id);
+    .eq('id', batch.id)
+    .or(`last_run_date.is.null,last_run_date.neq.${today}`)
+    .select('id');
+  if (claimErr) {
+    console.log(`[scheduler_tick] claim error for "${batch.label}": ${claimErr.message}`);
+    return;
+  }
+  if (!claimed || claimed.length === 0) {
+    console.log(`[scheduler_tick] skip "${batch.label}" — already claimed by another tick`);
+    return;
+  }
 
   const repoDir = resolve(__dirname, '..');
   console.log(`[scheduler_tick] FIRE batch "${batch.label}": npm ${args.join(' ')}`);
@@ -230,6 +242,15 @@ async function fireBatch(batch: CycleBatch, today: string): Promise<void> {
     stdio: 'ignore',
     env: { ...process.env, CYCLE_CALLER: `batch:${batch.label}` },
   });
+
+  // Kill the child if it runs longer than 2 hours (stuck Gemini call, etc.).
+  const MAX_CYCLE_MS = 2 * 60 * 60 * 1000;
+  const killTimer = setTimeout(() => {
+    try { process.kill(-child.pid!, 'SIGTERM'); } catch { /* already exited */ }
+    console.log(`[scheduler_tick] KILLED batch "${batch.label}" — exceeded ${MAX_CYCLE_MS / 60000}min timeout`);
+  }, MAX_CYCLE_MS);
+  child.on('exit', () => clearTimeout(killTimer));
+
   child.unref();
 }
 
