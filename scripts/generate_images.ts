@@ -541,6 +541,7 @@ async function generateImage(prompt: string, maxRetries = 3): Promise<Buffer> {
           responseModalities: ['IMAGE', 'TEXT'],
         },
       }),
+      signal: AbortSignal.timeout(90_000),
     });
 
     if (!response.ok) {
@@ -683,6 +684,11 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
       try {
         const resp = await fetch(ctaImageUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${ctaImageUrl}`);
+        const contentType = resp.headers.get('content-type') || '';
+        if (!contentType.startsWith('image/')) {
+          log(`  WARNING: CTA image URL returned Content-Type "${contentType}" instead of image/*; falling back to Gemini-rendered CTA`);
+          throw new Error(`Invalid Content-Type: ${contentType}`);
+        }
         const buf = Buffer.from(await resp.arrayBuffer());
         const rawPath = join(slidesDir, `raw_${timestamp}_a${accountIndex}_${i + 1}.png`);
         await writeFile(rawPath, buf);
@@ -791,24 +797,23 @@ export async function generateSlidesForPost(content: GeneratedContent): Promise<
     const textLines = preparedTexts[i].split('\n');
     const textJson = JSON.stringify(textLines);
 
-    // For emoji_overlay flow, pass the emoji as a 4th argument
+    // For emoji_overlay flow, pass the emoji via environment variable to avoid shell injection
     const emoji = flow === 'emoji_overlay' ? (content.slides[i]?.emoji || '') : '';
-    const emojiArg = emoji ? ` "${emoji}"` : '';
 
     try {
       await execAsync(
-        `python3 scripts/overlay-text.py "${rawPath}" '${textJson.replace(/'/g, "'\\''")}' "${finalPath}"${emojiArg}`,
-        { cwd: process.cwd() },
+        `python3 scripts/overlay-text.py "${rawPath}" '${textJson.replace(/'/g, "'\\''")}' "${finalPath}"`,
+        { cwd: process.cwd(), env: { ...process.env, OVERLAY_EMOJI: emoji } },
       );
       finalPaths.push(finalPath);
       log(`  Slide ${i + 1}: text overlaid${emoji ? ` + emoji ${emoji}` : ''}`);
     } catch (err) {
       log(`  ERROR overlaying text on slide ${i + 1}: ${err}`);
       throw err;
+    } finally {
+      // Remove raw image even if overlay fails
+      await unlink(rawPath).catch(() => {});
     }
-
-    // Remove raw image
-    await unlink(rawPath).catch(() => {});
   }
 
   log(`=== COMPLETE (${finalPaths.length} slides with text) ===`);

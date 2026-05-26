@@ -82,8 +82,10 @@ export async function listActiveCampaigns(): Promise<CampaignRow[]> {
     // Genuine error (RLS, network, transient DB failure). Fall back to
     // the static registry so the 3 known apps stay visible rather than
     // disappearing on a hiccup.
+    console.warn('[campaigns] Falling back to static registry — Supabase may be down');
     return staticFallback();
   } catch {
+    console.warn('[campaigns] Falling back to static registry — Supabase may be down');
     return staticFallback();
   }
 }
@@ -121,9 +123,17 @@ export async function getCampaignBySlug(slug: string): Promise<CampaignRow | nul
       }
     }
     // Any other failure — fall back to static row for known slugs only.
-    return isCampaign(slug) ? staticRow(slug) : null;
+    if (isCampaign(slug)) {
+      console.warn('[campaigns] Falling back to static registry — Supabase may be down');
+      return staticRow(slug);
+    }
+    return null;
   } catch {
-    return isCampaign(slug) ? staticRow(slug) : null;
+    if (isCampaign(slug)) {
+      console.warn('[campaigns] Falling back to static registry — Supabase may be down');
+      return staticRow(slug);
+    }
+    return null;
   }
 }
 

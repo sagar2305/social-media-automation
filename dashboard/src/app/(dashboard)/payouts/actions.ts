@@ -382,9 +382,12 @@ export async function deleteCreator(input: {
   // payouts (payouts.creator_id is NOT NULL so we can't orphan-to-null).
   // Ledger transactions written when those payouts were approved/paid
   // stay intact — they reference ledger_accounts.code, not creator_id.
-  await sb.from("posts").update({ creator_id: null, assignment_id: null }).eq("creator_id", creator.id);
-  await sb.from("assignments").delete().eq("creator_id", creator.id);
-  await sb.from("payouts").delete().eq("creator_id", creator.id);
+  const { error: postsErr } = await sb.from("posts").update({ creator_id: null, assignment_id: null }).eq("creator_id", creator.id);
+  if (postsErr) return { ok: false, error: `Failed to detach posts: ${postsErr.message}` };
+  const { error: assignErr } = await sb.from("assignments").delete().eq("creator_id", creator.id);
+  if (assignErr) return { ok: false, error: `Failed to delete assignments: ${assignErr.message}` };
+  const { error: payoutsErr } = await sb.from("payouts").delete().eq("creator_id", creator.id);
+  if (payoutsErr) return { ok: false, error: `Failed to delete payouts: ${payoutsErr.message}` };
 
   const { error } = await sb.from("creators").delete().eq("id", creator.id);
   if (error) return { ok: false, error: error.message };
@@ -1146,9 +1149,10 @@ export async function approveCreatorAccountRequest(
     .maybeSingle<{ owned_account_ids: string[] }>();
   const currentOwned = creatorRow?.owned_account_ids ?? [];
   const nextOwned = currentOwned.includes(blotatoId) ? currentOwned : [...currentOwned, blotatoId];
-  await sb.from("creators")
+  const { error: creatorUpErr } = await sb.from("creators")
     .update({ owned_account_ids: nextOwned, updated_at: new Date().toISOString() })
     .eq("id", req.creator_id);
+  if (creatorUpErr) return { ok: false, error: `Failed to update creator owned accounts: ${creatorUpErr.message}` };
 
   // 3. Mark the request approved + stamp who approved. NULL the
   //    encrypted password the moment we approve — the admin has
@@ -1587,6 +1591,12 @@ export async function markPayoutPaid(input: { id: string; reference?: string }):
     .single<{ id: string }>();
   if (txnErr) {
     if (txnErr.code === "23505") {
+      // Already marked paid — update the reference if caller provided a new one.
+      if (input.reference) {
+        await sb.from("ledger_transactions")
+          .update({ external_ref: input.reference })
+          .eq("idempotency_key", idempotencyKey);
+      }
       revalidatePath("/payouts");
       return { ok: true };
     }

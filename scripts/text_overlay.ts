@@ -326,7 +326,7 @@ function assignEmojiFlowRoles(
   campaignDescription: string | null,
 ): SlideContent[] {
   const result: SlideContent[] = [];
-  const available = [...slides];
+  const available = [...slides].slice(0, 6);
 
   // Slide 1: Hook
   if (available.length > 0) {

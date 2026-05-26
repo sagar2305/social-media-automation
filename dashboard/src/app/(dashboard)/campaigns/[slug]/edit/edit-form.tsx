@@ -377,6 +377,27 @@ export function EditCampaignForm({ campaign }: { campaign: Campaign }) {
               </SelectContent>
             </Select>
           </Field>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Content to include</label>
+            {[
+              { key: "kpis", label: "KPI summary (videos, views, likes, saves)" },
+              { key: "top_posts", label: "Top posts of the week" },
+              { key: "ai_insights", label: "AI Brain insights from autoresearch" },
+              { key: "failed_posts", label: "Posts that failed to publish" },
+              { key: "account_growth", label: "Per-account follower / view trend" },
+            ].map((item) => (
+              <label key={item.key} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name={`email_include_${item.key}`}
+                  defaultChecked={(campaign.email_include ?? {})[item.key] === true}
+                  className="h-3.5 w-3.5 rounded border-input"
+                />
+                <span className="text-xs">{item.label}</span>
+              </label>
+            ))}
+          </div>
         </CardContent>
       </Card>
 

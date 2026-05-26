@@ -152,7 +152,7 @@ export function dollarsToCents(input: string | undefined): number | null {
   if (input === undefined || input === "") return null;
   const n = parseFloat(input);
   if (!Number.isFinite(n)) return null;
-  return Math.round(n * 100);
+  return Math.round(parseFloat(n.toFixed(2)) * 100);
 }
 
 export function toDollar(cents: number | null | undefined): string {

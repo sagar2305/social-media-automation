@@ -102,6 +102,17 @@ async function evaluateExperiment(experimentLog: string, tracker: string): Promi
     return null;
   }
 
+  // Reject experiments with insufficient data — need at least 50 views
+  // per variant to draw meaningful conclusions.
+  if (variantAMetrics.views < 50 && variantBMetrics.views < 50) {
+    log(`Experiment #${experimentId}: insufficient views (A=${variantAMetrics.views}, B=${variantBMetrics.views}) — inconclusive`);
+    return {
+      experimentId, account,
+      variantA: variantAMetrics, variantB: variantBMetrics,
+      winner: 'inconclusive', relativeDiff: 0,
+    };
+  }
+
   // Compare save rates
   const diff = variantAMetrics.saveRate - variantBMetrics.saveRate;
   const avgRate = (variantAMetrics.saveRate + variantBMetrics.saveRate) / 2;
@@ -124,11 +135,17 @@ async function evaluateExperiment(experimentLog: string, tracker: string): Promi
   };
 }
 
+const KNOWN_HOOK_STYLES = ['question', 'bold_claim', 'story_opener', 'stat_lead', 'contrast'];
+
 async function updateFormatWinners(result: ExperimentResult): Promise<void> {
   const path = dataPath('FORMAT-WINNERS.md');
   let content = await readFile(path, 'utf-8').catch(() => '');
 
   const winnerStyle = result.winner === 'A' ? result.variantA.hookStyle : result.variantB.hookStyle;
+  if (!KNOWN_HOOK_STYLES.includes(winnerStyle)) {
+    log(`WARNING: unknown hook style "${winnerStyle}" — skipping FORMAT-WINNERS update`);
+    return;
+  }
   const winnerRate = result.winner === 'A' ? result.variantA.saveRate : result.variantB.saveRate;
   const winnerViews = result.winner === 'A' ? result.variantA.views : result.variantB.views;
 

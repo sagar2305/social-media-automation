@@ -66,11 +66,28 @@ async function uploadImage(imagePath: string): Promise<string> {
   const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
   const dataUrl = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
 
-  const { url } = await apiRequest<{ url: string; id: string }>('blotato', '/media', {
-    method: 'POST',
-    body: { url: dataUrl },
-  });
-  return url;
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const { url } = await apiRequest<{ url: string; id: string }>('blotato', '/media', {
+        method: 'POST',
+        body: { url: dataUrl },
+      });
+      if (!url) throw new Error(`Blotato /media returned no URL for ${imagePath}`);
+      return url;
+    } catch (err: any) {
+      const is429 = err?.status === 429 || err?.message?.includes('429');
+      const isNetwork = err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT' || err?.code === 'ENOTFOUND' || err?.type === 'system';
+      if ((is429 || isNetwork) && attempt < maxAttempts) {
+        const delay = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+        log(`Blotato upload attempt ${attempt} failed (${is429 ? '429' : 'network'}), retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`Blotato upload failed after ${maxAttempts} attempts for ${imagePath}`);
 }
 
 // ─── Post via Blotato ────────────────────────────────────────
@@ -155,9 +172,11 @@ async function updateExperimentLog(metadata: PostMetadata): Promise<void> {
       content += `\n## Active Experiment\n${entry}\n`;
     }
 
-    const { writeFile } = await import('fs/promises');
+    const { writeFile: fsWrite, rename } = await import('fs/promises');
     await ensureDir(logPath);
-    await writeFile(logPath, content);
+    const tmpPath = `${logPath}.tmp.${process.pid}.${Date.now()}`;
+    await fsWrite(tmpPath, content);
+    await rename(tmpPath, logPath);
     log(`Created experiment #${metadata.experimentId}`);
   }
 }
@@ -351,6 +370,14 @@ export async function postAllDrafts(
           });
         } catch { /* never block the cycle on reporter failure */ }
       }
+
+      // Write failed post to POST-TRACKER so the retry handler can find it.
+      try {
+        const failedId = `FAILED_${Date.now()}_${data.accountIndex}`;
+        const trackerPath = dataPath('POST-TRACKER.md');
+        const row = `| ${failedId} | ${data.metadata.createdAt.slice(0, 10)} | ${data.metadata.hookStyle} | ${data.metadata.format} | ${data.metadata.hashtags.join(', ')} | - | - | - | - | - | - | error (${data.metadata.account}, ${data.metadata.flow}) | - |`;
+        await appendFile(trackerPath, row + '\n');
+      } catch { /* tracker write itself failed — non-fatal */ }
 
       // Also surface through the auto-fix system so signatures dedup-
       // notify (HUMAN-ONLY tier fires Slack/file alerts) and the

@@ -37,13 +37,46 @@ const publicRoutePatterns: RegExp[] = [
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public routes and shared dashboards
+  // Allow public routes and shared dashboards. Also attempt a session
+  // refresh so stale auth cookies get cleared — prevents the "Invalid
+  // Refresh Token" error from bubbling into server components that
+  // create a Supabase client on public pages (e.g. CMS queries on /welcome).
   if (
     publicRoutes.some((r) => pathname === r || pathname.startsWith(r + "/")) ||
     publicRoutePatterns.some((re) => re.test(pathname)) ||
     pathname.startsWith("/share/")
   ) {
-    return NextResponse.next();
+    let response = NextResponse.next({ request: { headers: request.headers } });
+    try {
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll: () => request.cookies.getAll(),
+            setAll: (cookiesToSet) => {
+              cookiesToSet.forEach(({ name, value }) =>
+                request.cookies.set(name, value)
+              );
+              response = NextResponse.next({ request: { headers: request.headers } });
+              cookiesToSet.forEach(({ name, value, options }) =>
+                response.cookies.set(name, value, options)
+              );
+            },
+          },
+        }
+      );
+      await supabase.auth.getUser();
+    } catch {
+      // Stale token — clear all supabase auth cookies so downstream
+      // createClient() calls start from a clean anonymous state.
+      for (const c of request.cookies.getAll()) {
+        if (c.name.startsWith("sb-")) {
+          response.cookies.delete(c.name);
+        }
+      }
+    }
+    return response;
   }
 
   // Create a response to pass through
