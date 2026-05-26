@@ -126,9 +126,11 @@ export async function createCampaignAction(formData: FormData): Promise<
   const tone_of_voice = String(formData.get("tone_of_voice") ?? "").trim() || null;
   const owner_email = String(formData.get("owner_email") ?? "").trim() || null;
   const rawTarget = formData.get("target_posts_per_week");
-  const target_posts_per_week = rawTarget != null && String(rawTarget).trim() !== ""
-    ? Math.max(0, Number(rawTarget) || 0)
-    : 3;
+  const target_posts_per_week = (() => {
+    if (rawTarget == null || String(rawTarget).trim() === "") return 3;
+    const parsed = Number(rawTarget);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 3;
+  })();
 
   // Branded hashtags — comma-separated text, normalised to "#tag" entries.
   const brandedRaw = String(formData.get("branded_hashtags") ?? "");

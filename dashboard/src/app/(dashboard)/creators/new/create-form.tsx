@@ -74,8 +74,8 @@ export function CreateCreatorForm() {
   }
 
   async function onSubmit(e: React.FormEvent) {
-    if (submitting) return;
     e.preventDefault();
+    if (submitting) return;
     setError(null);
     setSubmitting(true);
     const r = await createCreator({

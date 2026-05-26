@@ -1152,7 +1152,10 @@ export async function approveCreatorAccountRequest(
   const { error: creatorUpErr } = await sb.from("creators")
     .update({ owned_account_ids: nextOwned, updated_at: new Date().toISOString() })
     .eq("id", req.creator_id);
-  if (creatorUpErr) return { ok: false, error: `Failed to update creator owned accounts: ${creatorUpErr.message}` };
+  if (creatorUpErr) {
+    await sb.from("accounts").delete().eq("id", blotatoId);
+    return { ok: false, error: `Failed to update creator owned accounts: ${creatorUpErr.message}` };
+  }
 
   // 3. Mark the request approved + stamp who approved. NULL the
   //    encrypted password the moment we approve — the admin has

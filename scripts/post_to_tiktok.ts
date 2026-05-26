@@ -375,6 +375,7 @@ export async function postAllDrafts(
       try {
         const failedId = `FAILED_${Date.now()}_${data.accountIndex}`;
         const trackerPath = dataPath('POST-TRACKER.md');
+        await ensureDir(trackerPath);
         const row = `| ${failedId} | ${data.metadata.createdAt.slice(0, 10)} | ${data.metadata.hookStyle} | ${data.metadata.format} | ${data.metadata.hashtags.join(', ')} | - | - | - | - | - | - | error (${data.metadata.account}, ${data.metadata.flow}) | - |`;
         await appendFile(trackerPath, row + '\n');
       } catch { /* tracker write itself failed — non-fatal */ }

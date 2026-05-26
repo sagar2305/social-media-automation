@@ -67,14 +67,18 @@ export default async function proxy(request: NextRequest) {
         }
       );
       await supabase.auth.getUser();
-    } catch {
-      // Stale token — clear all supabase auth cookies so downstream
-      // createClient() calls start from a clean anonymous state.
-      for (const c of request.cookies.getAll()) {
-        if (c.name.startsWith("sb-")) {
-          response.cookies.delete(c.name);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/refresh|token/i.test(msg)) {
+        // Stale token — clear all supabase auth cookies so downstream
+        // createClient() calls start from a clean anonymous state.
+        for (const c of request.cookies.getAll()) {
+          if (c.name.startsWith("sb-")) {
+            response.cookies.delete(c.name);
+          }
         }
       }
+      // Other errors (network, timeout) — log but don't clear cookies.
     }
     return response;
   }

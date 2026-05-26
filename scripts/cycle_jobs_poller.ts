@@ -199,7 +199,6 @@ async function fireJob(job: CycleJob): Promise<void> {
     try { process.kill(-child.pid!, 'SIGTERM'); } catch { /* already exited */ }
     console.log(`[jobs_poller] KILLED job ${job.id} — exceeded ${MAX_CYCLE_MS / 60000}min timeout`);
   }, MAX_CYCLE_MS);
-  killTimer.unref();
   child.on('exit', () => clearTimeout(killTimer));
 
   child.unref();

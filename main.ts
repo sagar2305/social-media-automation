@@ -365,6 +365,9 @@ async function runCycle(): Promise<void> {
     if (fromDb.length > 0) {
       flows = fromDb;
       log(`[campaign] Using flows from dashboard: ${fromDb.join(', ')}`);
+    } else {
+      log(`[campaign] WARNING: all flows are disabled in dashboard for "${campaign.slug}" — nothing to run. Exiting.`);
+      return;
     }
   }
 

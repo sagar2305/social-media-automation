@@ -82,7 +82,9 @@ export async function updateCampaignAction(formData: FormData): Promise<Result> 
     owner_email: String(formData.get("owner_email") ?? "").trim() || null,
     target_posts_per_week: (() => {
       const raw = formData.get("target_posts_per_week");
-      return raw != null && String(raw).trim() !== "" ? Math.max(0, Number(raw) || 0) : 3;
+      if (raw == null || String(raw).trim() === "") return 3;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : 3;
     })(),
     branded_hashtags: csvHashtags(String(formData.get("branded_hashtags") ?? "")),
     tracked_hashtags: csvHashtags(String(formData.get("tracked_hashtags") ?? "")),

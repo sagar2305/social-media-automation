@@ -104,8 +104,11 @@ async function evaluateExperiment(experimentLog: string, tracker: string): Promi
 
   // Reject experiments with insufficient data — need at least 50 views
   // per variant to draw meaningful conclusions.
-  if (variantAMetrics.views < 50 && variantBMetrics.views < 50) {
-    log(`Experiment #${experimentId}: insufficient views (A=${variantAMetrics.views}, B=${variantBMetrics.views}) — inconclusive`);
+  if (variantAMetrics.views < 50 || variantBMetrics.views < 50) {
+    const underpowered = variantAMetrics.views < 50 && variantBMetrics.views < 50
+      ? 'both variants'
+      : variantAMetrics.views < 50 ? 'variant A' : 'variant B';
+    log(`Experiment #${experimentId}: insufficient views — ${underpowered} underpowered (A=${variantAMetrics.views}, B=${variantBMetrics.views}) — inconclusive`);
     return {
       experimentId, account,
       variantA: variantAMetrics, variantB: variantBMetrics,
@@ -258,6 +261,7 @@ async function refreshFormatWinners(tracker: string): Promise<void> {
 
   for (const [, data] of metrics) {
     if (data.views <= 0) continue;
+    if (!KNOWN_HOOK_STYLES.includes(data.hookStyle)) continue;
     const key = `${data.hookStyle}`;
     if (!formatStats[key]) formatStats[key] = { views: 0, saves: 0, count: 0, lastDate: '' };
     formatStats[key].views += data.views;

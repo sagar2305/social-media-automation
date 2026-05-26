@@ -471,6 +471,21 @@ async function checkMilestoneAlerts(
       const msg = `${campaignName}: post ${row.postId} hit ${t.toLocaleString()} views (now at ${views.toLocaleString()})`;
       log(`  Milestone alert: ${msg}`);
 
+      // Claim the DB row BEFORE sending the webhook to avoid duplicate alerts.
+      const { error: insertErr } = await sb.from('milestone_alerts_fired').insert({
+        post_id: row.postId,
+        threshold: t,
+        views_at_fire: views,
+        fired_at: new Date().toISOString(),
+      });
+      if (insertErr) {
+        // 23505 = unique violation — another process already fired this milestone; skip.
+        if (insertErr.code === '23505') continue;
+        log(`  WARNING: milestone insert failed: ${insertErr.message}`);
+        continue;
+      }
+      firedSet.add(firedKey);
+
       if (slackUrl) {
         try {
           await fetch(slackUrl, {
@@ -489,17 +504,6 @@ async function checkMilestoneAlerts(
           });
         } catch { /* non-fatal */ }
       }
-
-      // Record the fired milestone so we don't alert again
-      try {
-        await sb.from('milestone_alerts_fired').insert({
-          post_id: row.postId,
-          threshold: t,
-          views_at_fire: views,
-          fired_at: new Date().toISOString(),
-        });
-        firedSet.add(firedKey);
-      } catch { /* non-fatal */ }
 
       alertCount++;
       break; // only alert the highest crossed threshold per post per run

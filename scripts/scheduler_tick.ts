@@ -217,12 +217,17 @@ async function fireBatch(batch: CycleBatch, today: string): Promise<void> {
 
   // Atomic claim: only succeed if no other tick already set today's date.
   // Prevents duplicate cycles when two ticks race on the same batch.
-  const { data: claimed } = await supabase
+  // Use .or() to also match rows where last_run_date IS NULL (first run).
+  const { data: claimed, error: claimErr } = await supabase
     .from('cycle_batches')
     .update({ last_run_date: today, updated_at: new Date().toISOString() })
     .eq('id', batch.id)
-    .neq('last_run_date', today)
+    .or(`last_run_date.is.null,last_run_date.neq.${today}`)
     .select('id');
+  if (claimErr) {
+    console.log(`[scheduler_tick] claim error for "${batch.label}": ${claimErr.message}`);
+    return;
+  }
   if (!claimed || claimed.length === 0) {
     console.log(`[scheduler_tick] skip "${batch.label}" — already claimed by another tick`);
     return;
@@ -244,7 +249,6 @@ async function fireBatch(batch: CycleBatch, today: string): Promise<void> {
     try { process.kill(-child.pid!, 'SIGTERM'); } catch { /* already exited */ }
     console.log(`[scheduler_tick] KILLED batch "${batch.label}" — exceeded ${MAX_CYCLE_MS / 60000}min timeout`);
   }, MAX_CYCLE_MS);
-  killTimer.unref();
   child.on('exit', () => clearTimeout(killTimer));
 
   child.unref();

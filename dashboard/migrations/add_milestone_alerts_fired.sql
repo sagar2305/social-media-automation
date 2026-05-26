@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS milestone_alerts_fired (
   UNIQUE (post_id, threshold)
 );
 
--- RLS: engine writes via anon key; dashboard reads for debugging.
+-- RLS: engine writes via anon key (append-only); dashboard reads for debugging.
 ALTER TABLE milestone_alerts_fired ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all" ON milestone_alerts_fired FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "anon_select" ON milestone_alerts_fired FOR SELECT USING (true);
+CREATE POLICY "anon_insert" ON milestone_alerts_fired FOR INSERT WITH CHECK (true);
