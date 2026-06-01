@@ -407,9 +407,13 @@ const TRENDING_BROAD = [
   '#FYP', '#ForYou', '#Viral', '#LearnOnTikTok', '#LifeHack', '#AI',
 ];
 
-// How many hashtags we aim to ship per post. CLAUDE.md specs ~20; we target 18
-// and cap there so captions stay credible rather than spammy.
-const HASHTAG_TARGET = 18;
+// How many hashtags we aim to ship per post. Matches the CLAUDE.md spec of 20
+// (5 trending + 7 niche + 5 ultra-niche + 3 branded/topic). We don't enforce
+// the exact per-tier split because DB-configured campaigns don't carry separate
+// niche/ultra pools — those hardcoded study tiers were the old cross-campaign
+// leakage source. Instead we fill toward 20 in tier-priority order (branded
+// first so they always survive) from the campaign's own tags + trending + bank.
+const HASHTAG_TARGET = 20;
 
 // HASHTAG-BANK.md "Top Performers" are the highest-reach tags Virlo returns, but
 // some are pure off-topic entities (sports teams, animals) that look wrong on a
@@ -462,21 +466,26 @@ function normaliseCampaignHashtags(tags: string[] | null | undefined): string[] 
 }
 
 /**
- * Build the hashtag set for a post. Targets ~HASHTAG_TARGET (18) tags so posts
- * get real discovery reach (CLAUDE.md specs ~20). Universal across campaigns,
- * assembled in priority order and deduped case-insensitively (first wins):
+ * Build the hashtag set for a post. Targets HASHTAG_TARGET (20) tags so posts
+ * get real discovery reach. Universal across campaigns, assembled in
+ * tier-priority order and deduped case-insensitively (first wins):
  *
  *   1. ALL `campaign.branded_hashtags`   — always, keep their casing (#MinuteWise)
  *   2. ALL `campaign.tracked_hashtags`   — campaign's own niche tags
- *   3. a few trending/broad (#FYP etc.)
- *   4. fill the remainder from HASHTAG-BANK.md "Top Performers" (high-reach,
- *      Virlo-refreshed, campaign-scoped) until we hit the target
+ *   3. trending/broad (#FYP etc.)
+ *   4. HASHTAG-BANK.md "Top Performers" (high-reach, Virlo-refreshed,
+ *      campaign-scoped) — fills the remainder up to the target
  *
  * If the campaign hasn't filled in tracked/branded yet we DO NOT splice in
  * study-niche placeholders — that was the original cross-campaign leakage. The
  * legacy STUDY_* pools are consulted ONLY when there is no active campaign
  * loaded at all (Supabase down + no campaign_id), so a back-compat MinuteWise
  * install still works.
+ *
+ * If the bank is sparse/denylisted and a configured campaign has few of its own
+ * tags, the unique pool may fall short of the target. We never pad with
+ * off-niche study tags (leakage); instead we ship fewer and log it, so an
+ * under-tagged post is visible rather than silent.
  */
 function pickHashtags(
   hashtagBank: string,
@@ -495,14 +504,16 @@ function pickHashtags(
 
   const bankPool = parseBankHashtags(hashtagBank);
 
-  // Priority-ordered candidate list. Dedupe is case-insensitive, first-wins,
-  // so branded tags keep their nice casing over a lowercase bank duplicate.
+  // Priority-ordered candidate list — every safe source, full (no per-source
+  // slicing), so we draw as close to the target as the unique pool allows.
+  // Dedupe is case-insensitive, first-wins, so branded tags keep their nice
+  // casing over a lowercase bank duplicate.
   const candidates: string[] = [
     ...branded,
     ...tracked,
     ...shuffle(nicheFallback),
-    ...shuffle(ultraFallback).slice(0, 4),
-    ...shuffle(TRENDING_BROAD).slice(0, 3),
+    ...shuffle(ultraFallback),
+    ...shuffle(TRENDING_BROAD),
     ...bankPool, // already views-desc; fills the remainder up to the target
   ];
 
@@ -514,6 +525,16 @@ function pickHashtags(
     seen.add(key);
     set.push(tag);
     if (set.length >= HASHTAG_TARGET) break;
+  }
+
+  // No-silent-truncation guard: the candidate pool above is already every safe
+  // source we have. If we're still short, the bank was sparse/denylisted — log
+  // it rather than ship a quietly under-tagged post (padding with off-niche
+  // study tags would re-introduce the cross-campaign leakage we removed).
+  if (set.length < HASHTAG_TARGET) {
+    log(`[hashtags] only ${set.length}/${HASHTAG_TARGET} unique tags available `
+      + `(bank has ${bankPool.length}, branded ${branded.length}, tracked ${tracked.length}) `
+      + `— shipping fewer rather than padding off-niche`);
   }
 
   // Don't repeat the exact same set two posts in a row — swap in a fresh
