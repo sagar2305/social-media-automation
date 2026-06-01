@@ -407,6 +407,40 @@ const TRENDING_BROAD = [
   '#FYP', '#ForYou', '#Viral', '#LearnOnTikTok', '#LifeHack', '#AI',
 ];
 
+// How many hashtags we aim to ship per post. Matches the CLAUDE.md spec of 20
+// (5 trending + 7 niche + 5 ultra-niche + 3 branded/topic). We don't enforce
+// the exact per-tier split because DB-configured campaigns don't carry separate
+// niche/ultra pools — those hardcoded study tiers were the old cross-campaign
+// leakage source. Instead we fill toward 20 in tier-priority order (branded
+// first so they always survive) from the campaign's own tags + trending + bank.
+const HASHTAG_TARGET = 20;
+
+// HASHTAG-BANK.md "Top Performers" are the highest-reach tags Virlo returns, but
+// some are pure off-topic entities (sports teams, animals) that look wrong on a
+// study/comedy post. Skip these when filling from the bank.
+const BANK_DENYLIST = new Set([
+  'nba', 'mma', 'arsenal', 'psg', 'soccer', 'football', 'usa', 'dog',
+  'catsoftiktok', 'makeup', 'water',
+]);
+
+/**
+ * Parse hashtags out of a HASHTAG-BANK.md "Top Performers" table. Rows look
+ * like `| fyp | 4,801 | ... |` — we take the first column word, skip the
+ * denylist, and return them in table order (already views-descending) as
+ * `#word`. Bad/empty rows are ignored.
+ */
+function parseBankHashtags(hashtagBank: string): string[] {
+  const out: string[] = [];
+  for (const line of hashtagBank.split('\n')) {
+    const m = line.match(/^\|\s*([A-Za-z0-9_]+)\s*\|\s*[\d,]+\s*\|/);
+    if (!m) continue; // header / separator / non-data rows
+    const word = m[1].toLowerCase();
+    if (BANK_DENYLIST.has(word)) continue;
+    out.push(`#${word}`);
+  }
+  return out;
+}
+
 let lastHashtagSet: string[] = [];
 
 /**
@@ -432,24 +466,29 @@ function normaliseCampaignHashtags(tags: string[] | null | undefined): string[] 
 }
 
 /**
- * Build the hashtag set for a post. Universal across campaigns:
+ * Build the hashtag set for a post. Targets HASHTAG_TARGET (20) tags so posts
+ * get real discovery reach. Universal across campaigns, assembled in
+ * tier-priority order and deduped case-insensitively (first wins):
  *
- *   - 1 trending/broad tag (#FYP / #LearnOnTikTok etc.)        — always
- *   - up to 2 niche tags from `campaign.tracked_hashtags`      — only if set
- *   - up to 2 branded tags from `campaign.branded_hashtags`    — only if set
+ *   1. ALL `campaign.branded_hashtags`   — always, keep their casing (#MinuteWise)
+ *   2. ALL `campaign.tracked_hashtags`   — campaign's own niche tags
+ *   3. trending/broad (#FYP etc.)
+ *   4. HASHTAG-BANK.md "Top Performers" (high-reach, Virlo-refreshed,
+ *      campaign-scoped) — fills the remainder up to the target
  *
- * If the campaign hasn't filled in tracked/branded yet (a freshly created
- * Campaign 3, say), we DO NOT splice in study-niche placeholders — that
- * was the original cross-campaign leakage. The post simply gets fewer
- * tags. The dashboard's edit page surfaces both fields so the operator
- * can fill them in once and own their niche.
+ * If the campaign hasn't filled in tracked/branded yet we DO NOT splice in
+ * study-niche placeholders — that was the original cross-campaign leakage. The
+ * legacy STUDY_* pools are consulted ONLY when there is no active campaign
+ * loaded at all (Supabase down + no campaign_id), so a back-compat MinuteWise
+ * install still works.
  *
- * The legacy STUDY_* pools are now only consulted when there is also
- * NO active campaign loaded at all (Supabase down + no campaign_id), so
- * a back-compat MinuteWise install still works.
+ * If the bank is sparse/denylisted and a configured campaign has few of its own
+ * tags, the unique pool may fall short of the target. We never pad with
+ * off-niche study tags (leakage); instead we ship fewer and log it, so an
+ * under-tagged post is visible rather than silent.
  */
 function pickHashtags(
-  _hashtagBank: string,
+  hashtagBank: string,
   campaignBranded: string[] | null,
   campaignTracked: string[] | null,
 ): string[] {
@@ -457,33 +496,54 @@ function pickHashtags(
   const tracked = normaliseCampaignHashtags(campaignTracked);
   const campaignConfigured = branded.length > 0 || tracked.length > 0;
 
-  const trending = [pickRandom(TRENDING_BROAD)];
+  const shuffle = <T>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 
-  // Niche / branded slots — campaign-driven when configured, legacy
-  // study pool ONLY when the campaign is unconfigured (no branded AND
-  // no tracked). This is the universal-leakage fix: a campaign without
-  // its niche set should not inherit MinuteWise's niche.
-  const nicheSource = tracked.length >= 1
-    ? tracked
-    : (campaignConfigured ? [] : STUDY_NICHE_HASHTAGS);
-  const niche = [...nicheSource].sort(() => Math.random() - 0.5).slice(0, 2);
+  // Campaign niche fallback only when nothing is configured at all.
+  const nicheFallback = campaignConfigured ? [] : STUDY_NICHE_HASHTAGS;
+  const ultraFallback = campaignConfigured ? [] : STUDY_ULTRA_NICHE_HASHTAGS;
 
-  const ultraSource = branded.length >= 1
-    ? branded
-    : (campaignConfigured ? [] : STUDY_ULTRA_NICHE_HASHTAGS);
-  const ultra = [...ultraSource].sort(() => Math.random() - 0.5).slice(0, 1 + Math.round(Math.random()));
+  const bankPool = parseBankHashtags(hashtagBank);
 
-  const set = [...trending, ...niche, ...ultra];
+  // Priority-ordered candidate list — every safe source, full (no per-source
+  // slicing), so we draw as close to the target as the unique pool allows.
+  // Dedupe is case-insensitive, first-wins, so branded tags keep their nice
+  // casing over a lowercase bank duplicate.
+  const candidates: string[] = [
+    ...branded,
+    ...tracked,
+    ...shuffle(nicheFallback),
+    ...shuffle(ultraFallback),
+    ...shuffle(TRENDING_BROAD),
+    ...bankPool, // already views-desc; fills the remainder up to the target
+  ];
 
-  // Don't repeat the same set two posts in a row. Swap the last tag
-  // with one from the same campaign-driven pool so the rotation stays
-  // in scope; if the campaign has only a single branded tag we just
-  // accept the repeat rather than reaching for an off-niche pool.
+  const set: string[] = [];
+  const seen = new Set<string>();
+  for (const tag of candidates) {
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    set.push(tag);
+    if (set.length >= HASHTAG_TARGET) break;
+  }
+
+  // No-silent-truncation guard: the candidate pool above is already every safe
+  // source we have. If we're still short, the bank was sparse/denylisted — log
+  // it rather than ship a quietly under-tagged post (padding with off-niche
+  // study tags would re-introduce the cross-campaign leakage we removed).
+  if (set.length < HASHTAG_TARGET) {
+    log(`[hashtags] only ${set.length}/${HASHTAG_TARGET} unique tags available `
+      + `(bank has ${bankPool.length}, branded ${branded.length}, tracked ${tracked.length}) `
+      + `— shipping fewer rather than padding off-niche`);
+  }
+
+  // Don't repeat the exact same set two posts in a row — swap in a fresh
+  // bank tag we haven't used yet so consecutive posts rotate.
   if (JSON.stringify([...set].sort()) === JSON.stringify([...lastHashtagSet].sort())) {
-    const swapPool = ultraSource.filter(h => !set.includes(h));
-    if (swapPool.length > 0) {
+    const swap = bankPool.find(h => !seen.has(h.toLowerCase()));
+    if (swap) {
       set.pop();
-      set.push(pickRandom(swapPool));
+      set.push(swap);
     }
   }
 
@@ -503,12 +563,22 @@ function pickHashtags(
 // campaign-appropriate title (it's the slide-1 hook) so the caption can
 // just relay that.
 
-function buildCaption(title: string, hashtags: string[]): string {
+function buildCaption(title: string, hashtags: string[], description?: string): string {
   // Title doubles as the caption hook (Gemini emits it that way; CSV
   // templates store it in template.name). Trailing punctuation removed
   // so we can safely add the emoji.
+  //
+  // Caption shape (TikTok description, max 4000 chars — we stay well under):
+  //   <hook> 💡
+  //   <2-4 sentence body — Gemini's caption, or synthesized from slides>
+  //   <hashtags>
+  // The body is optional; without it the caption is the original hook-only form.
   const hookLine = title.replace(/[.!?]\s*$/, '');
-  return `${hookLine} 💡\n\n${hashtags.join(' ')}`;
+  const body = description?.trim();
+  const parts = [`${hookLine} 💡`];
+  if (body) parts.push(body);
+  parts.push(hashtags.join(' '));
+  return parts.join('\n\n');
 }
 
 // ─── Experiment Logic ──────────────────────────────────────────
@@ -557,7 +627,7 @@ async function generateAIContent(
   flow: FlowType,
   hookStyle: HookStyle,
   accountIndex: number,
-): Promise<{ name: string; slides: { top: string; center: string; bottom: string }[] } | null> {
+): Promise<{ name: string; caption: string; slides: { top: string; center: string; bottom: string }[] } | null> {
   if (!config.gemini.apiKey) {
     log('Gemini API key not set — skipping AI content generation');
     return null;
@@ -645,9 +715,17 @@ SLIDE STRUCTURE RULES:
 - Stay strictly within this campaign's topic and audience
 - Do NOT repeat content from previous posts
 
+CAPTION RULES:
+- Also write a "caption" — the TikTok post description (NOT slide text).
+- 2-4 punchy sentences, roughly 250-350 characters, on-brand for this campaign.
+- Expand the hook into real value: tease what the slides deliver, then end with
+  a soft CTA (e.g. "Save this", "Follow for more", "Try it tonight").
+- Do NOT include any hashtags in the caption — they are appended separately.
+
 OUTPUT FORMAT (strict JSON, no markdown):
 {
   "title": "The hook title for this post (this becomes the caption hook)",
+  "caption": "2-4 sentence TikTok description that expands the hook, no hashtags",
   "slides": [
     { "top": "short header", "center": "main point 1-2 sentences", "bottom": "supporting line" },
     { "top": "...", "center": "...", "bottom": "..." }
@@ -702,7 +780,9 @@ Generate a unique, engaging post now.`;
     }
 
     log(`AI generated: "${parsed.title}" (${parsed.slides.length} slides)`);
-    return { name: parsed.title, slides: parsed.slides };
+    // caption is optional — Gemini may omit it; buildCaption falls back to the
+    // hook-only shape when it's empty.
+    return { name: parsed.title, caption: typeof parsed.caption === 'string' ? parsed.caption : '', slides: parsed.slides };
   } catch (err) {
     log(`AI content generation failed: ${err}`);
     return null;
@@ -784,6 +864,9 @@ export async function generateContent(
 
   // Try AI-generated content first, fall back to CSV
   let template: CsvTemplate | null = null;
+  // Gemini-authored post description (the longer caption body). Empty on the
+  // CSV fallback path — we synthesize one from the slide copy below.
+  let aiCaption = '';
 
   try {
     const aiContent = await generateAIContent(flow, style, accountIndex);
@@ -795,6 +878,7 @@ export async function generateContent(
         referenceUrl: '',
         isActive: true,
       };
+      aiCaption = aiContent.caption;
       usedTemplatesThisCycle.add(template.name);
       log(`Using AI-generated template: "${template.name}" (${template.slides.length} slides)`);
     }
@@ -831,7 +915,20 @@ export async function generateContent(
     ? assignEmojiFlowRoles(template.slides, campaign?.name ?? null, campaign?.description ?? null)
     : assignSlideRoles(template.slides, campaign?.name ?? null, campaign?.description ?? null);
   const hashtags = pickHashtags(hashtagBank, campaign?.branded_hashtags ?? null, campaign?.tracked_hashtags ?? null);
-  const caption = buildCaption(title, hashtags);
+  // Post-description body. Prefer Gemini's caption; on the CSV fallback path
+  // (no AI caption) synthesize one from the middle slides' copy so the post
+  // still reads fuller than a bare hook.
+  let description = aiCaption.trim();
+  if (!description) {
+    description = template.slides
+      .slice(1, 4)
+      .map((s) => s.center?.trim())
+      .filter((s): s is string => Boolean(s))
+      .join(' ')
+      .slice(0, 320)
+      .trim();
+  }
+  const caption = buildCaption(title, hashtags, description);
   const actualHookStyle = classifyHookStyle(title);
 
   const metadata: PostMetadata = {
