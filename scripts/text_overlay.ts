@@ -734,59 +734,82 @@ OUTPUT FORMAT (strict JSON, no markdown):
 
 Generate a unique, engaging post now.`;
 
-  try {
-    const response = await fetch(
-      `${config.gemini.baseUrl}/models/gemini-2.5-flash:generateContent?key=${config.gemini.apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-          },
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      log(`Gemini text API error: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      log('Gemini returned empty text response');
-      return null;
-    }
-
-    let parsed;
+  // Gemini occasionally returns a 5xx, an empty body, or truncated/invalid JSON
+  // (the "Expected ',' or '}'" parse error). These are transient — a fresh call
+  // usually succeeds. Retry a few times before giving up so a single flaky
+  // response doesn't fail the whole cycle (RoastAI especially, which has no CSV
+  // fallback and would otherwise abort the run).
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      parsed = JSON.parse(text);
-    } catch (parseErr) {
-      log(`Gemini returned non-JSON output (length=${text.length}): ${text.slice(0, 200)}…`);
-      log(`  Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
-      return null;
-    }
-    const missing: string[] = [];
-    if (!parsed.title) missing.push('title');
-    if (!Array.isArray(parsed.slides)) missing.push('slides[]');
-    else if (parsed.slides.length < 3) missing.push(`slides<3 (got ${parsed.slides.length})`);
-    if (missing.length > 0) {
-      log(`Gemini JSON missing required fields: ${missing.join(', ')}`);
-      log(`  Raw response: ${JSON.stringify(parsed).slice(0, 200)}…`);
-      return null;
-    }
+      const response = await fetch(
+        `${config.gemini.baseUrl}/models/gemini-2.5-flash:generateContent?key=${config.gemini.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+            },
+          }),
+        },
+      );
 
-    log(`AI generated: "${parsed.title}" (${parsed.slides.length} slides)`);
-    // caption is optional — Gemini may omit it; buildCaption falls back to the
-    // hook-only shape when it's empty.
-    return { name: parsed.title, caption: typeof parsed.caption === 'string' ? parsed.caption : '', slides: parsed.slides };
-  } catch (err) {
-    log(`AI content generation failed: ${err}`);
-    return null;
+      if (!response.ok) {
+        log(`Gemini text API error: ${response.status} (attempt ${attempt}/${MAX_ATTEMPTS})`);
+        continue;
+      }
+
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        log(`Gemini returned empty text response (attempt ${attempt}/${MAX_ATTEMPTS})`);
+        continue;
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (parseErr) {
+        log(`Gemini returned non-JSON output (length=${text.length}): ${text.slice(0, 200)}…`);
+        log(`  Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)} (attempt ${attempt}/${MAX_ATTEMPTS})`);
+        continue;
+      }
+      const missing: string[] = [];
+      if (!parsed.title) missing.push('title');
+      if (!Array.isArray(parsed.slides)) {
+        missing.push('slides[]');
+      } else {
+        // RULES.md: minimum 5 slides per post.
+        if (parsed.slides.length < 5) missing.push(`slides<5 (got ${parsed.slides.length})`);
+        // Each slide must carry string top/center/bottom — downstream
+        // (assignSlideRoles / overlay) reads these directly and a malformed
+        // object would crash or render blank. Validate so a bad slide triggers
+        // a retry instead of slipping through.
+        parsed.slides.forEach((s: any, i: number) => {
+          for (const field of ['top', 'center', 'bottom'] as const) {
+            if (typeof s?.[field] !== 'string') missing.push(`slides[${i}].${field}`);
+          }
+        });
+      }
+      if (missing.length > 0) {
+        log(`Gemini JSON missing required fields: ${missing.join(', ')} (attempt ${attempt}/${MAX_ATTEMPTS})`);
+        log(`  Raw response: ${JSON.stringify(parsed).slice(0, 200)}…`);
+        continue;
+      }
+
+      log(`AI generated: "${parsed.title}" (${parsed.slides.length} slides)`);
+      // caption is optional — Gemini may omit it; buildCaption falls back to the
+      // hook-only shape when it's empty.
+      return { name: parsed.title, caption: typeof parsed.caption === 'string' ? parsed.caption : '', slides: parsed.slides };
+    } catch (err) {
+      log(`AI content generation attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err}`);
+    }
   }
+
+  log(`Gemini content generation failed after ${MAX_ATTEMPTS} attempts — giving up`);
+  return null;
 }
 
 // ─── Main Generator ────────────────────────────────────────────
@@ -870,7 +893,7 @@ export async function generateContent(
 
   try {
     const aiContent = await generateAIContent(flow, style, accountIndex);
-    if (aiContent && aiContent.slides.length >= 3) {
+    if (aiContent && aiContent.slides.length >= 5) {
       template = {
         name: aiContent.name,
         category: 'ai-generated',
