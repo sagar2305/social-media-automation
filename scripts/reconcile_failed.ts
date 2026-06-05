@@ -14,27 +14,23 @@
  *      (pending / scheduled / in-progress / error).
  *   2. Ask Blotato for each post's real status (GET /v2/posts/:id).
  *   3. For ones that are `failed`/`error` with a RETRYABLE message, find the
- *      archived slides (via meta.json postId) and re-post them directly (now),
- *      reusing the exact same content — no Gemini regeneration.
+ *      archived slides (via meta.json postId) and re-post them, reusing the exact
+ *      same content — no Gemini regeneration. Defaults to a TikTok DRAFT (project
+ *      convention); pass --path=direct to publish the recovered post live.
  *   4. Bump the archive's attempts counter (cap = MAX_RETRY_ATTEMPTS) and mark
  *      the original tracker row `retried → <new-postId>`.
  *
- * Run:  npm run reconcile -- --campaign=minutewise
- *       npm run reconcile -- --campaign=roastai
- *       npm run reconcile -- --campaign=roastai --dry-run   (report only, no posting)
- * (defaults to the minutewise campaign when --campaign is omitted)
+ * Run:  npm run reconcile -- --campaign=minutewise              (re-post as drafts)
+ *       npm run reconcile -- --campaign=roastai --path=direct   (re-publish live)
+ *       npm run reconcile -- --campaign=roastai --dry-run       (report only)
+ * (campaign also honours the CAMPAIGN_SLUG env var, then defaults to minutewise)
  */
 
 import { readFile, writeFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { config } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
-import {
-  setCampaignSlug,
-  getCampaignSlug,
-  dataPath,
-  DEFAULT_CAMPAIGN_SLUG,
-} from './lib/campaign-paths.js';
+import { getCampaignSlug, dataPath } from './lib/campaign-paths.js';
 import { getCampaign } from './lib/campaigns.js';
 import { loadAccountsIntoConfig } from './account_loader.js';
 import { postSlideshow } from './post_to_tiktok.js';
@@ -76,12 +72,6 @@ interface BlotatoStatus {
   errorMessage?: string;
 }
 
-/** --campaign=<slug> or the default. */
-function resolveCampaign(): string {
-  const arg = process.argv.find((a) => a.startsWith('--campaign='));
-  return arg ? arg.split('=')[1] || DEFAULT_CAMPAIGN_SLUG : DEFAULT_CAMPAIGN_SLUG;
-}
-
 /** Read postIds from non-terminal tracker rows for the active campaign. */
 async function nonTerminalPostIds(): Promise<string[]> {
   const trackerPath = dataPath('POST-TRACKER.md');
@@ -94,7 +84,10 @@ async function nonTerminalPostIds(): Promise<string[]> {
   }
   for (const line of content.split('\n')) {
     if (!line.startsWith('|') || line.includes('Post ID') || line.includes('---')) continue;
-    const cols = line.split('|').map((c) => c.trim()).filter(Boolean);
+    // slice(1,-1) drops only the empty cells from the surrounding table pipes,
+    // keeping interior empty cells so column indexes stay aligned (filter(Boolean)
+    // would shift them and read the wrong status column).
+    const cols = line.split('|').slice(1, -1).map((c) => c.trim());
     const postId = cols[0];
     const status = (cols[11] || '').toLowerCase();
     if (!postId || postId.startsWith('FAILED')) continue; // FAILED_* never reached Blotato
@@ -150,7 +143,9 @@ async function markRetried(originalPostId: string, newPostId: string): Promise<v
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (!line.startsWith('|') || !line.includes(originalPostId)) continue;
-      const cols = line.split('|').map((c) => c.trim()).filter(Boolean);
+      // slice(1,-1) preserves interior empty cells so cols[11] is the real
+      // status column and the rejoin doesn't drop/shift any field.
+      const cols = line.split('|').slice(1, -1).map((c) => c.trim());
       if (cols[0] !== originalPostId) continue;
       cols[11] = `retried → ${newPostId}`;
       lines[i] = `| ${cols.join(' | ')} |`;
@@ -163,12 +158,15 @@ async function markRetried(originalPostId: string, newPostId: string): Promise<v
 }
 
 async function reconcile(): Promise<void> {
-  const slug = resolveCampaign();
+  // Shared resolver — honours --campaign=, then CAMPAIGN_SLUG env, then default.
+  const slug = getCampaignSlug();
   const dryRun = process.argv.includes('--dry-run');
-  setCampaignSlug(slug);
+  // Default to drafts (project convention: never auto-publish live). The
+  // operator opts into live publishing with --path=direct.
+  const postingPath = process.argv.includes('--path=direct') ? 'direct' : 'draft';
   const accountCount = await loadAccountsIntoConfig(slug);
   const campaign = await getCampaign(slug);
-  log(`=== RECONCILE FAILED POSTS — campaign "${getCampaignSlug()}" (${accountCount} accounts)${dryRun ? ' [DRY-RUN]' : ''} ===`);
+  log(`=== RECONCILE FAILED POSTS — campaign "${slug}" (${accountCount} accounts) [path=${postingPath}${dryRun ? ', DRY-RUN' : ''}] ===`);
   if (!campaign) {
     log(`[reconcile] WARNING: campaign "${slug}" not loaded from Supabase — using back-compat account list`);
   }
@@ -213,8 +211,9 @@ async function reconcile(): Promise<void> {
 
   if (toRetry.length === 0) return;
 
-  // 2) Re-post each retryable failure from its archive (direct = now).
+  // 2) Re-post each retryable failure from its archive.
   let reposted = 0;
+  let dryRunCount = 0;
   for (const { postId } of toRetry) {
     const archive = await findArchiveByPostId(postId);
     if (!archive) {
@@ -240,12 +239,12 @@ async function reconcile(): Promise<void> {
       continue;
     }
     if (dryRun) {
-      log(`[reconcile] DRY-RUN: would re-post ${postId} (${archive.accountName}, ${archive.flow}, ${slidePaths.length} slides) — attempt ${archive.attempts + 1}/${MAX_RETRY_ATTEMPTS}`);
-      reposted++;
+      log(`[reconcile] DRY-RUN: would re-post ${postId} (${archive.accountName}, ${archive.flow}, ${slidePaths.length} slides, path=${postingPath}) — attempt ${archive.attempts + 1}/${MAX_RETRY_ATTEMPTS}`);
+      dryRunCount++;
       continue;
     }
     try {
-      log(`[reconcile] re-posting ${postId} (${archive.accountName}, ${archive.flow}) — attempt ${archive.attempts + 1}/${MAX_RETRY_ATTEMPTS}`);
+      log(`[reconcile] re-posting ${postId} (${archive.accountName}, ${archive.flow}) [${postingPath}] — attempt ${archive.attempts + 1}/${MAX_RETRY_ATTEMPTS}`);
       const result = await postSlideshow(
         slidePaths,
         archive.caption,
@@ -253,7 +252,7 @@ async function reconcile(): Promise<void> {
         archive.metadata,
         archive.useCta,
         acctIdx,
-        'direct', // scheduled time has passed — publish now
+        postingPath, // draft by default; --path=direct to publish live
       );
       await recordAttempt(archive.archiveDir, result.postId);
       await markRetried(postId, result.postId);
@@ -264,7 +263,11 @@ async function reconcile(): Promise<void> {
     }
   }
 
-  log(`=== RECONCILE COMPLETE — ${reposted}/${toRetry.length} re-posted ===`);
+  if (dryRun) {
+    log(`=== RECONCILE COMPLETE [DRY-RUN] — ${dryRunCount}/${toRetry.length} would be re-posted (path=${postingPath}) ===`);
+  } else {
+    log(`=== RECONCILE COMPLETE — ${reposted}/${toRetry.length} re-posted (path=${postingPath}) ===`);
+  }
 }
 
 reconcile().catch((err) => {

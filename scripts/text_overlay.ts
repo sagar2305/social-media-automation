@@ -778,8 +778,21 @@ Generate a unique, engaging post now.`;
       }
       const missing: string[] = [];
       if (!parsed.title) missing.push('title');
-      if (!Array.isArray(parsed.slides)) missing.push('slides[]');
-      else if (parsed.slides.length < 3) missing.push(`slides<3 (got ${parsed.slides.length})`);
+      if (!Array.isArray(parsed.slides)) {
+        missing.push('slides[]');
+      } else {
+        // RULES.md: minimum 5 slides per post.
+        if (parsed.slides.length < 5) missing.push(`slides<5 (got ${parsed.slides.length})`);
+        // Each slide must carry string top/center/bottom — downstream
+        // (assignSlideRoles / overlay) reads these directly and a malformed
+        // object would crash or render blank. Validate so a bad slide triggers
+        // a retry instead of slipping through.
+        parsed.slides.forEach((s: any, i: number) => {
+          for (const field of ['top', 'center', 'bottom'] as const) {
+            if (typeof s?.[field] !== 'string') missing.push(`slides[${i}].${field}`);
+          }
+        });
+      }
       if (missing.length > 0) {
         log(`Gemini JSON missing required fields: ${missing.join(', ')} (attempt ${attempt}/${MAX_ATTEMPTS})`);
         log(`  Raw response: ${JSON.stringify(parsed).slice(0, 200)}…`);
@@ -880,7 +893,7 @@ export async function generateContent(
 
   try {
     const aiContent = await generateAIContent(flow, style, accountIndex);
-    if (aiContent && aiContent.slides.length >= 3) {
+    if (aiContent && aiContent.slides.length >= 5) {
       template = {
         name: aiContent.name,
         category: 'ai-generated',
