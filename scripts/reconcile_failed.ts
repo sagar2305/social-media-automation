@@ -23,7 +23,9 @@
  * Run:  npm run reconcile -- --campaign=minutewise              (re-post as drafts)
  *       npm run reconcile -- --campaign=roastai --path=direct   (re-publish live)
  *       npm run reconcile -- --campaign=roastai --dry-run       (report only)
- * (campaign also honours the CAMPAIGN_SLUG env var, then defaults to minutewise)
+ *       npm run reconcile -- --campaign=roastai --max-age-hours=12
+ * (campaign also honours the CAMPAIGN_SLUG env var, then defaults to minutewise;
+ *  only failures from the last --max-age-hours [default 24h] are re-posted)
  */
 
 import { readFile, writeFile, readdir } from 'fs/promises';
@@ -46,6 +48,12 @@ const META_FILENAME = 'meta.json';
 // Tracker statuses that are NOT a terminal success — worth re-checking against
 // Blotato. `published`, `retried → …` and `draft` are skipped.
 const NON_TERMINAL = ['pending', 'scheduled', 'in-progress', 'error'];
+
+// Only re-post failures from the recent window. Older failed rows are usually
+// already resolved (manually reposted) but never marked `retried`, so without
+// this guard reconcile would re-post stale content and create duplicates.
+// Override with --max-age-hours=N.
+const DEFAULT_MAX_AGE_HOURS = 24;
 
 // Blotato/TikTok messages for transient publish failures that re-posting fixes.
 // Confirmed by Blotato support: the `reading 'status'` error means TikTok
@@ -164,9 +172,18 @@ async function reconcile(): Promise<void> {
   // Default to drafts (project convention: never auto-publish live). The
   // operator opts into live publishing with --path=direct.
   const postingPath = process.argv.includes('--path=direct') ? 'direct' : 'draft';
+  // Recency window — skip stale failures to avoid re-posting already-resolved ones.
+  const ageArg = process.argv.find((a) => a.startsWith('--max-age-hours='));
+  let maxAgeHours = DEFAULT_MAX_AGE_HOURS;
+  if (ageArg) {
+    // Don't use `|| DEFAULT` — that would turn an explicit `--max-age-hours=0`
+    // (a valid "skip everything" value) into the default. Only fall back on NaN.
+    const parsed = parseFloat(ageArg.split('=')[1]);
+    if (!Number.isNaN(parsed)) maxAgeHours = Math.max(0, parsed);
+  }
   const accountCount = await loadAccountsIntoConfig(slug);
   const campaign = await getCampaign(slug);
-  log(`=== RECONCILE FAILED POSTS — campaign "${slug}" (${accountCount} accounts) [path=${postingPath}${dryRun ? ', DRY-RUN' : ''}] ===`);
+  log(`=== RECONCILE FAILED POSTS — campaign "${slug}" (${accountCount} accounts) [path=${postingPath}, max-age=${maxAgeHours}h${dryRun ? ', DRY-RUN' : ''}] ===`);
   if (!campaign) {
     log(`[reconcile] WARNING: campaign "${slug}" not loaded from Supabase — using back-compat account list`);
   }
@@ -222,6 +239,18 @@ async function reconcile(): Promise<void> {
     }
     if (archive.attempts >= MAX_RETRY_ATTEMPTS) {
       log(`[reconcile] ${postId} (${archive.accountName}) hit ${MAX_RETRY_ATTEMPTS}-attempt cap — skipping`);
+      continue;
+    }
+    const createdMs = new Date(archive.createdAt).getTime();
+    if (Number.isNaN(createdMs)) {
+      // Corrupt/missing timestamp — can't tell the age, so skip rather than risk
+      // re-posting stale content as a duplicate.
+      log(`[reconcile] ${postId} (${archive.accountName}) has invalid createdAt "${archive.createdAt}" — skipping`);
+      continue;
+    }
+    const ageHours = (Date.now() - createdMs) / 3_600_000;
+    if (ageHours > maxAgeHours) {
+      log(`[reconcile] ${postId} (${archive.accountName}) is ${ageHours.toFixed(0)}h old (> ${maxAgeHours}h) — skipping stale failure`);
       continue;
     }
     // Resolve the account index from the CURRENTLY loaded (campaign-scoped)

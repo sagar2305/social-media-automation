@@ -583,6 +583,14 @@ async function generateImage(prompt: string, maxRetries = 3): Promise<Buffer> {
       }
     }
 
+    // 200 OK but no image part (Gemini sometimes returns only a text part).
+    // This is transient — retry instead of aborting the whole cycle, same as
+    // the 5xx/network branches above.
+    if (attempt < maxRetries) {
+      log(`  Gemini returned no image data (attempt ${attempt}/${maxRetries}) — retrying...`);
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+      continue;
+    }
     throw new Error('No image data in response');
   }
 
