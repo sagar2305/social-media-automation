@@ -174,7 +174,13 @@ async function reconcile(): Promise<void> {
   const postingPath = process.argv.includes('--path=direct') ? 'direct' : 'draft';
   // Recency window — skip stale failures to avoid re-posting already-resolved ones.
   const ageArg = process.argv.find((a) => a.startsWith('--max-age-hours='));
-  const maxAgeHours = ageArg ? Math.max(0, parseFloat(ageArg.split('=')[1]) || DEFAULT_MAX_AGE_HOURS) : DEFAULT_MAX_AGE_HOURS;
+  let maxAgeHours = DEFAULT_MAX_AGE_HOURS;
+  if (ageArg) {
+    // Don't use `|| DEFAULT` — that would turn an explicit `--max-age-hours=0`
+    // (a valid "skip everything" value) into the default. Only fall back on NaN.
+    const parsed = parseFloat(ageArg.split('=')[1]);
+    if (!Number.isNaN(parsed)) maxAgeHours = Math.max(0, parsed);
+  }
   const accountCount = await loadAccountsIntoConfig(slug);
   const campaign = await getCampaign(slug);
   log(`=== RECONCILE FAILED POSTS — campaign "${slug}" (${accountCount} accounts) [path=${postingPath}, max-age=${maxAgeHours}h${dryRun ? ', DRY-RUN' : ''}] ===`);
@@ -235,7 +241,14 @@ async function reconcile(): Promise<void> {
       log(`[reconcile] ${postId} (${archive.accountName}) hit ${MAX_RETRY_ATTEMPTS}-attempt cap — skipping`);
       continue;
     }
-    const ageHours = (Date.now() - new Date(archive.createdAt).getTime()) / 3_600_000;
+    const createdMs = new Date(archive.createdAt).getTime();
+    if (Number.isNaN(createdMs)) {
+      // Corrupt/missing timestamp — can't tell the age, so skip rather than risk
+      // re-posting stale content as a duplicate.
+      log(`[reconcile] ${postId} (${archive.accountName}) has invalid createdAt "${archive.createdAt}" — skipping`);
+      continue;
+    }
+    const ageHours = (Date.now() - createdMs) / 3_600_000;
     if (ageHours > maxAgeHours) {
       log(`[reconcile] ${postId} (${archive.accountName}) is ${ageHours.toFixed(0)}h old (> ${maxAgeHours}h) — skipping stale failure`);
       continue;
