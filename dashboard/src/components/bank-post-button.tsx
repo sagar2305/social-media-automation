@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export function BankPostButton({ id }: { id: string }) {
+  const router = useRouter();
   const [state, setState] = useState<"idle" | "posting" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
 
@@ -23,6 +25,7 @@ export function BankPostButton({ id }: { id: string }) {
         return;
       }
       setState("done");
+      router.refresh();
     } catch (e) {
       setState("error");
       setMsg(e instanceof Error ? e.message : "Failed");

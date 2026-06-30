@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase";
 
 // Blotato account IDs for the connected TikTok accounts (from config/config.ts).
 const BLOTATO_IDS: Record<string, string> = {
@@ -13,21 +13,47 @@ const BLOTATO_IDS: Record<string, string> = {
 // does NOT count against Blotato's 200 scheduled-post cap. Mirrors the engine's
 // postViaBlotato payload.
 export async function POST(req: NextRequest) {
-  let id: string | undefined;
+  let rawId: string | undefined;
   try {
-    ({ id } = await req.json());
+    ({ id: rawId } = await req.json());
   } catch {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
-  if (!id) return NextResponse.json({ error: "Missing post id" }, { status: 400 });
+  if (!rawId) return NextResponse.json({ error: "Missing post id" }, { status: 400 });
+  const id: string = rawId;
 
-  const sb = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // Session-aware client (reads the request's auth cookies) — this both enforces
+  // auth and applies the signed-in user's RLS to every DB op below.
+  const sb = await createClient();
 
-  const { data: row, error } = await sb.from("posts").select("*").eq("id", id).single();
-  if (error || !row) return NextResponse.json({ error: "Post not found" }, { status: 404 });
+  // Auth gate: only signed-in dashboard users may trigger a publish.
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Atomically claim the row (banked → posting) so two concurrent requests can't
+  // both submit the same post. If nothing is claimed, it's already posted/claimed.
+  const { data: claimed, error: claimErr } = await sb
+    .from("posts")
+    .update({ status: "posting" })
+    .eq("id", id)
+    .eq("status", "banked")
+    .select("*");
+  if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 });
+  if (!claimed || claimed.length === 0) {
+    return NextResponse.json(
+      { error: "This post is no longer available (already posted or in progress)." },
+      { status: 409 }
+    );
+  }
+  const row = claimed[0];
+
+  // Any precondition/publish failure reverts the claim so the post stays usable.
+  const revert = async (error: string, status: number) => {
+    await sb.from("posts").update({ status: "banked" }).eq("id", id);
+    return NextResponse.json({ error }, { status });
+  };
 
   let meta: { caption?: string; title?: string; slideUrls?: string[] } = {};
   try {
@@ -39,12 +65,9 @@ export async function POST(req: NextRequest) {
   const accountId = BLOTATO_IDS[row.account as string];
   const apiKey = process.env.BLOTATO_API_KEY;
 
-  if (!accountId)
-    return NextResponse.json({ error: `No Blotato account for "${row.account}"` }, { status: 400 });
-  if (!slideUrls.length)
-    return NextResponse.json({ error: "No slides on this post" }, { status: 400 });
-  if (!apiKey)
-    return NextResponse.json({ error: "BLOTATO_API_KEY not configured in dashboard env" }, { status: 500 });
+  if (!accountId) return revert(`No Blotato account for "${row.account}"`, 400);
+  if (!slideUrls.length) return revert("No slides on this post", 400);
+  if (!apiKey) return revert("BLOTATO_API_KEY not configured in dashboard env", 500);
 
   const body = {
     post: {
@@ -67,18 +90,18 @@ export async function POST(req: NextRequest) {
     // no scheduledTime → immediate publish (bypasses the 200 scheduled-post cap)
   };
 
-  const res = await fetch("https://backend.blotato.com/v2/posts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "blotato-api-key": apiKey },
-    body: JSON.stringify(body),
-  });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return NextResponse.json(
-      { error: j?.message || `Blotato error ${res.status}`, detail: j },
-      { status: 502 }
-    );
+  let res: Response;
+  try {
+    res = await fetch("https://backend.blotato.com/v2/posts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "blotato-api-key": apiKey },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    return revert(e instanceof Error ? e.message : "Network error reaching Blotato", 502);
   }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) return revert(j?.message || `Blotato error ${res.status}`, 502);
 
   const submissionId = j.postSubmissionId ?? j.submissionId ?? j.id ?? null;
   await sb.from("posts").update({ status: "posted" }).eq("id", id);

@@ -7,9 +7,19 @@ config({ path: '.env.local' });
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 
-const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Prefer a service-role key for this admin script (it writes Storage + rows);
+// fall back to the anon key for local use. Fail fast if neither is set.
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+if (!SUPA_URL || !SUPA_KEY) {
+  console.error('Missing env: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY) are required.');
+  process.exit(1);
+}
+const sb = createClient(SUPA_URL, SUPA_KEY);
 const BUCKET = 'campaign-assets';
-const REPO = '/Users/mohitkourav/Code/social-media-automation';
+// Repo root: --repo=… arg, REPO_ROOT env, else the current working directory.
+const REPO = (process.argv.find((a) => a.startsWith('--repo='))?.split('=')[1])
+  ?? process.env.REPO_ROOT ?? process.cwd();
 const LIMIT = (() => { const a = process.argv.find(x => x.startsWith('--limit=')); return a ? parseInt(a.split('=')[1]) : Infinity; })();
 
 const ACCT_CAMPAIGN: Record<string, string> = {
@@ -22,7 +32,10 @@ const ACCT_CAMPAIGN: Record<string, string> = {
   const campId: Record<string, string> = {};
   for (const c of camps ?? []) campId[c.slug] = c.id;
 
-  const { data: existing } = await sb.from('posts').select('id').eq('status', 'banked');
+  // All existing ids (any status) — never re-bank a row that was already
+  // posted/claimed, which would flip its status back to 'banked' and risk a
+  // duplicate publish.
+  const { data: existing } = await sb.from('posts').select('id');
   const have = new Set((existing ?? []).map(r => r.id));
 
   let uploaded = 0, skipped = 0, failed = 0;
@@ -32,7 +45,7 @@ const ACCT_CAMPAIGN: Record<string, string> = {
     let dirs: string[] = [];
     try { dirs = await readdir(base); } catch { continue; }
     for (const dir of dirs) {
-      if (!dir.startsWith('2026-')) continue;
+      if (!/^\d{4}-\d{2}-\d{2}_/.test(dir)) continue;
       if (uploaded >= LIMIT) break outer;
       const adir = join(base, dir);
       let meta: any;
@@ -54,7 +67,9 @@ const ACCT_CAMPAIGN: Record<string, string> = {
       }
       if (upErr) { failed++; continue; }
       const handle = (meta.accountName || '').replace('@', '');
-      const slug = ACCT_CAMPAIGN[handle] || 'minutewise';
+      // Fail closed: don't guess a campaign for an unknown account.
+      const slug = ACCT_CAMPAIGN[handle];
+      if (!slug) { console.log(`  skip ${id}: unmapped account "${handle}"`); skipped++; continue; }
       const row = {
         id,
         status: 'banked',
@@ -65,7 +80,7 @@ const ACCT_CAMPAIGN: Record<string, string> = {
         hashtags: meta.metadata?.hashtags || [],
         format: meta.metadata?.format || `${files.length}-slide`,
         hook_style: meta.metadata?.hookStyle || null,
-        date: '2026-06-30',
+        date: (dir.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? (meta.createdAt ?? '').slice(0, 10)) || null,
         failure_resolution_note: JSON.stringify({ title: meta.title, caption: meta.caption, slideUrls: urls, slideCount: files.length }),
       };
       const { error: ie } = await sb.from('posts').upsert(row, { onConflict: 'id' });

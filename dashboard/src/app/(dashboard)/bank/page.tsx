@@ -18,7 +18,10 @@ export default async function BankPage() {
     .order("created_at", { ascending: false });
   if (activeCampaign) q = q.eq("campaign_id", activeCampaign.id);
 
-  const { data } = await q;
+  const { data, error } = await q;
+  if (error) {
+    throw new Error(`Failed to load banked posts: ${error.message}`);
+  }
   const posts = (data ?? []).map((p) => {
     let m: Meta = {};
     try {

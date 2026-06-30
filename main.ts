@@ -584,19 +584,20 @@ async function runCycle(): Promise<void> {
   // Blotato submission entirely — no publishing, no scheduled-queue usage.
   // Used to bank a reserve of ready-to-post content (e.g. while Gemini credits
   // last) for later one-click posting from the dashboard.
+  // Hoisted above the branch because the summary below reads it in both paths.
+  const scheduleDate = scheduledAt
+    ? scheduledAt
+    : delayMinutes > 0
+    ? new Date(Date.now() + delayMinutes * 60 * 1000)
+    : undefined;
+  const bankMode = process.env.NO_POST === '1';
   let results: PostResult[] = [];
-  if (process.env.NO_POST === '1') {
+  if (bankMode) {
     log(`\n╔══════════════════════════════════════════════════╗`);
     log(`║  BANK MODE (NO_POST) — ${allPostData.length} posts generated + archived, NOT posted`);
     log(`╚══════════════════════════════════════════════════╝`);
     await reportEvent(runId, 'info', 'Bank mode', `${allPostData.length} posts archived (NO_POST=1); Blotato skipped`);
   } else {
-    const scheduleDate = scheduledAt
-      ? scheduledAt
-      : delayMinutes > 0
-      ? new Date(Date.now() + delayMinutes * 60 * 1000)
-      : undefined;
-
     await checkCancelled(runId);
 
     await setCurrentPhase(runId, 'posting');
@@ -662,7 +663,7 @@ async function runCycle(): Promise<void> {
 
   // Summary
   log(`\n╔══════════════════════════════════════════════════╗`);
-  log(`║  CYCLE COMPLETE — ${results.length} posts`);
+  log(`║  CYCLE COMPLETE — ${bankMode ? `${allPostData.length} banked (not posted)` : `${results.length} posts`}`);
   log(`║  Path: ${pathLabel}`);
   if (scheduleDate) log(`║  Scheduled: ${scheduleDate.toLocaleTimeString()}`);
   log(`╠══════════════════════════════════════════════════╣`);
@@ -686,7 +687,9 @@ async function runCycle(): Promise<void> {
   await cleanup(allTempFiles);
 
   await reportEvent(runId, 'cycle_done', 'Cycle complete',
-    `${results.length} posts submitted (${pathLabel})`);
+    bankMode
+      ? `${allPostData.length} posts banked (NO_POST, not submitted)`
+      : `${results.length} posts submitted (${pathLabel})`);
   await endCycleRun(runId, 'completed');
 
   // Mark the originating cycle_jobs row complete (if any) so the button
