@@ -1,5 +1,8 @@
-import { readFile, appendFile, mkdir } from 'fs/promises';
-import { dirname } from 'path';
+import { readFile, appendFile, mkdir, unlink } from 'fs/promises';
+import { dirname, join } from 'path';
+import { tmpdir } from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { config, type PostingPath } from '../config/config.js';
 import { apiRequest, log } from './api-client.js';
 import type { PostMetadata } from './text_overlay.js';
@@ -60,10 +63,37 @@ async function fetchBlotAccountIds(): Promise<Map<string, string>> {
 
 // ─── Image Upload (base64 → Blotato /v2/media) ───────────────
 
-async function uploadImage(imagePath: string): Promise<string> {
-  const fileBuffer = await readFile(imagePath);
+const execFileAsync = promisify(execFile);
+
+// Heavy slide PNGs (~3MB, esp. animated flow) have intermittently failed Blotato's
+// media converter ("Media conversion failed"). Compress to JPEG q85 before upload —
+// cuts ~3MB → ~0.5MB with no visible loss at 1080x1440 — to stay well under the
+// converter's limit. Uses macOS `sips`; falls back to the ORIGINAL file on ANY
+// error, so this can never break an upload (worst case = previous behaviour).
+async function loadForUpload(imagePath: string): Promise<{ buffer: Buffer; mime: string }> {
   const ext = (imagePath.split('.').pop() || 'png').toLowerCase();
-  const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const origMime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const orig = await readFile(imagePath);
+  if (origMime === 'image/png' && orig.length > 600_000) {
+    const out = join(tmpdir(), `blotato_slide_${process.pid}_${Date.now()}.jpg`);
+    try {
+      await execFileAsync('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '85', imagePath, '--out', out]);
+      const jpg = await readFile(out);
+      await unlink(out).catch(() => {});
+      if (jpg.length > 0 && jpg.length < orig.length) {
+        log(`    compressed ${(orig.length / 1e6).toFixed(1)}MB → ${(jpg.length / 1e6).toFixed(2)}MB (jpeg)`);
+        return { buffer: jpg, mime: 'image/jpeg' };
+      }
+    } catch (e) {
+      await unlink(out).catch(() => {});
+      log(`    compress skipped (using original PNG): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { buffer: orig, mime: origMime };
+}
+
+async function uploadImage(imagePath: string): Promise<string> {
+  const { buffer: fileBuffer, mime: mimeType } = await loadForUpload(imagePath);
   const dataUrl = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
 
   const maxAttempts = 3;

@@ -435,6 +435,12 @@ async function runCycle(): Promise<void> {
   const allTempFiles: string[] = [];
 
   try {
+  // SKIP_ANALYTICS=1 bypasses the analytics + optimizer phases. Used for bulk
+  // back-to-back scheduling runs where re-polling every pending (scheduled,
+  // URL-less) post each cycle would balloon wall-time and burn the Blotato
+  // rate limit. Defaults off → normal cycles are unaffected.
+  const skipAnalytics = process.env.SKIP_ANALYTICS === '1';
+  if (!skipAnalytics) {
   // Phase 1: Analytics
   await setCurrentPhase(runId, 'analytics');
   await reportEvent(runId, 'phase_start', 'Analytics', 'Measuring per-post performance');
@@ -456,6 +462,9 @@ async function runCycle(): Promise<void> {
   } catch (err) {
     log(`Optimization failed (non-fatal): ${err}`);
     await reportEvent(runId, 'error', 'Optimizer failed', String(err).slice(0, 200));
+  }
+  } else {
+    log('Analytics + Optimizer skipped (SKIP_ANALYTICS=1)');
   }
 
   // Phase 3: Research trends
@@ -569,74 +578,87 @@ async function runCycle(): Promise<void> {
     }
   }
 
-  // Phase 5: Post using selected path
-  const scheduleDate = scheduledAt
-    ? scheduledAt
-    : delayMinutes > 0
-    ? new Date(Date.now() + delayMinutes * 60 * 1000)
-    : undefined;
+  // Phase 5: Post using selected path.
+  // NO_POST=1 → generate-only "bank" mode. Slides are already archived to
+  // posts/flowN/ by archivePostWithMeta() during generation, so we skip the
+  // Blotato submission entirely — no publishing, no scheduled-queue usage.
+  // Used to bank a reserve of ready-to-post content (e.g. while Gemini credits
+  // last) for later one-click posting from the dashboard.
+  let results: PostResult[] = [];
+  if (process.env.NO_POST === '1') {
+    log(`\n╔══════════════════════════════════════════════════╗`);
+    log(`║  BANK MODE (NO_POST) — ${allPostData.length} posts generated + archived, NOT posted`);
+    log(`╚══════════════════════════════════════════════════╝`);
+    await reportEvent(runId, 'info', 'Bank mode', `${allPostData.length} posts archived (NO_POST=1); Blotato skipped`);
+  } else {
+    const scheduleDate = scheduledAt
+      ? scheduledAt
+      : delayMinutes > 0
+      ? new Date(Date.now() + delayMinutes * 60 * 1000)
+      : undefined;
 
-  await checkCancelled(runId);
+    await checkCancelled(runId);
 
-  await setCurrentPhase(runId, 'posting');
-  await reportEvent(runId, 'phase_start', 'Posting', `Submitting ${allPostData.length} posts to Blotato (${pathLabel})`);
+    await setCurrentPhase(runId, 'posting');
+    await reportEvent(runId, 'phase_start', 'Posting', `Submitting ${allPostData.length} posts to Blotato (${pathLabel})`);
 
-  // Pass runId so per-account submit failures show up on the Live Runs
-  // timeline (kind='post_failed') instead of silently disappearing into
-  // auto_fix_events. This is what made BOTAI's first cycle look like a
-  // mystery "0 submissions completed" — the actual ENOENT error was
-  // captured but invisible to the operator without DB digging.
-  const results = await postAllDrafts(allPostData, postingPath, scheduleDate, runId, postIntervalMinutes);
+    // Pass runId so per-account submit failures show up on the Live Runs
+    // timeline (kind='post_failed') instead of silently disappearing into
+    // auto_fix_events. This is what made BOTAI's first cycle look like a
+    // mystery "0 submissions completed" — the actual ENOENT error was
+    // captured but invisible to the operator without DB digging.
+    results = await postAllDrafts(allPostData, postingPath, scheduleDate, runId, postIntervalMinutes);
 
-  // Bookkeeping: update each archive's meta.json with its new Blotato postId
-  // and mark the original tracker row as retried if this was a retry.
-  // Iterate over allPostData (not results) so any input without a matching
-  // result — e.g., postAllDrafts crashed mid-batch — still surfaces as a
-  // 'post_failed' timeline event instead of vanishing silently.
-  if (results.length !== allPostData.length) {
-    log(`⚠ Post result/input mismatch: ${results.length} results vs ${allPostData.length} inputs — unmatched entries are telemetry-only (tracker updated by postAllDrafts).`);
-  }
-  for (let i = 0; i < allPostData.length; i++) {
-    const d = allPostData[i];
-    const account = config.tiktokAccounts[d.accountIndex];
-    const hasResult = i < results.length;
-    const r: PostResult = hasResult ? results[i] : {
-      accountName: account?.name ?? '?',
-      integrationId: account?.id ?? '?',
-      postId: `FAILED_NO_RESULT_${i}`,
-      flow: d.metadata?.flow ?? 'unknown',
-    };
-    // Only touch archive/tracker state when postAllDrafts actually returned
-    // a result for this input — synthesized failures must not consume the
-    // archive's retry budget or mark a tracker row as retried.
-    if (hasResult) {
-      await recordAttempt(d.archiveDir, r.postId);
-      if (d.isRetry && d.originalPostId) {
-        await markTrackerRowRetried(d.originalPostId, r.postId);
+    // Bookkeeping: update each archive's meta.json with its new Blotato postId
+    // and mark the original tracker row as retried if this was a retry.
+    // Iterate over allPostData (not results) so any input without a matching
+    // result — e.g., postAllDrafts crashed mid-batch — still surfaces as a
+    // 'post_failed' timeline event instead of vanishing silently.
+    if (results.length !== allPostData.length) {
+      log(`⚠ Post result/input mismatch: ${results.length} results vs ${allPostData.length} inputs — unmatched entries are telemetry-only (tracker updated by postAllDrafts).`);
+    }
+    for (let i = 0; i < allPostData.length; i++) {
+      const d = allPostData[i];
+      const account = config.tiktokAccounts[d.accountIndex];
+      const hasResult = i < results.length;
+      const r: PostResult = hasResult ? results[i] : {
+        accountName: account?.name ?? '?',
+        integrationId: account?.id ?? '?',
+        postId: `FAILED_NO_RESULT_${i}`,
+        flow: d.metadata?.flow ?? 'unknown',
+      };
+      // Only touch archive/tracker state when postAllDrafts actually returned
+      // a result for this input — synthesized failures must not consume the
+      // archive's retry budget or mark a tracker row as retried.
+      if (hasResult) {
+        await recordAttempt(d.archiveDir, r.postId);
+        if (d.isRetry && d.originalPostId) {
+          await markTrackerRowRetried(d.originalPostId, r.postId);
+        }
+      }
+      const submittedOk = r.postId && !r.postId.startsWith('FAILED');
+      if (submittedOk) {
+        await reportEvent(
+          runId,
+          'post_submitted',
+          `${r.flow} → ${r.accountName}`,
+          `Blotato postId: ${r.postId}`,
+          { account: account?.handle, flow: r.flow, metadata: { postId: r.postId } },
+        );
+        await bumpPostCounters(runId, 'posts_done');
+      } else {
+        await reportEvent(
+          runId,
+          'post_failed',
+          `${r.flow} → ${r.accountName}`,
+          `${r.postId}`,
+          { account: account?.handle, flow: r.flow },
+        );
+        await bumpPostCounters(runId, 'posts_failed');
       }
     }
-    const submittedOk = r.postId && !r.postId.startsWith('FAILED');
-    if (submittedOk) {
-      await reportEvent(
-        runId,
-        'post_submitted',
-        `${r.flow} → ${r.accountName}`,
-        `Blotato postId: ${r.postId}`,
-        { account: account?.handle, flow: r.flow, metadata: { postId: r.postId } },
-      );
-      await bumpPostCounters(runId, 'posts_done');
-    } else {
-      await reportEvent(
-        runId,
-        'post_failed',
-        `${r.flow} → ${r.accountName}`,
-        `${r.postId}`,
-        { account: account?.handle, flow: r.flow },
-      );
-      await bumpPostCounters(runId, 'posts_failed');
-    }
+    await reportEvent(runId, 'phase_done', 'Posting', `${results.length} submissions completed`);
   }
-  await reportEvent(runId, 'phase_done', 'Posting', `${results.length} submissions completed`);
 
   // Summary
   log(`\n╔══════════════════════════════════════════════════╗`);

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
+  Archive,
   ShieldAlert,
   Settings,
   Clock,
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campaigns", icon: Tag },
   { href: "/runs", label: "Live Runs", icon: Activity },
+  { href: "/bank", label: "Content Bank", icon: Archive },
   { href: "/accounts", label: "Accounts", icon: Users },
   { href: "/creators", label: "Creators", icon: UserPlus },
   { href: "/signup-control", label: "Signup Control", icon: FileEdit },
