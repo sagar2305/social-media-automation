@@ -28,10 +28,12 @@ TICK_LABEL="com.minutewise.scheduler.tick"
 JOBS_LABEL="com.minutewise.jobs.poller"
 AUTORESEARCH_LABEL="com.minutewise.autoresearch"
 REFRESH_LABEL="com.minutewise.daily.refresh"
+RECONCILE_LABEL="com.minutewise.reconcile"
 TICK_PLIST_PATH="$HOME/Library/LaunchAgents/$TICK_LABEL.plist"
 JOBS_PLIST_PATH="$HOME/Library/LaunchAgents/$JOBS_LABEL.plist"
 AUTORESEARCH_PLIST_PATH="$HOME/Library/LaunchAgents/$AUTORESEARCH_LABEL.plist"
 REFRESH_PLIST_PATH="$HOME/Library/LaunchAgents/$REFRESH_LABEL.plist"
+RECONCILE_PLIST_PATH="$HOME/Library/LaunchAgents/$RECONCILE_LABEL.plist"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$REPO_DIR/data/cycle-logs"
 LOG_FILE="$LOG_DIR/launchd-daily.log"
@@ -309,6 +311,56 @@ EOF
 
 echo "Wrote $REFRESH_PLIST_PATH"
 
+# ─── Auto-reconcile plist (self-heal transient post failures) ──
+# Every ~2.5h, re-posts recoverable failures (e.g. Blotato's transient
+# "Cannot read properties of undefined (reading 'status')" TikTok hiccup) from
+# saved slides — no regeneration, no manual checking. RunAtLoad is false so it
+# doesn't fire a surprise batch the moment setup runs.
+
+cat > "$RECONCILE_PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$RECONCILE_LABEL</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$REPO_DIR/scripts/reconcile_cron.sh</string>
+  </array>
+
+  <!-- Every 2.5 hours -->
+  <key>StartInterval</key>
+  <integer>9000</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>AbandonProcessGroup</key>
+  <false/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$NODE_DIR:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>$REPO_DIR</string>
+
+  <key>StandardOutPath</key>
+  <string>$LOG_DIR/reconcile-cron.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>$LOG_DIR/reconcile-cron.err</string>
+</dict>
+</plist>
+EOF
+
+echo "Wrote $RECONCILE_PLIST_PATH"
+
 # ─── Load it ─────────────────────────────────────────────────
 
 # Note: the legacy 19:00 anti-thrash window is gone since we no longer have
@@ -319,7 +371,7 @@ echo "Wrote $REFRESH_PLIST_PATH"
 # does not always recompute calendar triggers correctly on macOS 13+.
 DOMAIN="gui/$(id -u)"
 
-for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL" "$REFRESH_LABEL"; do
+for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL" "$REFRESH_LABEL" "$RECONCILE_LABEL"; do
   launchctl bootout "$DOMAIN/$L" 2>/dev/null || true
 done
 
@@ -331,9 +383,11 @@ launchctl bootstrap "$DOMAIN" "$AUTORESEARCH_PLIST_PATH"
 launchctl enable "$DOMAIN/$AUTORESEARCH_LABEL"
 launchctl bootstrap "$DOMAIN" "$REFRESH_PLIST_PATH"
 launchctl enable "$DOMAIN/$REFRESH_LABEL"
+launchctl bootstrap "$DOMAIN" "$RECONCILE_PLIST_PATH"
+launchctl enable "$DOMAIN/$RECONCILE_LABEL"
 
 ok=1
-for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL" "$REFRESH_LABEL"; do
+for L in "$TICK_LABEL" "$JOBS_LABEL" "$AUTORESEARCH_LABEL" "$REFRESH_LABEL" "$RECONCILE_LABEL"; do
   if launchctl print "$DOMAIN/$L" >/dev/null 2>&1; then
     echo "✓ Registered: $L"
   else
