@@ -42,11 +42,17 @@ interface Meta {
 
 function parseMeta(raw: unknown): Meta {
   try {
-    return JSON.parse((raw as string) || "{}");
+    // JSON.parse("null") succeeds and yields null, which would then throw on
+    // any property access — after the row has already been claimed.
+    const parsed = JSON.parse((raw as string) || "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Meta) : {};
   } catch {
     return {};
   }
 }
+
+/** `HH:MM`, zero-padded, 24-hour. */
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 async function loadBanked(sb: Awaited<ReturnType<typeof createClient>>) {
   const campaign = await getActiveCampaignFilter();
@@ -113,6 +119,17 @@ export async function POST(req: NextRequest) {
     if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       return NextResponse.json({ error: "startDate must be YYYY-MM-DD" }, { status: 400 });
     }
+    // Times are sorted lexicographically when building lanes, so an unpadded
+    // "8:00" would silently order after "14:00"; a non-numeric entry would throw
+    // inside buildSchedulePlan.
+    const times = body.times?.length ? body.times : DEFAULT_TIMES;
+    const badTime = times.find((t) => !TIME_RE.test(t));
+    if (badTime !== undefined) {
+      return NextResponse.json(
+        { error: `Invalid slot time "${badTime}" — use zero-padded HH:MM (e.g. 08:00)` },
+        { status: 400 }
+      );
+    }
     const apiKey = process.env.BLOTATO_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -138,7 +155,7 @@ export async function POST(req: NextRequest) {
     const plan = buildSchedulePlan({
       posts,
       startDate,
-      times: body.times?.length ? body.times : DEFAULT_TIMES,
+      times,
       accounts: body.accounts?.length ? body.accounts : DEFAULT_ACCOUNTS,
       connected,
       occupied,
@@ -182,119 +199,156 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Claim banked → posting so a double-click or second tab can't submit twice.
-    const { data: claimed, error: claimErr } = await sb
-      .from("posts")
-      .update({ status: "posting" })
-      .eq("id", id)
-      .eq("status", "banked")
-      .select("*");
-    if (claimErr) {
-      results.push({ id, ok: false, error: claimErr.message });
-      continue;
-    }
-    if (!claimed?.length) {
-      results.push({ id, ok: false, error: "Already scheduled, posted, or in progress" });
-      continue;
-    }
-    const row = claimed[0];
+    // Everything after the claim runs inside try/catch: an unexpected throw
+    // would otherwise abandon the row in `posting`, where nothing can reclaim
+    // it (the claim below requires status = "banked"). This has happened for
+    // real — a network blip took out both an upload and its revert write.
+    let claimed = false;
     const revert = async (error: string) => {
-      await sb.from("posts").update({ status: "banked" }).eq("id", id);
-      results.push({ id, ok: false, error });
+      const { error: revertErr } = await sb
+        .from("posts")
+        .update({ status: "banked" })
+        .eq("id", id)
+        .eq("status", "posting");
+      results.push({
+        id,
+        ok: false,
+        error: revertErr ? `${error} (and revert failed: ${revertErr.message})` : error,
+      });
     };
 
-    const meta = parseMeta(row.failure_resolution_note);
-    const slideUrls = meta.slideUrls ?? [];
-    const accountId = accounts.get(String(row.account).toLowerCase());
-    if (!accountId) {
-      await revert(`No live Blotato account for "${row.account}"`);
-      continue;
-    }
-    if (!slideUrls.length) {
-      await revert("No slides on this post");
-      continue;
-    }
-    if (!(meta.caption ?? "").trim()) {
-      await revert("Empty caption");
-      continue;
-    }
-
-    // Bank slides are 2-3MB PNGs, which have intermittently tripped Blotato's
-    // media converter. Compress + host them on Blotato first (same as the
-    // engine), and cache the result so a retry never redoes the upload.
-    let mediaUrls = meta.blotatoUrls ?? [];
-    const cacheUsable =
-      mediaUrls.length === slideUrls.length && mediaUrls.every((u) => isBlotatoMediaUrl(u));
-    if (!cacheUsable) {
-      try {
-        mediaUrls = await prepareMediaUrls(slideUrls, apiKey);
-      } catch (e) {
-        await revert(`Media prep failed — ${e instanceof Error ? e.message : e}`);
+    try {
+      // Claim banked → posting so a double-click or second tab can't submit twice.
+      const { data: claimedRows, error: claimErr } = await sb
+        .from("posts")
+        .update({ status: "posting" })
+        .eq("id", id)
+        .eq("status", "banked")
+        .select("*");
+      if (claimErr) {
+        results.push({ id, ok: false, error: claimErr.message });
         continue;
       }
-      meta.blotatoUrls = mediaUrls;
-      // Persist before posting: if the submit fails, the expensive upload work
-      // is still banked for the retry.
-      await sb
-        .from("posts")
-        .update({ failure_resolution_note: JSON.stringify(meta) })
-        .eq("id", id);
-    }
+      if (!claimedRows?.length) {
+        results.push({ id, ok: false, error: "Already scheduled, posted, or in progress" });
+        continue;
+      }
+      claimed = true;
+      const row = claimedRows[0];
 
-    const payload = {
-      post: {
-        accountId,
-        content: { text: meta.caption ?? "", mediaUrls, platform: "tiktok" },
-        target: {
-          targetType: "tiktok",
-          privacyLevel: "PUBLIC_TO_EVERYONE",
-          disabledComments: false,
-          disabledDuet: false,
-          disabledStitch: false,
-          isBrandedContent: false,
-          isYourBrand: false,
-          isAiGenerated: true,
-          isDraft: false,
-          autoAddMusic: true,
-          title: (meta.title ?? "").slice(0, 90),
+      const meta = parseMeta(row.failure_resolution_note);
+      const slideUrls = meta.slideUrls ?? [];
+      const accountId = accounts.get(String(row.account).toLowerCase());
+      if (!accountId) {
+        await revert(`No live Blotato account for "${row.account}"`);
+        continue;
+      }
+      if (!slideUrls.length) {
+        await revert("No slides on this post");
+        continue;
+      }
+      if (!(meta.caption ?? "").trim()) {
+        await revert("Empty caption");
+        continue;
+      }
+
+      // Bank slides are 2-3MB PNGs, which have intermittently tripped Blotato's
+      // media converter. Compress + host them on Blotato first (same as the
+      // engine), and cache the result so a retry never redoes the upload.
+      let mediaUrls = meta.blotatoUrls ?? [];
+      const cacheUsable =
+        mediaUrls.length === slideUrls.length && mediaUrls.every((u) => isBlotatoMediaUrl(u));
+      if (!cacheUsable) {
+        try {
+          mediaUrls = await prepareMediaUrls(slideUrls, apiKey);
+        } catch (e) {
+          await revert(`Media prep failed — ${e instanceof Error ? e.message : e}`);
+          continue;
+        }
+        meta.blotatoUrls = mediaUrls;
+        // Persist before posting: if the submit fails, the expensive upload work
+        // is still banked for the retry.
+        await sb
+          .from("posts")
+          .update({ failure_resolution_note: JSON.stringify(meta) })
+          .eq("id", id);
+      }
+
+      const payload = {
+        post: {
+          accountId,
+          content: { text: meta.caption ?? "", mediaUrls, platform: "tiktok" },
+          target: {
+            targetType: "tiktok",
+            privacyLevel: "PUBLIC_TO_EVERYONE",
+            disabledComments: false,
+            disabledDuet: false,
+            disabledStitch: false,
+            isBrandedContent: false,
+            isYourBrand: false,
+            isAiGenerated: true,
+            // Direct publish, not a TikTok draft. The bank exists to run the
+            // accounts autonomously — a scheduled post that lands in the drafts
+            // folder never goes out. Matches the sibling "Post now" route and
+            // the engine's --path=direct.
+            isDraft: false,
+            autoAddMusic: true,
+            title: (meta.title ?? "").slice(0, 90),
+          },
         },
-      },
-      scheduledTime: when.toISOString(), // root level, not inside `post`
-    };
+        scheduledTime: when.toISOString(), // root level, not inside `post`
+      };
 
-    const submitted = await submitPost(payload, apiKey);
-    if (!submitted.ok) {
-      await revert(submitted.error);
-      continue;
+      const submitted = await submitPost(payload, apiKey);
+      if (!submitted.ok) {
+        await revert(submitted.error);
+        continue;
+      }
+
+      // Past this point Blotato holds the scheduled post — the side effect is
+      // irreversible, so a failure to record it must be surfaced rather than
+      // swallowed: the row would stay `posting` with no scheduledAt, and the
+      // next plan wouldn't know the slot is taken.
+      const nextMeta: Meta = {
+        ...meta,
+        scheduledAt: when.toISOString(),
+        submissionId: submitted.submissionId ?? undefined,
+      };
+      const istDate = new Date(when.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10);
+      const { error: saveErr } = await sb
+        .from("posts")
+        .update({
+          status: "scheduled",
+          failure_resolution_note: JSON.stringify(nextMeta),
+          date: istDate,
+        })
+        .eq("id", id);
+      if (saveErr) {
+        results.push({
+          id,
+          ok: false,
+          scheduledAt: when.toISOString(),
+          istLabel: formatIst(when.toISOString()),
+          error:
+            `SUBMITTED to Blotato (${submitted.submissionId}) but the status write failed: ` +
+            `${saveErr.message}. The slot IS taken — do not re-schedule this post.`,
+        });
+        continue;
+      }
+
+      results.push({
+        id,
+        ok: true,
+        scheduledAt: when.toISOString(),
+        istLabel: formatIst(when.toISOString()),
+      });
+      // Rate limiting lives in lib/blotato — media uploads and post submissions
+      // share one 30 req/min budget, so no extra sleep is needed here.
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (claimed) await revert(`Unexpected error — ${msg}`);
+      else results.push({ id, ok: false, error: msg });
     }
-
-    // There's no scheduled_at column on `posts`, so the instant and the Blotato
-    // submission id go into the same meta JSON the bank already stores in
-    // failure_resolution_note. `date` mirrors the IST calendar day so existing
-    // date-based views line up.
-    const nextMeta: Meta = {
-      ...meta,
-      scheduledAt: when.toISOString(),
-      submissionId: submitted.submissionId ?? undefined,
-    };
-    const istDate = new Date(when.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10);
-    await sb
-      .from("posts")
-      .update({
-        status: "scheduled",
-        failure_resolution_note: JSON.stringify(nextMeta),
-        date: istDate,
-      })
-      .eq("id", id);
-
-    results.push({
-      id,
-      ok: true,
-      scheduledAt: when.toISOString(),
-      istLabel: formatIst(when.toISOString()),
-    });
-    // Rate limiting lives in lib/blotato — media uploads and post submissions
-    // share one 30 req/min budget, so no extra sleep is needed here.
   }
 
   return NextResponse.json({ ok: true, results });

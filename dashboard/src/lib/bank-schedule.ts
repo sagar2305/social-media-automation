@@ -119,6 +119,12 @@ export function buildSchedulePlan(opts: {
   now?: Date;
 }): SchedulePlan {
   const times = (opts.times?.length ? opts.times : DEFAULT_TIMES).slice().sort();
+  // A malformed startDate yields Invalid Date, whose getTime() is NaN — every
+  // comparison against it is false, so it would slip past the past-slot guard
+  // and throw on toISOString(). Fail loudly here instead.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.startDate) || isNaN(istToUtc(opts.startDate, "00:00").getTime())) {
+    throw new Error(`Invalid startDate "${opts.startDate}" — expected YYYY-MM-DD`);
+  }
   const allowed = new Set(opts.accounts ?? DEFAULT_ACCOUNTS);
   const now = opts.now ?? new Date();
   const cutoff = now.getTime() + MIN_LEAD_MINUTES * 60_000;
@@ -178,6 +184,17 @@ export function buildSchedulePlan(opts: {
       }
       day = nextDay(day);
       days++;
+    }
+
+    // If the walk hit MAX_DAYS with posts left over, say so. Silently dropping
+    // them would let the UI report a plan that covers fewer posts than it
+    // appears to.
+    if (i < posts.length) {
+      skipped.push({
+        account,
+        count: posts.length - i,
+        reason: `no free slot within ${MAX_DAYS} days of ${opts.startDate}`,
+      });
     }
   }
 

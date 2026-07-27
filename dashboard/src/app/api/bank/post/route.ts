@@ -120,6 +120,29 @@ export async function POST(req: NextRequest) {
   const submitted = await submitPost(body, apiKey);
   if (!submitted.ok) return revert(submitted.error, 502);
 
-  await sb.from("posts").update({ status: "posted" }).eq("id", id);
+  // Blotato has published by this point — the side effect is irreversible, so a
+  // failure to record it must be reported, not swallowed. Reverting to `banked`
+  // here would be worse than useless: it would invite a duplicate publish. The
+  // row stays `posting` and the caller is told to reconcile.
+  const { error: saveErr } = await sb
+    .from("posts")
+    .update({
+      status: "posted",
+      // Persisted so the daily refresh can reconcile real status/URL later.
+      failure_resolution_note: JSON.stringify({ ...meta, submissionId: submitted.submissionId }),
+    })
+    .eq("id", id);
+  if (saveErr) {
+    return NextResponse.json(
+      {
+        ok: false,
+        submissionId: submitted.submissionId,
+        error:
+          `Published to Blotato (${submitted.submissionId}) but recording it failed: ` +
+          `${saveErr.message}. Do NOT re-post — reconcile this row manually.`,
+      },
+      { status: 500 }
+    );
+  }
   return NextResponse.json({ ok: true, submissionId: submitted.submissionId });
 }

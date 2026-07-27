@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
  * before anything is submitted, because Blotato has no delete-post endpoint —
  * once a post is scheduled it can't be pulled back from this dashboard.
  *
- * Execution walks the plan in chunks of 5 so the user sees progress instead of
+ * Execution walks the plan in small chunks so the user sees progress instead of
  * one request hanging for minutes under Blotato's 30 req/min rate limit.
  */
 

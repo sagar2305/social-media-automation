@@ -22,13 +22,23 @@ const BASE = "https://backend.blotato.com/v2";
 
 /** Blotato allows 30 req/min per user, across every endpoint. */
 const MIN_INTERVAL_MS = 2_100;
-let lastCallAt = 0;
+let nextSlotAt = 0;
 
-/** Serialise Blotato calls so media uploads and posts share one rate budget. */
+/**
+ * Serialise Blotato calls so media uploads and posts share one rate budget.
+ *
+ * The slot is reserved SYNCHRONOUSLY, before any await: two concurrent callers
+ * that both need to wait would otherwise read the same timestamp, compute the
+ * same delay, and fire together — which is exactly the burst this is meant to
+ * prevent. Advancing `nextSlotAt` up front makes each caller queue behind the
+ * previous one instead.
+ */
 async function throttle() {
-  const wait = lastCallAt + MIN_INTERVAL_MS - Date.now();
+  const now = Date.now();
+  const slot = Math.max(now, nextSlotAt);
+  nextSlotAt = slot + MIN_INTERVAL_MS;
+  const wait = slot - now;
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastCallAt = Date.now();
 }
 
 async function blotatoFetch(path: string, apiKey: string, init?: RequestInit): Promise<Response> {

@@ -44,6 +44,11 @@ function arg(name: string, fallback?: string): string | undefined {
   return hit ? hit.split("=")[1] : fallback;
 }
 
+/** Tomorrow in IST — the same default the dashboard uses. */
+function tomorrowIst(): string {
+  return new Date(Date.now() + 5.5 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+}
+
 function log(line: string) {
   console.log(line);
   try {
@@ -65,8 +70,15 @@ interface Meta {
 async function main() {
   const apiKey = env("BLOTATO_API_KEY");
   const sb = createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("NEXT_PUBLIC_SUPABASE_ANON_KEY"));
-  const startDate = arg("start", "2026-07-28")!;
-  const limit = Number(arg("limit", "0"));
+  const startDate = arg("start", tomorrowIst())!;
+  // Number("one") is NaN and NaN > 0 is false, which would quietly schedule the
+  // ENTIRE plan when the operator asked for a couple of posts — on a tool whose
+  // writes cannot be undone. Refuse anything non-numeric.
+  const rawLimit = arg("limit", "0")!;
+  const limit = Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new Error(`--limit must be a non-negative integer, got "${rawLimit}"`);
+  }
 
   const { data, error } = await sb
     .from("posts")
@@ -95,10 +107,13 @@ async function main() {
 
   // Slots already taken by scheduled posts. Without this, a second run restarts
   // each lane at startDate and double-books — which Blotato cannot undo.
-  const { data: already } = await sb
+  const { data: already, error: occErr } = await sb
     .from("posts")
     .select("account, failure_resolution_note")
     .eq("status", "scheduled");
+  // A failed query would yield an empty occupied set, which silently disables
+  // double-booking protection — and a double-booking cannot be deleted. Abort.
+  if (occErr) throw new Error(`Could not read scheduled slots: ${occErr.message}`);
   const occupied = new Set<string>();
   for (const p of already ?? []) {
     try {
@@ -143,10 +158,20 @@ async function main() {
       continue;
     }
     const row = claimed[0];
+    // The revert write is itself checked: when a network blip took out both an
+    // upload and its revert, the row was stranded in `posting` where nothing
+    // could reclaim it. Surfacing it points the operator at unstick-posting.ts.
     const revert = async (reason: string) => {
-      await sb.from("posts").update({ status: "banked" }).eq("id", item.id);
-      failures.push({ id: item.id, error: reason });
-      log(`${prefix} — FAIL: ${reason}`);
+      const { error: revertErr } = await sb
+        .from("posts")
+        .update({ status: "banked" })
+        .eq("id", item.id)
+        .eq("status", "posting");
+      const full = revertErr
+        ? `${reason} (REVERT FAILED: ${revertErr.message} — row stranded in "posting", run unstick-posting.ts)`
+        : reason;
+      failures.push({ id: item.id, error: full });
+      log(`${prefix} — FAIL: ${full}`);
     };
 
     let meta: Meta = {};
@@ -200,6 +225,8 @@ async function main() {
           isBrandedContent: false,
           isYourBrand: false,
           isAiGenerated: true,
+          // Direct publish, not a TikTok draft — a scheduled post that lands in
+          // the drafts folder never goes out. Matches the API route.
           isDraft: false,
           autoAddMusic: true,
           title: (meta.title ?? "").slice(0, 90),
@@ -220,7 +247,7 @@ async function main() {
       submissionId: submitted.submissionId ?? undefined,
     };
     const istDate = new Date(when.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10);
-    await sb
+    const { error: saveErr } = await sb
       .from("posts")
       .update({
         status: "scheduled",
@@ -228,6 +255,16 @@ async function main() {
         date: istDate,
       })
       .eq("id", item.id);
+    if (saveErr) {
+      // Blotato already holds the post; the slot IS taken. Never revert here —
+      // that would invite a duplicate on the next run, which cannot be deleted.
+      const msg =
+        `SUBMITTED (${submitted.submissionId}) but status write failed: ${saveErr.message}. ` +
+        `Slot is taken — do NOT re-schedule this post.`;
+      failures.push({ id: item.id, error: msg });
+      log(`${prefix} — WARN: ${msg}`);
+      continue;
+    }
 
     ok++;
     log(`${prefix} — OK submission=${submitted.submissionId} slides=${mediaUrls.length}`);

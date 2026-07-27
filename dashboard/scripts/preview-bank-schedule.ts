@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { buildSchedulePlan, type BankPostLite } from "../src/lib/bank-schedule";
+import { buildSchedulePlan, slotKey, type BankPostLite } from "../src/lib/bank-schedule";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -72,8 +72,32 @@ async function main() {
     (accJson.items ?? []).filter((a) => a.username).map((a) => a.username!.toLowerCase())
   );
 
-  const startDate = process.argv[2] ?? "2026-07-28";
-  const plan = buildSchedulePlan({ posts, startDate, connected });
+  // Must match what the API and executor pass, or this dry run re-uses slots
+  // that scheduled posts already hold and reports a plan that can't happen.
+  const { data: already, error: occErr } = await supabase
+    .from("posts")
+    .select("account, failure_resolution_note")
+    .eq("status", "scheduled");
+  if (occErr) {
+    console.error(`FATAL: could not read scheduled slots — ${occErr.message}`);
+    process.exit(1);
+  }
+  const occupied = new Set<string>();
+  for (const p of already ?? []) {
+    try {
+      const at = JSON.parse((p.failure_resolution_note as string) || "{}").scheduledAt;
+      if (at) occupied.add(slotKey(p.account as string, at));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Defaults to tomorrow IST, same as the dashboard — a hardcoded date silently
+  // goes stale.
+  const startDate =
+    process.argv[2] ?? new Date(Date.now() + 5.5 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+  const plan = buildSchedulePlan({ posts, startDate, connected, occupied });
+  console.log(`occupied slots already scheduled: ${occupied.size}`);
 
   console.log(`banked posts: ${posts.length}`);
   console.log(`planned:      ${plan.items.length}`);
@@ -94,4 +118,7 @@ async function main() {
   console.log(`last:  ${plan.items[plan.items.length - 1]?.istLabel}`);
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

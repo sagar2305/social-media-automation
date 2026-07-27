@@ -49,9 +49,9 @@ async function main() {
     console.error(`FATAL: Blotato accounts endpoint returned ${accRes.status}`);
     process.exit(1);
   }
-  const accJson = (await accRes.json()) as { items: { id: string; username?: string }[] };
+  const accJson = (await accRes.json()) as { items?: { id: string; username?: string }[] };
   const liveIds = new Map<string, string>();
-  for (const a of accJson.items) if (a.username) liveIds.set(a.username.toLowerCase(), a.id);
+  for (const a of accJson.items ?? []) if (a.username) liveIds.set(a.username.toLowerCase(), a.id);
   console.log("live Blotato TikTok accounts:");
   for (const [u, id] of liveIds) console.log(`  @${u.padEnd(22)} ${id}`);
 
@@ -167,6 +167,12 @@ async function main() {
   console.log(`\n=== ${warnings.length} warnings ===`);
   for (const w of warnings.slice(0, 30)) console.log(`  ! ${w}`);
   if (warnings.length > 30) console.log(`  … and ${warnings.length - 30} more`);
+
+  // Non-zero on blocking problems so this can gate a script or CI step.
+  if (problems.length) process.exitCode = 1;
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
