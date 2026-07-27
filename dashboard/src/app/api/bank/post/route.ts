@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase";
+import { getTiktokAccounts, prepareMediaUrls, isBlotatoMediaUrl, submitPost } from "@/lib/blotato";
 
-// Blotato account IDs for the connected TikTok accounts (from config/config.ts).
-const BLOTATO_IDS: Record<string, string> = {
-  yournotetaker: "cmmxd7lo605mnle0y2xe2o1x6",
-  "grow.withamanda": "37045",
-  miniutewise_thomas: "37043",
-  "grow.with.claudia": "37047",
-};
+// sharp (via lib/blotato) needs the Node runtime, not Edge.
+export const runtime = "nodejs";
 
 // Publish a banked post immediately. No scheduledTime → immediate publish, which
 // does NOT count against Blotato's 200 scheduled-post cap. Mirrors the engine's
@@ -55,24 +51,55 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error }, { status });
   };
 
-  let meta: { caption?: string; title?: string; slideUrls?: string[] } = {};
+  let meta: {
+    caption?: string;
+    title?: string;
+    slideUrls?: string[];
+    blotatoUrls?: string[];
+  } = {};
   try {
     meta = JSON.parse(row.failure_resolution_note || "{}");
   } catch {
     /* ignore */
   }
   const slideUrls = meta.slideUrls ?? [];
-  const accountId = BLOTATO_IDS[row.account as string];
   const apiKey = process.env.BLOTATO_API_KEY;
 
-  if (!accountId) return revert(`No Blotato account for "${row.account}"`, 400);
   if (!slideUrls.length) return revert("No slides on this post", 400);
   if (!apiKey) return revert("BLOTATO_API_KEY not configured in dashboard env", 500);
+
+  // Resolved live — the ids in config/config.ts are stale for @yournotetaker
+  // (36969 upstream, not the `cmm…` id), which failed every post on that account.
+  let accountId: string | undefined;
+  try {
+    accountId = (await getTiktokAccounts(apiKey)).get(String(row.account).toLowerCase());
+  } catch (e) {
+    return revert(e instanceof Error ? e.message : "Blotato account lookup failed", 502);
+  }
+  if (!accountId) return revert(`No live Blotato account for "${row.account}"`, 400);
+
+  // Bank slides are 2-3MB PNGs, which have intermittently tripped Blotato's
+  // media converter. Compress + host on Blotato first, and cache the result.
+  let mediaUrls = meta.blotatoUrls ?? [];
+  const cacheUsable =
+    mediaUrls.length === slideUrls.length && mediaUrls.every((u) => isBlotatoMediaUrl(u));
+  if (!cacheUsable) {
+    try {
+      mediaUrls = await prepareMediaUrls(slideUrls, apiKey);
+    } catch (e) {
+      return revert(`Media prep failed — ${e instanceof Error ? e.message : e}`, 502);
+    }
+    meta.blotatoUrls = mediaUrls;
+    await sb
+      .from("posts")
+      .update({ failure_resolution_note: JSON.stringify(meta) })
+      .eq("id", id);
+  }
 
   const body = {
     post: {
       accountId,
-      content: { text: meta.caption ?? "", mediaUrls: slideUrls, platform: "tiktok" },
+      content: { text: meta.caption ?? "", mediaUrls, platform: "tiktok" },
       target: {
         targetType: "tiktok",
         privacyLevel: "PUBLIC_TO_EVERYONE",
@@ -90,20 +117,9 @@ export async function POST(req: NextRequest) {
     // no scheduledTime → immediate publish (bypasses the 200 scheduled-post cap)
   };
 
-  let res: Response;
-  try {
-    res = await fetch("https://backend.blotato.com/v2/posts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "blotato-api-key": apiKey },
-      body: JSON.stringify(body),
-    });
-  } catch (e) {
-    return revert(e instanceof Error ? e.message : "Network error reaching Blotato", 502);
-  }
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) return revert(j?.message || `Blotato error ${res.status}`, 502);
+  const submitted = await submitPost(body, apiKey);
+  if (!submitted.ok) return revert(submitted.error, 502);
 
-  const submissionId = j.postSubmissionId ?? j.submissionId ?? j.id ?? null;
   await sb.from("posts").update({ status: "posted" }).eq("id", id);
-  return NextResponse.json({ ok: true, submissionId });
+  return NextResponse.json({ ok: true, submissionId: submitted.submissionId });
 }
