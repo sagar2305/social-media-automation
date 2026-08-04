@@ -22,10 +22,22 @@ type Meta = {
 /**
  * Only self-hosted media plays in an inline <video>. A Google Drive
  * direct-download URL is served as an attachment and blocked cross-origin, so
- * embedding it yields a black box; those get a "Open source" link instead.
+ * a <video> pointed at one renders a black box.
  */
 function isInlinePlayable(url: string): boolean {
   return url.includes("supabase.co/storage") || url.includes("blotato");
+}
+
+/**
+ * Drive's own player embed, which DOES play in-page (unlike the
+ * direct-download URL). Lets an operator actually watch a banked video before
+ * publishing it — the whole point of the review step, since Blotato has no
+ * delete endpoint once a post is out.
+ */
+function driveEmbedUrl(url: string): string | null {
+  if (!/drive\.(google|usercontent\.google)\.com/.test(url)) return null;
+  const id = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)?.[1] ?? url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+  return id ? `https://drive.google.com/file/d/${id}/preview` : null;
 }
 
 /** Tomorrow in IST — the default start date for a bulk schedule. */
@@ -124,10 +136,17 @@ export default async function BankPage() {
                       src={p.videoUrl}
                       controls
                       preload="metadata"
-                      className="w-full aspect-[3/4] object-cover bg-muted"
+                      className="w-full aspect-[9/16] object-cover bg-muted"
+                    />
+                  ) : p.videoUrl && driveEmbedUrl(p.videoUrl) ? (
+                    <iframe
+                      src={driveEmbedUrl(p.videoUrl)!}
+                      title={p.title || "video preview"}
+                      allow="autoplay"
+                      className="w-full aspect-[9/16] bg-muted border-0"
                     />
                   ) : (
-                    <div className="w-full aspect-[3/4] bg-muted flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                    <div className="w-full aspect-[9/16] bg-muted flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <Video className="h-10 w-10" strokeWidth={1.5} />
                       {p.videoUrl && (
                         <a
@@ -155,9 +174,9 @@ export default async function BankPage() {
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="font-medium">@{p.account}</span>
                     <span>·</span>
-                    <span>{p.flow}</span>
-                    <span>·</span>
-                    <span>{p.isVideo ? "video" : `${p.slideCount} slides`}</span>
+                    {/* For video rows `flow` is already "video" — printing the
+                        media label too rendered "video · video". */}
+                    <span>{p.isVideo ? "video" : `${p.flow} · ${p.slideCount} slides`}</span>
                   </div>
                   <h3 className="font-semibold leading-snug line-clamp-2">{p.title || "Untitled"}</h3>
                   <p className="text-sm text-muted-foreground line-clamp-3">{p.caption}</p>
