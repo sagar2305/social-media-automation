@@ -418,9 +418,19 @@ const HASHTAG_TARGET = 20;
 // HASHTAG-BANK.md "Top Performers" are the highest-reach tags Virlo returns, but
 // some are pure off-topic entities (sports teams, animals) that look wrong on a
 // study/comedy post. Skip these when filling from the bank.
+// NOTE: this list is reactive — Virlo refreshes the bank daily with whatever is
+// globally trending, so a new wave of off-topic entities appears every few
+// weeks. Re-check it when captions start showing tags unrelated to the campaign.
 const BANK_DENYLIST = new Set([
   'nba', 'mma', 'arsenal', 'psg', 'soccer', 'football', 'usa', 'dog',
   'catsoftiktok', 'makeup', 'water',
+  // Aug 2026 wave — celebrities, franchises, sports and news events that Virlo
+  // ranked top-of-bank. On a study-app or comedy post these misroute the video
+  // to an audience with no interest in it.
+  'footballtiktok', 'fifaworldcup', 'ceuta', 'breakingnews', 'news',
+  'truecrime', 'spiderman', 'spidermanbrandnewday', 'tomholland', 'zendaya',
+  'arianagrande', 'marvel', 'fallontonight', 'dogwhisperer', 'petal',
+  'asmr', 'yoga', 'training', 'dryfterhomes', 'fifth',
 ]);
 
 /**
@@ -487,7 +497,10 @@ function normaliseCampaignHashtags(tags: string[] | null | undefined): string[] 
  * off-niche study tags (leakage); instead we ship fewer and log it, so an
  * under-tagged post is visible rather than silent.
  */
-function pickHashtags(
+// Exported so the video-caption path (scripts/lib/video-caption.ts) produces
+// hashtags with the exact same 20-tag tiering as slideshow posts, rather than
+// growing a second, drifting implementation.
+export function pickHashtags(
   hashtagBank: string,
   campaignBranded: string[] | null,
   campaignTracked: string[] | null,
@@ -563,7 +576,9 @@ function pickHashtags(
 // campaign-appropriate title (it's the slide-1 hook) so the caption can
 // just relay that.
 
-function buildCaption(title: string, hashtags: string[], description?: string): string {
+// Exported alongside pickHashtags so video captions share the slideshow
+// caption shape (hook 💡 / body / hashtags) instead of reinventing it.
+export function buildCaption(title: string, hashtags: string[], description?: string): string {
   // Title doubles as the caption hook (Gemini emits it that way; CSV
   // templates store it in template.name). Trailing punctuation removed
   // so we can safely add the emoji.

@@ -2,9 +2,15 @@
  * Content Bank scheduling — slot assignment.
  *
  * Banked posts each carry a fixed `account`, so scheduling is done per account
- * independently: every account gets its own 3-slots-a-day lane (08:00 / 14:00 /
- * 20:00 IST by default), which reproduces the cadence the accounts ran on
- * through 21 Jul.
+ * independently: every account gets its own 3-slots-a-day lane (02:00 / 06:00 /
+ * 20:00 IST by default).
+ *
+ * Slots moved on 31 Jul 2026 at the operator's request: 14:00 → 02:00, then
+ * 08:00 → 06:00. Note this clusters the three posts into a 20:00 → 02:00 →
+ * 06:00 window with 14h of silence after, rather than spreading them evenly.
+ * Posts already submitted to Blotato at 14:00 keep that time — Blotato has no
+ * update or delete endpoint, so the change only affects slots scheduled from
+ * here on (first unscheduled 14:00 date was 03 Aug 2026).
  *
  * Everything here is pure so the preview the user confirms and the plan the
  * executor submits are produced by the same code path — no chance of the
@@ -30,7 +36,7 @@ export const DEFAULT_ACCOUNTS = [
   "miniutewise_thomas",
 ] as const;
 
-export const DEFAULT_TIMES = ["08:00", "14:00", "20:00"];
+export const DEFAULT_TIMES = ["02:00", "06:00", "20:00"];
 
 /**
  * Blotato rejects a scheduledTime in the past. Slots are also skipped when

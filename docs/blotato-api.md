@@ -86,8 +86,8 @@ The main endpoint for posting to any platform. Supports immediate publish, sched
 | `post.target.isYourBrand` | boolean | Own brand promotion |
 | `post.target.isAiGenerated` | boolean | AI-generated content flag |
 | `post.target.isDraft` | boolean | **Save as TikTok draft** — appears in TikTok app notifications/inbox, NOT in Drafts folder. User finalizes + publishes from TikTok app. |
-| `post.target.autoAddMusic` | boolean | Auto-add trending music to photo posts (default: false) |
-| `post.target.title` | string | Post title (max 90 chars for photo posts) |
+| `post.target.autoAddMusic` | boolean | Auto-add trending music. **PHOTO posts only** — setting it on a video is silently ignored (verified 04 Aug 2026), so omit it for video rather than sending it and having it disregarded. |
+| `post.target.title` | string | Post title. **Max 90 chars for BOTH photo and video** — TikTok itself allows 2200 on video, but Blotato rejects it with `400 body.post.target.title must NOT have more than 90 characters` (verified 04 Aug 2026). Full text still goes in `content.text`. |
 | `post.target.imageCoverIndex` | number | Index of image to use as carousel cover |
 | `post.target.videoCoverTimestamp` | number | Timestamp in ms for video cover frame |
 
@@ -213,6 +213,69 @@ GET /posts/{postSubmissionId}
 **Status values:** `in-progress`, `published`, `scheduled`, `failed`
 
 If failed, check `errorMessage` in response. Also viewable at https://my.blotato.com/failed
+
+---
+
+### 3b. List Posts (undocumented — verified 31 Jul 2026)
+
+Not in Blotato's published docs, but live and useful: enumerates the whole
+queue in one call instead of GET-ing submission IDs one at a time.
+
+```
+GET /posts
+```
+
+**Response:**
+
+```json
+{
+  "items": [
+    {
+      "id": "2911238",
+      "platform": "tiktok",
+      "text": "Still Cramming for Exams 💡\n\n…",
+      "mediaUrls": ["https://database.blotato.io/storage/…"],
+      "postTime": "2026-07-31T08:30:00.000Z",
+      "state": { "type": "scheduled" }
+    }
+  ],
+  "cursor": "…"
+}
+```
+
+- `postTime` is the scheduled instant in UTC — this is the per-post slot time.
+- 50 items per page; follow `cursor` for more.
+- **`id` here is a numeric post id, NOT the `postSubmissionId` UUID** returned by
+  `POST /posts`. The two are different identifiers for the same post.
+
+---
+
+### ⚠️ There is no cancel / reschedule / delete
+
+Once `POST /posts` accepts a submission, its `scheduledTime` is **final**.
+Verified by probing the live API against a real scheduled post, on both the
+submission UUID and the numeric `id`:
+
+| Attempt | Result |
+|---|---|
+| `DELETE /v2/posts/{id}` | 404 `Route not found` |
+| `PATCH /v2/posts/{id}` | 404 `Route not found` |
+| `PUT /v2/posts/{id}` | 404 `Route not found` |
+| `POST /v2/posts/{id}/cancel` | 404 `Route not found` |
+| `POST /v2/posts/{id}/delete` | 404 `Route not found` |
+| `DELETE /v1/posts/{id}`, `/v2/scheduled-posts/{id}` | no such route |
+
+The only way to cancel a scheduled post is by hand at https://my.blotato.com.
+This is why double-booking a slot is unrecoverable, and why changing
+`DEFAULT_TIMES` in `dashboard/src/lib/bank-schedule.ts` only affects posts
+scheduled *after* the change.
+
+**Re-scheduling after a manual delete is free.** Slide images live independently
+at `database.blotato.io/storage/v1/object/public/public_media/…` and are not
+removed when the post referencing them is deleted. Captions and `blotatoUrls`
+are kept in Supabase `posts.failure_resolution_note`. So a move is one
+`POST /posts` with the same `mediaUrls` and a new `scheduledTime` — no image
+regeneration, no re-upload, no Gemini credits.
 
 ---
 
@@ -366,7 +429,14 @@ POST /media
 
 **Notes:**
 - Rate limit: **10 requests / minute** (media endpoint is stricter than the 30/min global).
-- Max file size: 1GB.
+- Max file size: 1GB — **but only when Blotato fetches from a URL.**
+- ⚠️ **base64 bodies cap at ~13.5MB, NOT 1GB** (verified 04 Aug 2026 against the
+  live API): 18MB of base64 accepted, 20MB → `422 "Base64 data is too large"`,
+  32MB → `413 Request body is too large`. base64 inflates 4/3, so ~13.5MB of
+  binary is the real ceiling. **Anything larger must be hosted and passed as a
+  URL** — Google Drive works, see the direct-download form below. This is why
+  `scripts/bank_videos_to_cloud.ts` posts videos from their Drive URL rather
+  than uploading bytes: it also preserves full original quality (no re-encode).
 - Accepts MIME types: `image/png`, `image/jpeg`, `video/mp4`, etc.
 - For Google Drive URLs, use the `drive.usercontent.google.com/download?id=...&export=download&confirm=t` form.
 - The returned `url` is stable and publicly accessible — pass it into `mediaUrls` for `/v2/posts`.
@@ -426,7 +496,15 @@ Optional filter: `?type=infographic` or `?type=carousel` or `?type=video`
 |------|-------------|
 | 401 | Invalid or missing API key |
 | 400 | Invalid JSON structure (most common failure) |
+| 413 | Request body too large — a base64 media upload over the cap (see Upload Media) |
+| 422 | `"Base64 data is too large"` — same cause, softer error, fires from ~20MB of base64 |
 | 429 | Rate limit exceeded (30/min) |
+
+**Plan limit — 3 unique accounts per 24h.** Posting to a 4th distinct account in
+a rolling 24-hour window fails with
+`"You have reached the maximum number of 3 unique accounts for the last 24 hours"`.
+There is NO limit on posts per account. Mirrored in `main.ts` as
+`BLOTATO_DAILY_ACCOUNT_CAP`.
 
 **Debugging:** Check https://my.blotato.com/api-dashboard or https://my.blotato.com/failed for failed posts.
 

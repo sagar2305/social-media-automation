@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase";
 import { getActiveCampaignFilter } from "@/lib/campaign-filter";
-import { getTiktokAccounts, prepareMediaUrls, isBlotatoMediaUrl, submitPost } from "@/lib/blotato";
+import {
+  getTiktokAccounts,
+  prepareMediaUrls,
+  prepareVideoUrl,
+  isBlotatoMediaUrl,
+  submitPost,
+  buildTikTokPostBody,
+} from "@/lib/blotato";
 import {
   DEFAULT_ACCOUNTS,
   DEFAULT_TIMES,
@@ -38,6 +45,10 @@ interface Meta {
   blotatoUrls?: string[];
   scheduledAt?: string;
   submissionId?: string;
+  /** Absent on every pre-video row — those are slideshows, as before. */
+  mediaType?: "slideshow" | "video";
+  /** Public source URL for a video post. Ignored when mediaType != "video". */
+  videoUrl?: string;
 }
 
 function parseMeta(raw: unknown): Meta {
@@ -237,13 +248,19 @@ export async function POST(req: NextRequest) {
       const row = claimedRows[0];
 
       const meta = parseMeta(row.failure_resolution_note);
+      const isVideo = meta.mediaType === "video";
       const slideUrls = meta.slideUrls ?? [];
       const accountId = accounts.get(String(row.account).toLowerCase());
       if (!accountId) {
         await revert(`No live Blotato account for "${row.account}"`);
         continue;
       }
-      if (!slideUrls.length) {
+      if (isVideo) {
+        if (!meta.videoUrl) {
+          await revert("No video URL on this post");
+          continue;
+        }
+      } else if (!slideUrls.length) {
         await revert("No slides on this post");
         continue;
       }
@@ -252,15 +269,20 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Bank slides are 2-3MB PNGs, which have intermittently tripped Blotato's
-      // media converter. Compress + host them on Blotato first (same as the
-      // engine), and cache the result so a retry never redoes the upload.
+      // Host the media on Blotato first and cache the result so a retry never
+      // redoes the upload. Videos pass their public URL through for Blotato to
+      // fetch server-side; bank slides are 2-3MB PNGs, which have
+      // intermittently tripped Blotato's media converter, so those get
+      // compressed and inlined (same as the engine).
       let mediaUrls = meta.blotatoUrls ?? [];
+      const expectedCount = isVideo ? 1 : slideUrls.length;
       const cacheUsable =
-        mediaUrls.length === slideUrls.length && mediaUrls.every((u) => isBlotatoMediaUrl(u));
+        mediaUrls.length === expectedCount && mediaUrls.every((u) => isBlotatoMediaUrl(u));
       if (!cacheUsable) {
         try {
-          mediaUrls = await prepareMediaUrls(slideUrls, apiKey);
+          mediaUrls = isVideo
+            ? [await prepareVideoUrl(meta.videoUrl!, apiKey)]
+            : await prepareMediaUrls(slideUrls, apiKey);
         } catch (e) {
           await revert(`Media prep failed — ${e instanceof Error ? e.message : e}`);
           continue;
@@ -274,30 +296,14 @@ export async function POST(req: NextRequest) {
           .eq("id", id);
       }
 
-      const payload = {
-        post: {
-          accountId,
-          content: { text: meta.caption ?? "", mediaUrls, platform: "tiktok" },
-          target: {
-            targetType: "tiktok",
-            privacyLevel: "PUBLIC_TO_EVERYONE",
-            disabledComments: false,
-            disabledDuet: false,
-            disabledStitch: false,
-            isBrandedContent: false,
-            isYourBrand: false,
-            isAiGenerated: true,
-            // Direct publish, not a TikTok draft. The bank exists to run the
-            // accounts autonomously — a scheduled post that lands in the drafts
-            // folder never goes out. Matches the sibling "Post now" route and
-            // the engine's --path=direct.
-            isDraft: false,
-            autoAddMusic: true,
-            title: (meta.title ?? "").slice(0, 90),
-          },
-        },
-        scheduledTime: when.toISOString(), // root level, not inside `post`
-      };
+      const payload = buildTikTokPostBody({
+        accountId,
+        caption: meta.caption ?? "",
+        mediaUrls,
+        title: meta.title ?? "",
+        isVideo,
+        scheduledTime: when.toISOString(),
+      });
 
       const submitted = await submitPost(payload, apiKey);
       if (!submitted.ok) {

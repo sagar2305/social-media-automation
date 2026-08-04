@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase";
-import { getTiktokAccounts, prepareMediaUrls, isBlotatoMediaUrl, submitPost } from "@/lib/blotato";
+import {
+  getTiktokAccounts,
+  prepareMediaUrls,
+  prepareVideoUrl,
+  isBlotatoMediaUrl,
+  submitPost,
+  buildTikTokPostBody,
+} from "@/lib/blotato";
 
 // sharp (via lib/blotato) needs the Node runtime, not Edge.
 export const runtime = "nodejs";
@@ -56,16 +63,24 @@ export async function POST(req: NextRequest) {
     title?: string;
     slideUrls?: string[];
     blotatoUrls?: string[];
+    /** Absent on every pre-video row — those are slideshows, as before. */
+    mediaType?: "slideshow" | "video";
+    videoUrl?: string;
   } = {};
   try {
     meta = JSON.parse(row.failure_resolution_note || "{}");
   } catch {
     /* ignore */
   }
+  const isVideo = meta.mediaType === "video";
   const slideUrls = meta.slideUrls ?? [];
   const apiKey = process.env.BLOTATO_API_KEY;
 
-  if (!slideUrls.length) return revert("No slides on this post", 400);
+  if (isVideo) {
+    if (!meta.videoUrl) return revert("No video URL on this post", 400);
+  } else if (!slideUrls.length) {
+    return revert("No slides on this post", 400);
+  }
   if (!apiKey) return revert("BLOTATO_API_KEY not configured in dashboard env", 500);
 
   // Resolved live — the ids in config/config.ts are stale for @yournotetaker
@@ -78,14 +93,19 @@ export async function POST(req: NextRequest) {
   }
   if (!accountId) return revert(`No live Blotato account for "${row.account}"`, 400);
 
-  // Bank slides are 2-3MB PNGs, which have intermittently tripped Blotato's
-  // media converter. Compress + host on Blotato first, and cache the result.
+  // Host the media on Blotato and cache the result, so a retry never redoes the
+  // upload. Videos pass their public URL through for Blotato to fetch
+  // server-side; slides are compressed and inlined as base64 (2-3MB PNGs have
+  // intermittently tripped Blotato's media converter).
   let mediaUrls = meta.blotatoUrls ?? [];
+  const expectedCount = isVideo ? 1 : slideUrls.length;
   const cacheUsable =
-    mediaUrls.length === slideUrls.length && mediaUrls.every((u) => isBlotatoMediaUrl(u));
+    mediaUrls.length === expectedCount && mediaUrls.every((u) => isBlotatoMediaUrl(u));
   if (!cacheUsable) {
     try {
-      mediaUrls = await prepareMediaUrls(slideUrls, apiKey);
+      mediaUrls = isVideo
+        ? [await prepareVideoUrl(meta.videoUrl!, apiKey)]
+        : await prepareMediaUrls(slideUrls, apiKey);
     } catch (e) {
       return revert(`Media prep failed — ${e instanceof Error ? e.message : e}`, 502);
     }
@@ -96,26 +116,14 @@ export async function POST(req: NextRequest) {
       .eq("id", id);
   }
 
-  const body = {
-    post: {
-      accountId,
-      content: { text: meta.caption ?? "", mediaUrls, platform: "tiktok" },
-      target: {
-        targetType: "tiktok",
-        privacyLevel: "PUBLIC_TO_EVERYONE",
-        disabledComments: false,
-        disabledDuet: false,
-        disabledStitch: false,
-        isBrandedContent: false,
-        isYourBrand: false,
-        isAiGenerated: true,
-        isDraft: false,
-        autoAddMusic: true,
-        title: (meta.title ?? "").slice(0, 90),
-      },
-    },
-    // no scheduledTime → immediate publish (bypasses the 200 scheduled-post cap)
-  };
+  // no scheduledTime → immediate publish (bypasses the 200 scheduled-post cap)
+  const body = buildTikTokPostBody({
+    accountId,
+    caption: meta.caption ?? "",
+    mediaUrls,
+    title: meta.title ?? "",
+    isVideo,
+  });
 
   const submitted = await submitPost(body, apiKey);
   if (!submitted.ok) return revert(submitted.error, 502);

@@ -17,6 +17,9 @@ assets/slides/
 /posts/
 /posts/raw_*.png
 
+# Source videos for the Content Bank (hundreds of MB per file)
+/videos/
+
 # Per-cycle logs (tens of MB over time)
 data/cycle-logs/
 data/exports/
@@ -34,3 +37,6 @@ data/docs-refresh-queue.json
 
 # Backup state files
 data/*.backup.*
+
+# Next.js build output (root-level stray build)
+/.next/
