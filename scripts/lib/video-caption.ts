@@ -12,9 +12,12 @@
  * the same per-campaign HASHTAG-BANK.md. Only the Gemini prompt is new — it
  * asks for a hook + body about a video topic instead of slide copy.
  *
- * Gemini never sees the video itself. It writes from the topic string supplied
- * at ingest (see scripts/bank_videos_to_cloud.ts), so the topic must actually
- * describe the video — a wrong topic yields a confident, wrong caption.
+ * Two paths, in order of preference:
+ *   generateVideoCaptionFromFile() — the primary one. Uploads the video via the
+ *     Gemini Files API so Gemini WATCHES it and writes from what is on screen.
+ *   generateVideoCaption()         — text-only fallback. Writes from the topic
+ *     string supplied at ingest, so a wrong topic yields a confident, wrong
+ *     caption. Used when there is no local copy, or when the Files API fails.
  */
 
 import { readFile, stat } from 'fs/promises';
@@ -26,7 +29,11 @@ import { getCampaign } from './campaigns.js';
 import { pickHashtags, buildCaption } from '../text_overlay.js';
 
 export interface VideoCaption {
-  /** TikTok post title. Videos allow 2200 chars (docs/tiktok-api.md:339). */
+  /**
+   * TikTok post title. TikTok itself allows 2200 chars on video, but Blotato
+   * rejects anything over 90 for both photo and video (docs/blotato-api.md), so
+   * callers truncate at 90. The full text goes out in `caption`.
+   */
   title: string;
   /** Full caption body: hook 💡 / body / hashtags. */
   caption: string;

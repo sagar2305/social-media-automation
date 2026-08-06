@@ -221,7 +221,7 @@ If failed, check `errorMessage` in response. Also viewable at https://my.blotato
 Not in Blotato's published docs, but live and useful: enumerates the whole
 queue in one call instead of GET-ing submission IDs one at a time.
 
-```
+```http
 GET /posts
 ```
 
@@ -513,7 +513,7 @@ There is NO limit on posts per account. Mirrored in `main.ts` as
 ## Key Notes
 
 - Auth header: `blotato-api-key: key` (NOT Authorization, NOT Bearer)
-- Media: either pass a public URL directly in `mediaUrls`, OR upload first via **`POST /v2/media`** (accepts a public URL **or a base64 `data:image/png;base64,...` URL** in the `url` field — returns `201` with `{ url, id }` where `url` is a Blotato-hosted public URL). Rate limit: 10 req/min, max 1GB. Use base64 data URLs to upload local files with no external image host.
+- Media: either pass a public URL directly in `mediaUrls`, OR upload first via **`POST /v2/media`** (accepts a public URL **or a base64 `data:image/png;base64,...` URL** in the `url` field — returns `201` with `{ url, id }` where `url` is a Blotato-hosted public URL). Rate limit: 10 req/min. **Size limits differ by method: 1GB when Blotato fetches a URL, but only ~13.5MB for a base64 body** (20MB of base64 → `422`, 32MB → `413`). Base64 is fine for slide images; anything larger — video especially — must be hosted and passed as a URL.
 - Scheduling: `scheduledTime` at root level (ISO 8601)
 - Drafts: `isDraft: true` in target — saves to TikTok app inbox as real TikTok draft
 - Visual creation: built-in templates for videos/carousels/infographics

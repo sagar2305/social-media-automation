@@ -95,7 +95,19 @@ const DIR = arg('dir');
 const ACCOUNT_FLAG = arg('account');
 const CAMPAIGN_FLAG = arg('campaign');
 const DRY_RUN = process.argv.includes('--dry-run');
-const LIMIT = Number(arg('limit') ?? Infinity);
+// Validated eagerly: Number('abc') is NaN, and `banked >= NaN` is false on every
+// iteration — so a typo'd --limit would silently bank the WHOLE input set
+// instead of stopping. In a script that writes rows, that must fail loudly.
+const LIMIT_RAW = arg('limit');
+const LIMIT = LIMIT_RAW === undefined ? Infinity : Number(LIMIT_RAW);
+if (!Number.isFinite(LIMIT) && LIMIT_RAW !== undefined) {
+  console.error(`--limit must be a positive number (got "${LIMIT_RAW}").`);
+  process.exit(1);
+}
+if (LIMIT < 1) {
+  console.error(`--limit must be at least 1 (got "${LIMIT_RAW}").`);
+  process.exit(1);
+}
 
 interface VideoInput {
   /** Drive link / public URL, or an absolute local path when `local` is true. */
@@ -202,7 +214,11 @@ async function readDir(dir: string, account: string): Promise<VideoInput[]> {
       continue;
     }
     if (!VIDEO_EXTS.has(ext)) continue;
-    rows.push({ source: join(dir, f), account, topic: filenameToTopic(f), local: true });
+    // resolve(), not join(): the row id is a hash of `source`, so an unresolved
+    // path would give the same file a different id depending on how --dir was
+    // spelled (./videos vs videos vs an absolute path) and bank it twice.
+    // Matches the manifest path, which already resolves.
+    rows.push({ source: resolve(dir, f), account, topic: filenameToTopic(f), local: true });
   }
   return rows;
 }
@@ -302,7 +318,21 @@ async function checkRemote(url: string): Promise<{ ok: true } | { ok: false; rea
 
   // Never re-bank an id that already exists in any status — flipping a posted
   // row back to 'banked' would invite a duplicate publish.
-  const { data: existing } = await sb.from('posts').select('id');
+  //
+  // Scoped to `video_%` on purpose: an unfiltered select() is silently capped by
+  // PostgREST (1000 rows by default) once the posts table grows, and a
+  // truncated set means `have` misses ids that DO exist. Ids generated here are
+  // always `video_<account>_<hash>`, so this filter is both complete and small.
+  // The error is fatal rather than ignored — an empty `have` from a failed read
+  // looks identical to "nothing banked yet" and would re-post live videos.
+  const { data: existing, error: existErr } = await sb
+    .from('posts')
+    .select('id')
+    .like('id', 'video_%');
+  if (existErr) {
+    console.error(`FATAL: could not read existing post ids — ${existErr.message}`);
+    process.exit(1);
+  }
   const have = new Set((existing ?? []).map((r) => r.id as string));
 
   let banked = 0;
@@ -444,8 +474,20 @@ async function checkRemote(url: string): Promise<{ ok: true } | { ok: false; rea
         console.log(`      TITLE: ${title}`);
         console.log(caption.split('\n').filter(Boolean).map((l) => `      | ${l}`).join('\n'));
       } else {
-        const { error } = await sb.from('posts').upsert(row, { onConflict: 'id' });
-        if (error) throw new Error(error.message);
+        // insert, NOT upsert: an upsert with status:'banked' would overwrite an
+        // already-posted row back to banked and republish a live video. A
+        // unique-violation here means the id is already banked, which is a
+        // skip, not a failure.
+        const { error } = await sb.from('posts').insert(row);
+        if (error) {
+          if (error.code === '23505') {
+            console.log(`SKIP  ${label} — already banked (${id}).`);
+            have.add(id);
+            skipped++;
+            continue;
+          }
+          throw new Error(error.message);
+        }
         console.log(`BANK  ${label} → @${input.account} (${slug}) — "${title}"`);
       }
       have.add(id);

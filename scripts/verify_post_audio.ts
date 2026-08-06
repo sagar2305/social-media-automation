@@ -54,7 +54,14 @@ const SILENCE_THRESHOLD_DB = -50;
 function arg(name: string): string | undefined {
   return process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
 }
-const LIMIT = Number(arg('limit') ?? Infinity);
+// Number('abc') is NaN and slice(0, NaN) yields an empty array, so a typo'd
+// --limit would print "Checking audio on 0 posts", exit 0, and look like a pass.
+const LIMIT_RAW = arg('limit');
+const LIMIT = LIMIT_RAW === undefined ? Infinity : Number(LIMIT_RAW);
+if ((!Number.isFinite(LIMIT) && LIMIT_RAW !== undefined) || LIMIT < 1) {
+  console.error(`--limit must be a positive number (got "${LIMIT_RAW}").`);
+  process.exit(1);
+}
 
 /** Resolve the live TikTok URL for a Blotato submission. */
 async function publicUrlFor(submissionId: string): Promise<string | null> {

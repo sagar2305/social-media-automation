@@ -85,7 +85,28 @@ function arg(name: string): string | undefined {
 const DRY_RUN = process.argv.includes('--dry-run');
 const START = arg('start');
 const TIMES = arg('times')?.split(',').map((t) => t.trim()).filter(Boolean) ?? DEFAULT_TIMES;
-const LIMIT = Number(arg('limit') ?? Infinity);
+// Same validation the dashboard route applies, and for the same reasons:
+// buildSchedulePlan sorts times lexicographically, so an unpadded "8:00" would
+// order AFTER "14:00" and fill the lane in the wrong sequence; and a
+// non-numeric entry makes istToUtc produce Invalid Date, which slips past the
+// past-slot guard (every NaN comparison is false) and then throws on
+// toISOString(). Cheap to check here, expensive to undo — Blotato has no
+// delete endpoint.
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const badTime = TIMES.find((t) => !TIME_RE.test(t));
+if (badTime !== undefined) {
+  console.error(`Invalid slot time "${badTime}" — use zero-padded HH:MM (e.g. 08:00, not 8:00).`);
+  process.exit(1);
+}
+
+// Number('abc') is NaN and slice(0, NaN) yields an empty array, so a typo'd
+// --limit would silently schedule nothing and still exit 0.
+const LIMIT_RAW = arg('limit');
+const LIMIT = LIMIT_RAW === undefined ? Infinity : Number(LIMIT_RAW);
+if ((!Number.isFinite(LIMIT) && LIMIT_RAW !== undefined) || LIMIT < 1) {
+  console.error(`--limit must be a positive number (got "${LIMIT_RAW}").`);
+  process.exit(1);
+}
 /**
  * Restrict scheduling to specific handles. Needed when one account cannot
  * publish correctly and its posts must stay banked — e.g. an account TikTok
@@ -156,10 +177,19 @@ function parseMeta(raw: unknown): Meta {
 
   // Slots already claimed. NOT campaign-filtered: an account's TikTok timeline
   // is shared, so a slot taken by any campaign still blocks this one.
-  const { data: schedRows } = await sb
+  // Fatal on error, never ignored: a failed read leaves `occupied` empty, which
+  // is indistinguishable from "no slots taken". buildSchedulePlan would then
+  // restart every lane at startDate and double-book slots that already hold a
+  // post — and Blotato has no delete endpoint, so that cannot be undone.
+  const { data: schedRows, error: schedErr } = await sb
     .from('posts')
     .select('account, failure_resolution_note')
     .eq('status', 'scheduled');
+  if (schedErr) {
+    console.error(`Failed to read already-scheduled slots: ${schedErr.message}`);
+    console.error('Refusing to continue — without them this would double-book slots that cannot be deleted.');
+    process.exit(1);
+  }
   const occupied = new Set<string>();
   for (const p of schedRows ?? []) {
     const at = parseMeta(p.failure_resolution_note).scheduledAt;
@@ -213,9 +243,21 @@ function parseMeta(raw: unknown): Meta {
     }
     const row = claimed[0];
     const meta = parseMeta(row.failure_resolution_note);
+    // Guarded on status='posting' so this can only undo OUR claim. Without the
+    // guard a row another process had already advanced to scheduled/posted
+    // would be rewritten to banked and submitted again — an un-deletable
+    // duplicate. Matches the dashboard route's revert.
     const revert = async (why: string) => {
-      await sb.from('posts').update({ status: 'banked' }).eq('id', item.id);
-      console.log(`  FAIL @${item.account} ${item.istLabel} — ${why}`);
+      const { data: reverted, error: revertErr } = await sb
+        .from('posts')
+        .update({ status: 'banked' })
+        .eq('id', item.id)
+        .eq('status', 'posting')
+        .select('id');
+      let suffix = '';
+      if (revertErr) suffix = ` (revert FAILED: ${revertErr.message} — row left in 'posting')`;
+      else if (!reverted?.length) suffix = ' (nothing reverted — row was no longer in \'posting\')';
+      console.log(`  FAIL @${item.account} ${item.istLabel} — ${why}${suffix}`);
       failed++;
     };
 
@@ -231,10 +273,21 @@ function parseMeta(raw: unknown): Meta {
       let mediaUrls = meta.blotatoUrls ?? [];
       const expected = isVideo ? 1 : (meta.slideUrls ?? []).length;
       const cached =
+        expected > 0 &&
         mediaUrls.length === expected &&
         mediaUrls.every((u) => u.includes('blotato'));
       if (!cached) {
-        const src = isVideo ? meta.videoUrl : undefined;
+        // Slideshow rows need per-slide compression + upload (sharp), which
+        // lives in the dashboard's prepareMediaUrls. Rather than half-support
+        // them here and submit an empty mediaUrls array, say so explicitly and
+        // leave the row banked for the dashboard to schedule.
+        if (!isVideo) {
+          await revert(
+            'slideshow row without cached media — schedule it from the dashboard (this CLI prepares video only)',
+          );
+          continue;
+        }
+        const src = meta.videoUrl;
         if (!src) {
           await revert('no media source on row');
           continue;
