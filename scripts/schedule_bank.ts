@@ -36,6 +36,7 @@ import type {
   SchedulePlan,
   PlanItem,
 } from '../dashboard/src/lib/bank-schedule.js';
+import { flagValue, positiveIntFlag } from './lib/cli-args.js';
 
 type BankScheduleModule = {
   buildSchedulePlan: (opts: {
@@ -79,12 +80,9 @@ async function throttle(): Promise<void> {
   if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
 }
 
-function arg(name: string): string | undefined {
-  return process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
-}
 const DRY_RUN = process.argv.includes('--dry-run');
-const START = arg('start');
-const TIMES = arg('times')?.split(',').map((t) => t.trim()).filter(Boolean) ?? DEFAULT_TIMES;
+const START = flagValue('start');
+const TIMES = flagValue('times')?.split(',').map((t) => t.trim()).filter(Boolean) ?? DEFAULT_TIMES;
 // Same validation the dashboard route applies, and for the same reasons:
 // buildSchedulePlan sorts times lexicographically, so an unpadded "8:00" would
 // order AFTER "14:00" and fill the lane in the wrong sequence; and a
@@ -99,21 +97,16 @@ if (badTime !== undefined) {
   process.exit(1);
 }
 
-// Number('abc') is NaN and slice(0, NaN) yields an empty array, so a typo'd
-// --limit would silently schedule nothing and still exit 0.
-const LIMIT_RAW = arg('limit');
-const LIMIT = LIMIT_RAW === undefined ? Infinity : Number(LIMIT_RAW);
-if ((!Number.isFinite(LIMIT) && LIMIT_RAW !== undefined) || LIMIT < 1) {
-  console.error(`--limit must be a positive number (got "${LIMIT_RAW}").`);
-  process.exit(1);
-}
+// Must be a positive integer — slice(0, NaN) would schedule nothing while
+// exiting 0, and a fractional value silently shifts how many get submitted.
+const LIMIT = positiveIntFlag('limit', Infinity);
 /**
  * Restrict scheduling to specific handles. Needed when one account cannot
  * publish correctly and its posts must stay banked — e.g. an account TikTok
  * won't mint an "original sound" for publishes silent videos, so scheduling it
  * would burn posts that cannot be deleted afterwards.
  */
-const ACCOUNTS = arg('accounts')?.split(',').map((a) => a.trim().replace('@', '').toLowerCase()).filter(Boolean);
+const ACCOUNTS = flagValue('accounts')?.split(',').map((a) => a.trim().replace('@', '').toLowerCase()).filter(Boolean);
 
 interface Meta {
   caption?: string;

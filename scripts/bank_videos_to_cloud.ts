@@ -41,6 +41,7 @@ import { readFile, readdir } from 'fs/promises';
 import { basename, extname, join, resolve } from 'path';
 import { createHash } from 'crypto';
 import { setCampaignSlug } from './lib/campaign-paths.js';
+import { flagValue, positiveIntFlag } from './lib/cli-args.js';
 import { toDirectMediaUrl, isDriveUrl } from './lib/drive-url.js';
 import { generateVideoCaption, generateVideoCaptionFromFile } from './lib/video-caption.js';
 import { apiRequest } from './api-client.js';
@@ -87,27 +88,14 @@ const MIME_BY_EXT: Record<string, string> = {
 
 // ─── CLI ─────────────────────────────────────────────────────
 
-function arg(name: string): string | undefined {
-  return process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
-}
-const MANIFEST = arg('manifest');
-const DIR = arg('dir');
-const ACCOUNT_FLAG = arg('account');
-const CAMPAIGN_FLAG = arg('campaign');
+const MANIFEST = flagValue('manifest');
+const DIR = flagValue('dir');
+const ACCOUNT_FLAG = flagValue('account');
+const CAMPAIGN_FLAG = flagValue('campaign');
 const DRY_RUN = process.argv.includes('--dry-run');
-// Validated eagerly: Number('abc') is NaN, and `banked >= NaN` is false on every
-// iteration — so a typo'd --limit would silently bank the WHOLE input set
-// instead of stopping. In a script that writes rows, that must fail loudly.
-const LIMIT_RAW = arg('limit');
-const LIMIT = LIMIT_RAW === undefined ? Infinity : Number(LIMIT_RAW);
-if (!Number.isFinite(LIMIT) && LIMIT_RAW !== undefined) {
-  console.error(`--limit must be a positive number (got "${LIMIT_RAW}").`);
-  process.exit(1);
-}
-if (LIMIT < 1) {
-  console.error(`--limit must be at least 1 (got "${LIMIT_RAW}").`);
-  process.exit(1);
-}
+// Must be a positive integer — see positiveIntFlag for why a bad value would
+// otherwise silently change how many rows get banked instead of failing.
+const LIMIT = positiveIntFlag('limit', Infinity);
 
 interface VideoInput {
   /** Drive link / public URL, or an absolute local path when `local` is true. */
