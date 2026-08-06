@@ -1,3 +1,4 @@
+import { Video } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { BankPostButton } from "@/components/bank-post-button";
@@ -13,7 +14,31 @@ type Meta = {
   slideCount?: number;
   slideUrls?: string[];
   scheduledAt?: string;
+  /** Absent on every pre-video row — those are slideshows, as before. */
+  mediaType?: "slideshow" | "video";
+  videoUrl?: string;
 };
+
+/**
+ * Only self-hosted media plays in an inline <video>. A Google Drive
+ * direct-download URL is served as an attachment and blocked cross-origin, so
+ * a <video> pointed at one renders a black box.
+ */
+function isInlinePlayable(url: string): boolean {
+  return url.includes("supabase.co/storage") || url.includes("blotato");
+}
+
+/**
+ * Drive's own player embed, which DOES play in-page (unlike the
+ * direct-download URL). Lets an operator actually watch a banked video before
+ * publishing it — the whole point of the review step, since Blotato has no
+ * delete endpoint once a post is out.
+ */
+function driveEmbedUrl(url: string): string | null {
+  if (!/drive\.(google|usercontent\.google)\.com/.test(url)) return null;
+  const id = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)?.[1] ?? url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+  return id ? `https://drive.google.com/file/d/${id}/preview` : null;
+}
 
 /** Tomorrow in IST — the default start date for a bulk schedule. */
 function tomorrowIst(): string {
@@ -53,6 +78,8 @@ export default async function BankPage() {
       caption: m.caption,
       slideCount: m.slideCount ?? m.slideUrls?.length ?? 0,
       scheduledAt: m.scheduledAt,
+      isVideo: m.mediaType === "video",
+      videoUrl: m.videoUrl,
     };
   });
 
@@ -103,21 +130,53 @@ export default async function BankPage() {
           {posts.map((p) => (
             <Card key={p.id} className="overflow-hidden">
               <CardContent className="p-0">
-                {p.thumbnail_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={p.thumbnail_url}
-                    alt={p.title || "slide preview"}
-                    className="w-full aspect-[3/4] object-cover bg-muted"
-                  />
+                {p.isVideo ? (
+                  p.videoUrl && isInlinePlayable(p.videoUrl) ? (
+                    <video
+                      src={p.videoUrl}
+                      controls
+                      preload="metadata"
+                      className="w-full aspect-[9/16] object-cover bg-muted"
+                    />
+                  ) : p.videoUrl && driveEmbedUrl(p.videoUrl) ? (
+                    <iframe
+                      src={driveEmbedUrl(p.videoUrl)!}
+                      title={p.title || "video preview"}
+                      allow="autoplay"
+                      className="w-full aspect-[9/16] bg-muted border-0"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[9/16] bg-muted flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <Video className="h-10 w-10" strokeWidth={1.5} />
+                      {p.videoUrl && (
+                        <a
+                          href={p.videoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs underline hover:text-foreground"
+                        >
+                          Open source
+                        </a>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  p.thumbnail_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.thumbnail_url}
+                      alt={p.title || "slide preview"}
+                      className="w-full aspect-[3/4] object-cover bg-muted"
+                    />
+                  )
                 )}
                 <div className="p-4 space-y-2">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="font-medium">@{p.account}</span>
                     <span>·</span>
-                    <span>{p.flow}</span>
-                    <span>·</span>
-                    <span>{p.slideCount} slides</span>
+                    {/* For video rows `flow` is already "video" — printing the
+                        media label too rendered "video · video". */}
+                    <span>{p.isVideo ? "video" : `${p.flow} · ${p.slideCount} slides`}</span>
                   </div>
                   <h3 className="font-semibold leading-snug line-clamp-2">{p.title || "Untitled"}</h3>
                   <p className="text-sm text-muted-foreground line-clamp-3">{p.caption}</p>

@@ -41,7 +41,7 @@ interface Plan {
 export function BankSchedulePanel({ defaultStartDate }: { defaultStartDate: string }) {
   const router = useRouter();
   const [startDate, setStartDate] = useState(defaultStartDate);
-  const [times, setTimes] = useState("08:00, 14:00, 20:00");
+  const [times, setTimes] = useState("02:00, 06:00, 20:00");
   const [accounts, setAccounts] = useState<string[]>(ACCOUNTS);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);

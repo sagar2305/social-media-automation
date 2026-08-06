@@ -111,13 +111,24 @@ async function prepareOne(url: string, apiKey: string): Promise<string> {
   }
 
   const dataUrl = `data:${mime};base64,${body.toString("base64")}`;
+  return uploadToBlotatoMedia(dataUrl, apiKey);
+}
+
+/**
+ * Hand one URL to Blotato's media store and return the hosted URL.
+ *
+ * Accepts either a base64 `data:` URL (images, uploaded inline) or a plain
+ * public URL that Blotato fetches server-side (videos — see prepareVideoUrl).
+ * Extracted from prepareOne so both media kinds share one retry policy.
+ */
+async function uploadToBlotatoMedia(payloadUrl: string, apiKey: string): Promise<string> {
   let lastErr = "";
   for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt++) {
     let res: Response;
     try {
       res = await blotatoFetch("/media", apiKey, {
         method: "POST",
-        body: JSON.stringify({ url: dataUrl }),
+        body: JSON.stringify({ url: payloadUrl }),
       });
     } catch (e) {
       lastErr = e instanceof Error ? e.message : "network error";
@@ -168,6 +179,95 @@ export async function prepareMediaUrls(slideUrls: string[], apiKey: string): Pro
 /** True when a stored url already points at Blotato's media store. */
 export function isBlotatoMediaUrl(url: string): boolean {
   return url.includes("database.blotato.io") || url.includes("blotato.com");
+}
+
+/**
+ * Host a VIDEO on Blotato's media store, returning the hosted URL.
+ *
+ * Unlike slides, the bytes are never pulled through this server: the public
+ * source URL is handed to Blotato and it fetches server-side. Videos routinely
+ * run to hundreds of MB, and the slide path's base64 data URL would inflate
+ * that by ~33% and hold it all in memory inside a JSON string — enough to kill
+ * a serverless function. `/v2/media` accepts a plain public URL and video/mp4
+ * up to 1GB (docs/blotato-api.md:399-435), so passthrough is both simpler and
+ * the documented route.
+ *
+ * No re-encoding happens here. The video is published exactly as supplied.
+ */
+export async function prepareVideoUrl(videoUrl: string, apiKey: string): Promise<string> {
+  // Already hosted by Blotato (cached from an earlier attempt) — reuse it
+  // rather than paying for a second upload.
+  if (isBlotatoMediaUrl(videoUrl)) return videoUrl;
+  return uploadToBlotatoMedia(videoUrl, apiKey);
+}
+
+// ─── Payload construction ────────────────────────────────────
+
+/**
+ * Title limit.
+ *
+ * docs/tiktok-api.md:339 records TikTok's own limits as 90 chars for photo and
+ * 2200 for video — but Blotato validates its OWN 90-char ceiling for BOTH and
+ * rejects anything longer with:
+ *   400 body.post.target.title must NOT have more than 90 characters
+ * (hit for real on a scheduled video post). So 90 applies across the board;
+ * the caption body still carries the full text.
+ */
+const TITLE_MAX = 90;
+
+/**
+ * Build the /v2/posts body for a TikTok post.
+ *
+ * Shared by the "post now" and "schedule" routes so the two can never drift.
+ * The slideshow branch reproduces the payload both routes already sent, byte
+ * for byte; `isVideo` selects the three documented differences:
+ *
+ *   - autoAddMusic is a PHOTO-post feature (docs/blotato-api.md:89). Verified
+ *     against the live API: setting it on a video is silently ignored, so it is
+ *     omitted for video rather than sent and disregarded.
+ *   - mediaUrls carries exactly one .mp4 URL rather than N image URLs.
+ *
+ * The title cap is the SAME for both (see TITLE_MAX) — Blotato rejects >90
+ * chars on video posts even though TikTok itself allows 2200.
+ */
+export function buildTikTokPostBody(opts: {
+  accountId: string;
+  caption: string;
+  mediaUrls: string[];
+  title: string;
+  isVideo: boolean;
+  /** ISO 8601. Omit for immediate publish. */
+  scheduledTime?: string;
+}): Record<string, unknown> {
+  const target: Record<string, unknown> = {
+    targetType: "tiktok",
+    privacyLevel: "PUBLIC_TO_EVERYONE",
+    disabledComments: false,
+    disabledDuet: false,
+    disabledStitch: false,
+    isBrandedContent: false,
+    isYourBrand: false,
+    // TikTok requires AI-generated content to be disclosed. Every post this
+    // system makes is AI-assisted, so this stays true for video too.
+    isAiGenerated: true,
+    // Direct publish, not a TikTok draft. The bank exists to run the accounts
+    // autonomously — a scheduled post that lands in the drafts folder never
+    // goes out. Matches the engine's --path=direct.
+    isDraft: false,
+    title: opts.title.slice(0, TITLE_MAX),
+  };
+  if (!opts.isVideo) target.autoAddMusic = true;
+
+  const body: Record<string, unknown> = {
+    post: {
+      accountId: opts.accountId,
+      content: { text: opts.caption, mediaUrls: opts.mediaUrls, platform: "tiktok" },
+      target,
+    },
+  };
+  // scheduledTime lives at the ROOT, not inside `post` (docs/blotato-api.md:74).
+  if (opts.scheduledTime) body.scheduledTime = opts.scheduledTime;
+  return body;
 }
 
 // ─── Post submission ─────────────────────────────────────────
