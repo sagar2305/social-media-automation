@@ -40,3 +40,15 @@ data/*.backup.*
 
 # Next.js build output (root-level stray build)
 /.next/
+
+# Creddy runtime evidence stays in the external durable data project. These
+# local previews, caches, and source captures are never deployment inputs.
+/artifacts/
+/output/
+/tmp/
+/scripts/__pycache__/
+/assets/creddy/app-screens/raw/
+/assets/creddy/slideshow-expressions/
+/assets/creddy/slideshow-templates/creddy-phone-home-benefits-right-v1.png
+/assets/creddy/slideshow-templates/creddy-phone-home-benefits-right-v2.png
+/assets/creddy/slideshow-templates/fonts/DrukCond-Super-Trial.otf

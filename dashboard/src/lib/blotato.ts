@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { readFile } from "node:fs/promises";
 
 /**
  * Blotato helpers shared by the Content Bank routes.
@@ -51,12 +52,27 @@ async function blotatoFetch(path: string, apiKey: string, init?: RequestInit): P
 
 // ─── Account resolution ──────────────────────────────────────
 
+export type BlotatoAccount = {
+  id: string;
+  platform: string;
+  username?: string;
+  fullname?: string;
+};
+
 interface AccountsResponse {
-  items: { id: string; platform: string; username?: string; fullname?: string }[];
+  items: BlotatoAccount[];
 }
 
 let accountCache: { at: number; map: Map<string, string> } | null = null;
 const ACCOUNT_TTL_MS = 5 * 60_000;
+
+/** Read-only list of live connections. Never creates, updates, or posts. */
+export async function listBlotatoAccounts(apiKey: string): Promise<BlotatoAccount[]> {
+  const res = await blotatoFetch("/users/me/accounts", apiKey);
+  if (!res.ok) throw new Error(`Blotato accounts lookup failed (${res.status})`);
+  const json = (await res.json()) as AccountsResponse;
+  return (json.items ?? []).map((item) => ({ ...item, id: String(item.id) }));
+}
 
 /** handle (no @, case-insensitive) → live Blotato account id. */
 export async function getTiktokAccounts(apiKey: string): Promise<Map<string, string>> {
@@ -112,6 +128,36 @@ async function prepareOne(url: string, apiKey: string): Promise<string> {
 
   const dataUrl = `data:${mime};base64,${body.toString("base64")}`;
   return uploadToBlotatoMedia(dataUrl, apiKey);
+}
+
+async function prepareBytes(original: Buffer, srcType: string, apiKey: string): Promise<string> {
+  let body: Buffer = original;
+  let mime = srcType;
+  if (srcType.includes("png") && original.length > COMPRESS_ABOVE_BYTES) {
+    try {
+      const jpg = Buffer.from(await sharp(original).jpeg({ quality: JPEG_QUALITY }).toBuffer());
+      if (jpg.length > 0 && jpg.length < original.length) {
+        body = jpg;
+        mime = "image/jpeg";
+      }
+    } catch {
+      /* retain the original image */
+    }
+  }
+  return uploadToBlotatoMedia(`data:${mime};base64,${body.toString("base64")}`, apiKey);
+}
+
+/** Upload already-validated local slideshow files for a Creddy post. */
+export async function prepareLocalImageFiles(paths: string[], apiKey: string): Promise<string[]> {
+  const out: string[] = [];
+  for (let index = 0; index < paths.length; index += 1) {
+    try {
+      out.push(await prepareBytes(await readFile(paths[index]), "image/png", apiKey));
+    } catch (error) {
+      throw new Error(`slide ${index + 1}: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+  return out;
 }
 
 /**
@@ -238,6 +284,8 @@ export function buildTikTokPostBody(opts: {
   isVideo: boolean;
   /** ISO 8601. Omit for immediate publish. */
   scheduledTime?: string;
+  /** Deliver to TikTok's app inbox for manual completion instead of publishing. */
+  isDraft?: boolean;
 }): Record<string, unknown> {
   const target: Record<string, unknown> = {
     targetType: "tiktok",
@@ -253,7 +301,7 @@ export function buildTikTokPostBody(opts: {
     // Direct publish, not a TikTok draft. The bank exists to run the accounts
     // autonomously — a scheduled post that lands in the drafts folder never
     // goes out. Matches the engine's --path=direct.
-    isDraft: false,
+    isDraft: opts.isDraft ?? false,
     title: opts.title.slice(0, TITLE_MAX),
   };
   if (!opts.isVideo) target.autoAddMusic = true;
@@ -266,6 +314,26 @@ export function buildTikTokPostBody(opts: {
     },
   };
   // scheduledTime lives at the ROOT, not inside `post` (docs/blotato-api.md:74).
+  if (opts.scheduledTime) body.scheduledTime = opts.scheduledTime;
+  return body;
+}
+
+export function buildInstagramPostBody(opts: {
+  accountId: string;
+  caption: string;
+  mediaUrls: string[];
+  scheduledTime?: string;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    post: {
+      accountId: opts.accountId,
+      content: { text: opts.caption, mediaUrls: opts.mediaUrls, platform: "instagram" },
+      // Blotato infers image vs carousel from mediaUrls. `mediaType` is not a
+      // documented Instagram target field and can make an otherwise valid
+      // carousel fail schema validation.
+      target: { targetType: "instagram" },
+    },
+  };
   if (opts.scheduledTime) body.scheduledTime = opts.scheduledTime;
   return body;
 }
@@ -297,4 +365,81 @@ export async function submitPost(
     return { ok: false, error: j?.message || j?.error || `Blotato error ${res.status}` };
   }
   return { ok: true, submissionId: j.postSubmissionId ?? j.submissionId ?? j.id ?? null };
+}
+
+export type BlotatoPostStatus = {
+  status: "in-progress" | "queued" | "scheduled" | "published" | "failed";
+  url?: string;
+  error?: string;
+};
+
+export type BlotatoListedPost = {
+  id: string;
+  accountId?: string;
+  platform?: string;
+  text?: string;
+  mediaUrls: string[];
+  postTime?: string;
+  state: { type: string; postUrl?: string };
+};
+
+/** Read-only reconciliation call for a submission already accepted by Blotato. */
+export async function getBlotatoPostStatus(submissionId: string, apiKey: string): Promise<BlotatoPostStatus> {
+  const res = await blotatoFetch(`/posts/${encodeURIComponent(submissionId)}`, apiKey);
+  const json = (await res.json().catch(() => ({}))) as {
+    status?: BlotatoPostStatus["status"];
+    errorMessage?: string;
+    result?: { url?: string };
+  };
+  if (!res.ok) throw new Error(json.errorMessage || `Blotato status lookup failed (${res.status})`);
+  if (!json.status || !["in-progress", "queued", "scheduled", "published", "failed"].includes(json.status)) {
+    throw new Error("Blotato returned an unknown post status");
+  }
+  return { status: json.status, url: json.result?.url, error: json.errorMessage };
+}
+
+/**
+ * Read the live Blotato queue/calendar. Blotato's list endpoint uses numeric
+ * post ids rather than submission UUIDs, so callers must correlate only on
+ * strong evidence (a stored remote id or one unique platform/time match).
+ */
+export async function listBlotatoPosts(apiKey: string): Promise<BlotatoListedPost[]> {
+  const posts: BlotatoListedPost[] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+
+  for (let page = 0; page < 10; page += 1) {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    const res = await blotatoFetch(`/posts${query}`, apiKey);
+    const json = (await res.json().catch(() => ({}))) as {
+      items?: Array<{
+        id?: string | number;
+        accountId?: string | number;
+        platform?: string;
+        text?: string;
+        mediaUrls?: string[];
+        postTime?: string;
+        state?: { type?: string; postUrl?: string };
+      }>;
+      cursor?: string;
+      errorMessage?: string;
+    };
+    if (!res.ok) throw new Error(json.errorMessage || `Blotato posts list failed (${res.status})`);
+    for (const item of json.items ?? []) {
+      if (item.id === undefined || !item.state?.type) continue;
+      posts.push({
+        id: String(item.id),
+        accountId: item.accountId === undefined ? undefined : String(item.accountId),
+        platform: item.platform,
+        text: item.text,
+        mediaUrls: item.mediaUrls ?? [],
+        postTime: item.postTime,
+        state: { type: item.state.type, postUrl: item.state.postUrl },
+      });
+    }
+    cursor = json.cursor?.trim() || undefined;
+    if (!cursor || seenCursors.has(cursor)) break;
+    seenCursors.add(cursor);
+  }
+  return posts;
 }

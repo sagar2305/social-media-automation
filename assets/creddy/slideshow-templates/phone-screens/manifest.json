@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 1080,
+    "height": 1440,
+    "aspectRatio": "3:4"
+  },
+  "layout": "creddy_left_phone_right",
+  "theme": "black_cream_gold_spotlight",
+  "textOverlay": "none",
+  "fonts": {
+    "headline": "../fonts/tungsten-condensed-bold.ttf",
+    "supportingCard": "../fonts/DIN-Condensed-Bold.ttf"
+  },
+  "reusePolicy": "Use an existing rendered template and add deterministic text. Do not call an image model unless a new app screen or mascot pose is required.",
+  "templates": [
+    {
+      "id": "wallet_vouchers",
+      "file": "creddy-phone-wallet-vouchers-1080x1440.png",
+      "sourceScreen": "../../app-screens/raw/creddy-wallet-vouchers-light.png",
+      "tags": ["wallet", "vouchers", "loyalty", "status"],
+      "recommendedUse": "Voucher, loyalty-status and redemption content"
+    },
+    {
+      "id": "spend_goals",
+      "file": "creddy-phone-spend-goals-1080x1440.png",
+      "sourceScreen": "../../app-screens/raw/recording-frames/creddy-recording-03.png",
+      "tags": ["spend-goals", "welcome-bonus", "progress"],
+      "recommendedUse": "Welcome-bonus and spend-progress content"
+    },
+    {
+      "id": "app_store_dark",
+      "file": "creddy-phone-app-store-dark-1080x1440.png",
+      "sourceScreen": "../../app-screens/raw/app-store/creddy-app-store-dark.png",
+      "tags": ["app-store", "dark", "download", "product-proof"],
+      "recommendedUse": "Dark-mode app availability and download CTA"
+    },
+    {
+      "id": "app_store_light",
+      "file": "creddy-phone-app-store-light-1080x1440.png",
+      "sourceScreen": "../../app-screens/raw/app-store/creddy-app-store-light.png",
+      "tags": ["app-store", "light", "download", "product-proof"],
+      "recommendedUse": "Light-mode app availability and feature-preview CTA"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.creddy.dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>npm</string>
+    <string>--prefix</string>
+    <string>/Users/REPLACE_WITH_MAC_USER/Code/social-media-automation/dashboard</string>
+    <string>run</string>
+    <string>start</string>
+    <string>--</string>
+    <string>-H</string>
+    <string>127.0.0.1</string>
+    <string>-p</string>
+    <string>3000</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/Users/REPLACE_WITH_MAC_USER/Code/social-media-automation/dashboard</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/REPLACE_WITH_MAC_USER/Library/Logs/creddy-dashboard.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/REPLACE_WITH_MAC_USER/Library/Logs/creddy-dashboard.err.log</string>
+</dict>
+</plist>

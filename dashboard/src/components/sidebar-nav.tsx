@@ -15,6 +15,7 @@ import {
   DollarSign,
   FileText,
   FileEdit,
+  Newspaper,
 } from "lucide-react";
 
 // Sidebar is intentionally minimal: only the cross-cutting / pipeline-level
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/campaigns", label: "Campaigns", icon: Tag },
   { href: "/runs", label: "Live Runs", icon: Activity },
   { href: "/bank", label: "Content Bank", icon: Archive },
+  { href: "/creddy", label: "Creddy Pipeline", icon: Newspaper },
   { href: "/accounts", label: "Accounts", icon: Users },
   { href: "/creators", label: "Creators", icon: UserPlus },
   { href: "/signup-control", label: "Signup Control", icon: FileEdit },
