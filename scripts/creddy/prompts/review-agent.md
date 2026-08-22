@@ -12,6 +12,10 @@ slideshow renders into the Creddy Content Bank.
    slideshow. Never create both twice for the same stable content/revision ID.
 5. Refresh the observable reports and state how many items are pending, awaiting changes, approved, scheduled, rejected, and published.
 6. Do not approve, reject, schedule, revise, or publish any content. Those are explicit human/dashboard actions.
-7. Do not call Slack. Slack is reserved for rare unresolved source conflicts before content production.
+7. For every newly created slideshow review record, send exactly one Agent 7
+   review message to the configured Slack channel. Attach all six slides and
+   include Approve, Reject, and View full review actions. Persist the Slack
+   receipt so reruns never duplicate the message. Approval and rejection remain
+   explicit human actions; Agent 7 never decides for the reviewer.
 
 The reviewer must be able to inspect both videos, scripts, platform captions, CTA, factual claims, and source URLs in the dashboard before deciding.

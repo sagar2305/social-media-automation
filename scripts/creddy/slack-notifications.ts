@@ -1,8 +1,6 @@
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 
-import { optionalStableDashboardBaseUrl, requireStableDashboardBaseUrl } from './public-dashboard.js';
-
 export type CreddyPublishedSlackEvent = {
   id: string;
   hook: string;
@@ -28,6 +26,8 @@ export type CreddyContentReadySlackResult = {
   fileIds?: string[];
   error?: string;
 };
+
+type SlackBlock = Record<string, unknown>;
 
 function clean(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -106,25 +106,10 @@ async function uploadSlidesToSlack(token: string, channel: string, paths: string
   return files.map((file) => file.id);
 }
 
-export async function notifyCreddyContentReady(
-  event: CreddyContentReadySlackEvent,
-): Promise<CreddyContentReadySlackResult> {
-  const token = process.env.SLACK_BOT_TOKEN?.trim();
-  const channel = process.env.SLACK_SOCIAL_UPDATES_CHANNEL_ID?.trim();
-  if (!token || !channel) return { sent: false, error: 'SLACK_BOT_TOKEN or SLACK_SOCIAL_UPDATES_CHANNEL_ID is missing' };
-  if (event.slideImagePaths.length !== 6) return { sent: false, error: 'Exactly 6 slide images are required' };
-
-  let base: string;
-  try {
-    base = requireStableDashboardBaseUrl();
-  } catch (error) {
-    return { sent: false, channel, error: (error as Error).message };
-  }
-  const item = encodeURIComponent(event.id);
-  const portalUrl = `${base}/creddy/content-bank/slideshows?item=${item}#${item}`;
+export function contentReadyReviewBlocks(event: CreddyContentReadySlackEvent): SlackBlock[] {
   const hashtags = event.hashtags.map((tag) => tag.startsWith('#') ? tag : `#${tag}`).join(' ');
   const copy = `*Instagram caption*\n${clean(event.instagramCaption)}\n\n*TikTok caption*\n${clean(event.tiktokCaption)}\n\n*Hashtags*\n${clean(hashtags)}`;
-  const blocks: Array<Record<string, unknown>> = [
+  return [
     { type: 'header', text: { type: 'plain_text', text: ':sparkles: Agent 7: post ready for review', emoji: true } },
     { type: 'section', text: { type: 'mrkdwn', text: `*${clean(event.hook)}*\nAll six rendered slides are attached in Slack. Review the exact copy below.` } },
     { type: 'section', text: { type: 'mrkdwn', text: copy.slice(0, 2900) } },
@@ -133,10 +118,21 @@ export async function notifyCreddyContentReady(
       elements: [
         { type: 'button', style: 'primary', action_id: 'creddy_content_approve', value: event.id, text: { type: 'plain_text', text: '✓ Approve in portal', emoji: true }, confirm: { title: { type: 'plain_text', text: 'Approve this post?' }, text: { type: 'mrkdwn', text: 'This marks the post approved in Creddy. It will *not* publish or schedule anything.' }, confirm: { type: 'plain_text', text: 'Approve' }, deny: { type: 'plain_text', text: 'Cancel' } } },
         { type: 'button', style: 'danger', action_id: 'creddy_content_reject', value: event.id, text: { type: 'plain_text', text: 'Reject', emoji: true }, confirm: { title: { type: 'plain_text', text: 'Reject this post?' }, text: { type: 'mrkdwn', text: 'This moves the post to Rejected in Creddy. You can undo it later from the portal.' }, confirm: { type: 'plain_text', text: 'Reject' }, deny: { type: 'plain_text', text: 'Cancel' } } },
-        { type: 'button', action_id: 'creddy_content_open', url: portalUrl, text: { type: 'plain_text', text: 'Open full review', emoji: true } },
+        { type: 'button', action_id: 'creddy_content_open', value: event.id, text: { type: 'plain_text', text: 'View full review in Slack', emoji: true } },
       ],
     },
   ];
+}
+
+export async function notifyCreddyContentReady(
+  event: CreddyContentReadySlackEvent,
+): Promise<CreddyContentReadySlackResult> {
+  const token = process.env.SLACK_BOT_TOKEN?.trim();
+  const channel = process.env.SLACK_SOCIAL_UPDATES_CHANNEL_ID?.trim();
+  if (!token || !channel) return { sent: false, error: 'SLACK_BOT_TOKEN or SLACK_SOCIAL_UPDATES_CHANNEL_ID is missing' };
+  if (event.slideImagePaths.length !== 6) return { sent: false, error: 'Exactly 6 slide images are required' };
+
+  const blocks = contentReadyReviewBlocks(event);
 
   try {
     const fileIds = await uploadSlidesToSlack(token, channel, event.slideImagePaths);
@@ -159,9 +155,6 @@ export async function notifyCreddyPublished(event: CreddyPublishedSlackEvent): P
   const channel = process.env.SLACK_SOCIAL_UPDATES_CHANNEL_ID?.trim();
   if (!webhook && !(token && channel)) return false;
 
-  const base = optionalStableDashboardBaseUrl();
-  const item = encodeURIComponent(event.id);
-  const portalUrl = base ? `${base}/creddy/content-bank/slideshows?item=${item}#${item}` : undefined;
   const blocks: Array<Record<string, unknown>> = [
     { type: 'header', text: { type: 'plain_text', text: ':white_check_mark: Creddy post published', emoji: true } },
     {
@@ -171,10 +164,11 @@ export async function notifyCreddyPublished(event: CreddyPublishedSlackEvent): P
         text: `*${clean(event.hook)}*\n*Platform:* ${clean(event.platform)}\n*Account:* ${clean(event.account)}\n*Published at:* ${clean(new Date(event.publishedAt).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', timeZoneName: 'short' }))}${event.publishedUrl ? `\n*Public post:* <${event.publishedUrl}|Open post>` : ''}`,
       },
     },
+    {
+      type: 'actions',
+      elements: [{ type: 'button', action_id: 'creddy_content_open', value: event.id, text: { type: 'plain_text', text: 'View details in Slack', emoji: true } }],
+    },
   ];
-  if (portalUrl) {
-    blocks.push({ type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Open in Creddy', emoji: true }, url: portalUrl }] });
-  }
   const message = { text: `Creddy post published: ${event.hook}`, blocks };
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
