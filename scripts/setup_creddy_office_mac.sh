@@ -11,6 +11,8 @@ DATA_SOURCE=""
 DATA_ROOT=""
 ENV_FILE=""
 SKIP_INSTALL=0
+INSTALL_PREREQUISITES=0
+START_DASHBOARD=0
 
 usage() {
   cat <<'EOF'
@@ -18,12 +20,18 @@ Usage:
   bash scripts/setup_creddy_office_mac.sh \
     --env-file "/path/to/creddy-boss.env" \
     --data-source "/path/to/transferred/Social media automation data" \
-    --data-root "/Users/<office-user>/Documents/ChatGPT/Social media automation data"
+    --data-root "/Users/<office-user>/Documents/ChatGPT/Social media automation data" \
+    --install-prerequisites \
+    --start-dashboard
 
 Options:
   --env-file PATH    Protected combined env file supplied outside Git (optional).
   --data-source PATH  Existing transferred data directory to copy (optional).
   --data-root PATH    New durable data location on this Mac (required with --data-source).
+  --install-prerequisites
+                      Install missing Git/Node/Python/cloudflared with Homebrew.
+                      Homebrew itself must already be installed and approved.
+  --start-dashboard   Start the built dashboard on 127.0.0.1:3000 after checks.
   --skip-install      Skip npm dependency installation.
   --help              Show this help.
 
@@ -54,6 +62,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-install)
       SKIP_INSTALL=1
+      shift
+      ;;
+    --install-prerequisites)
+      INSTALL_PREREQUISITES=1
+      shift
+      ;;
+    --start-dashboard)
+      START_DASHBOARD=1
       shift
       ;;
     --help)
@@ -115,17 +131,40 @@ if [ -n "$ENV_FILE" ]; then
   fi
 fi
 
-missing=0
+missing_commands=""
 for command_name in git node npm python3 cloudflared; do
   if command -v "$command_name" >/dev/null 2>&1; then
     echo "OK: $command_name"
   else
     echo "MISSING: $command_name" >&2
-    missing=1
+    missing_commands="$missing_commands $command_name"
   fi
 done
-if [ "$missing" -ne 0 ]; then
-  echo "Install the missing prerequisites, then run this script again." >&2
+
+if [ -n "$missing_commands" ] && [ "$INSTALL_PREREQUISITES" -eq 1 ]; then
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "ERROR: Homebrew is required to install missing prerequisites." >&2
+    echo "Install Homebrew from https://brew.sh after reviewing its official installer, then rerun." >&2
+    exit 1
+  fi
+  brew_packages=""
+  case " $missing_commands " in *" git "*) brew_packages="$brew_packages git" ;; esac
+  case " $missing_commands " in *" node "*|*" npm "*) brew_packages="$brew_packages node" ;; esac
+  case " $missing_commands " in *" python3 "*) brew_packages="$brew_packages python" ;; esac
+  case " $missing_commands " in *" cloudflared "*) brew_packages="$brew_packages cloudflared" ;; esac
+  echo "Installing missing prerequisites with Homebrew:$brew_packages"
+  # shellcheck disable=SC2086
+  brew install $brew_packages
+  hash -r
+  missing_commands=""
+  for command_name in git node npm python3 cloudflared; do
+    command -v "$command_name" >/dev/null 2>&1 || missing_commands="$missing_commands $command_name"
+  done
+fi
+
+if [ -n "$missing_commands" ]; then
+  echo "ERROR: missing prerequisites:$missing_commands" >&2
+  echo "Install them, or rerun with --install-prerequisites when Homebrew is available." >&2
   exit 1
 fi
 
@@ -208,6 +247,34 @@ npm run creddy:deploy:validate
 echo "Building the dashboard..."
 (cd dashboard && npx next build --webpack)
 
+if [ "$START_DASHBOARD" -eq 1 ]; then
+  if curl -fsS --max-time 5 http://127.0.0.1:3000/creddy >/dev/null 2>&1; then
+    echo "OK: dashboard already responds at http://127.0.0.1:3000/creddy"
+  else
+    dashboard_log="$REPO_DIR/dashboard/.next/creddy-dashboard.log"
+    dashboard_pid="$REPO_DIR/dashboard/.next/creddy-dashboard.pid"
+    echo "Starting the production dashboard on 127.0.0.1:3000..."
+    (
+      cd dashboard
+      nohup npm run start -- --hostname 127.0.0.1 --port 3000 > "$dashboard_log" 2>&1 &
+      echo "$!" > "$dashboard_pid"
+    )
+    dashboard_ready=0
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      if curl -fsS --max-time 5 http://127.0.0.1:3000/creddy >/dev/null 2>&1; then
+        dashboard_ready=1
+        break
+      fi
+      sleep 1
+    done
+    if [ "$dashboard_ready" -ne 1 ]; then
+      echo "ERROR: dashboard did not become ready; inspect $dashboard_log" >&2
+      exit 1
+    fi
+    echo "OK: dashboard is running at http://127.0.0.1:3000/creddy"
+  fi
+fi
+
 cat <<EOF
 
 Bootstrap checks completed.
@@ -218,7 +285,7 @@ Still required before activation:
   3. Keep CREDDY_PIPELINE_ENABLED=false for the supervised dry run.
   4. Start Video Factory if the selected rendering flow requires it.
   5. Configure the named Cloudflare Tunnel and stable public hostname.
-  6. Start the dashboard and verify it at http://127.0.0.1:3000.
+  6. If --start-dashboard was not used, start it and verify http://127.0.0.1:3000/creddy.
   7. Run npm run creddy:deploy:validate -- --live.
   8. Create exactly one Codex scheduled orchestrator only after dry-run approval.
 
