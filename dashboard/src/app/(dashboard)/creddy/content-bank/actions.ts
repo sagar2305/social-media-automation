@@ -168,6 +168,7 @@ export async function submitCreddySlideshowAction(formData: FormData): Promise<v
         error: accepted ? undefined : submitted.ok ? "Blotato accepted the request but returned no submission ID" : submitted.error,
       },
     });
+    const occurredAt = new Date().toISOString();
     if (accepted && mode === "schedule" && scheduledTime) {
       await notifyCreddySlack({
         kind: "scheduled",
@@ -177,6 +178,42 @@ export async function submitCreddySlideshowAction(formData: FormData): Promise<v
         account: accountId,
         scheduledFor: scheduledTime,
         actor,
+      });
+    }
+    if (accepted && mode === "tiktok_draft") {
+      await notifyCreddySlack({
+        kind: "draft_sent",
+        id: editor.id,
+        hook: content.hook,
+        platform,
+        account: accountId,
+        occurredAt,
+        actor,
+        submissionId: submitted.submissionId,
+      });
+    }
+    if (accepted && mode === "now") {
+      await notifyCreddySlack({
+        kind: "post_now",
+        id: editor.id,
+        hook: content.hook,
+        platform,
+        account: accountId,
+        occurredAt,
+        actor,
+        submissionId: submitted.submissionId,
+      });
+    }
+    if (!accepted) {
+      await notifyCreddySlack({
+        kind: "delivery_failed",
+        id: editor.id,
+        hook: content.hook,
+        platform,
+        account: accountId,
+        occurredAt,
+        actor,
+        error: submitted.ok ? "Blotato returned no submission ID" : submitted.error,
       });
     }
     if (!submitted.ok) throw new Error(submitted.error);

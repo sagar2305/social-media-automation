@@ -26,6 +26,7 @@
     "creddy:pipeline": "node --import tsx scripts/creddy/pipeline-cli.ts",
     "creddy:validate": "node --import tsx scripts/creddy/validate-config.ts",
     "creddy:test": "node --import tsx --test scripts/creddy/*.test.ts",
+    "creddy:slack:socket": "node --import tsx scripts/creddy/slack-socket.ts",
     "creddy:deploy:validate": "node --import tsx scripts/creddy/validate-deployment.ts"
   },
   "keywords": [],

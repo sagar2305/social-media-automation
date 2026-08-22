@@ -11,12 +11,13 @@ external APIs and use their own keys.
 4. **Agent 04 — Write copy** — creates scripts, narration, platform captions, CTA, claims, sources, and production briefs only.
 5. **Agent 05 — Plan visuals** — chooses the supported Creddy theme, scenes, and mascot expressions without changing accepted copy or claims.
 6. **Agent 06 — Produce videos** — Video Factory renders exactly one text+music and one narrated video per package, then stops.
-7. **Agent 07 — Fill the Content Bank** — pairs matching completed revisions and creates `pending_review` records. It never approves, rejects, schedules, or publishes.
+7. **Agent 07 — Fill the Content Bank** — pairs matching completed revisions, creates `pending_review` records, and sends each new six-slide review to Slack exactly once. It never approves, rejects, schedules, or publishes.
 8. **Agent 08 — Publish** — polls only human-approved schedule entries and submits them to Blotato inside the configured lead window.
 
-The separate rare Slack task is an exception path, not a routine pipeline agent. It
-posts only unresolved, message-changing material source conflicts and remains paused
-until Slack credentials are configured.
+Agent 7's routine review notification uses the configured Slack Socket Mode app.
+Every new review includes all six slides and human decision controls. A separate
+rare-review path may still report unresolved, message-changing material source
+conflicts before production.
 
 ## Active schedule (America/New_York)
 
