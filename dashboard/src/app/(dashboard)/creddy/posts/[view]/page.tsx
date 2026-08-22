@@ -7,6 +7,12 @@ import { CreddyContentInventory } from "../../content-inventory";
 export const dynamic = "force-dynamic";
 
 const views = {
+  approved: {
+    title: "Approved Posts",
+    description: "Posts approved by a reviewer and ready to be configured for delivery.",
+    empty: "No posts are currently approved and awaiting delivery.",
+    matches: (item: CreddyBankItemDto) => item.status === "approved" && item.destinations.length === 0,
+  },
   scheduled: {
     title: "Scheduled Posts",
     description: "Posts queued for future Instagram or TikTok delivery.",

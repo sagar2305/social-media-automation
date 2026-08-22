@@ -79,6 +79,15 @@ export async function POST(request: Request) {
       text: `Creddy review resolved: ${resolution} by ${actor}`,
     });
   } catch (error) {
-    return Response.json({ response_type: "ephemeral", text: (error as Error).message }, { status: 400 });
+    const message = error instanceof Error ? error.message : "Slack action failed";
+    console.error(`[Creddy Slack] Action failed: ${message}`);
+    // Slack renders any non-2xx interactive response as the unhelpful
+    // "Slack cannot handle payload" warning. Acknowledge the signed request
+    // and return the real failure as an ephemeral message instead.
+    return Response.json({
+      replace_original: false,
+      response_type: "ephemeral",
+      text: `⚠️ Creddy could not apply this action: ${message}`,
+    });
   }
 }
