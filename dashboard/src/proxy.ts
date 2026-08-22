@@ -18,6 +18,12 @@ const publicRoutes = [
   "/creator/setup",
 ];
 
+// Slack sends signed, server-to-server POST requests here when a reviewer
+// clicks Approve or Reject. There is no browser session on those requests, so
+// the endpoint must bypass the dashboard login redirect. The route itself
+// authenticates every request with Slack's timestamped HMAC signature.
+const signedWebhookRoutes = new Set(["/api/creddy/slack/actions"]);
+
 /**
  * Patterns for public, pre-auth pages whose path varies by campaign
  * (or any other dynamic segment). The proxy treats anything matching
@@ -36,6 +42,10 @@ const publicRoutePatterns: RegExp[] = [
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (signedWebhookRoutes.has(pathname)) {
+    return NextResponse.next({ request: { headers: request.headers } });
+  }
 
   // Allow public routes and shared dashboards. Also attempt a session
   // refresh so stale auth cookies get cleared — prevents the "Invalid

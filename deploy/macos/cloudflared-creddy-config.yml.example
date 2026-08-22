@@ -1,0 +1,10 @@
+# Copy to ~/.cloudflared/config.yml on the Mac mini after creating a named
+# Cloudflare Tunnel. The tunnel credentials JSON is secret and must never be
+# committed to Git or sent through Slack.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /Users/REPLACE_WITH_MAC_USER/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: creddy.REPLACE_WITH_YOUR_DOMAIN
+    service: http://127.0.0.1:3000
+  - service: http_status:404

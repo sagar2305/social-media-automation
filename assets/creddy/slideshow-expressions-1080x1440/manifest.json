@@ -1,0 +1,148 @@
+{
+  "canvas": "1080x1440",
+  "aspectRatio": "3:4",
+  "sourceCanvas": "941x1672",
+  "method": "proportional crop and Lanczos resample; no stretching",
+  "expressions": [
+    {
+      "name": "01-neutral-friendly",
+      "file": "01-neutral-friendly.png",
+      "source": "assets/creddy/slideshow-expressions/01-neutral-friendly.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "02-waving-hello",
+      "file": "02-waving-hello.png",
+      "source": "assets/creddy/slideshow-expressions/02-waving-hello.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "03-thinking",
+      "file": "03-thinking.png",
+      "source": "assets/creddy/slideshow-expressions/03-thinking.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "04-confused",
+      "file": "04-confused.png",
+      "source": "assets/creddy/slideshow-expressions/04-confused.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "05-celebrating",
+      "file": "05-celebrating.png",
+      "source": "assets/creddy/slideshow-expressions/05-celebrating.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "06-presenting",
+      "file": "06-presenting.png",
+      "source": "assets/creddy/slideshow-expressions/06-presenting.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "07-surprised",
+      "file": "07-surprised.png",
+      "source": "assets/creddy/slideshow-expressions/07-surprised.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "08-sleepy",
+      "file": "08-sleepy.png",
+      "source": "assets/creddy/slideshow-expressions/08-sleepy.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "09-confident-wink",
+      "file": "09-confident-wink.png",
+      "source": "assets/creddy/slideshow-expressions/09-confident-wink.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "10-thumbs-up",
+      "file": "10-thumbs-up.png",
+      "source": "assets/creddy/slideshow-expressions/10-thumbs-up.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "11-sad",
+      "file": "11-sad.png",
+      "source": "assets/creddy/slideshow-expressions/11-sad.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "12-worried",
+      "file": "12-worried.png",
+      "source": "assets/creddy/slideshow-expressions/12-worried.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "13-card-approval",
+      "file": "13-card-approval.png",
+      "source": "assets/creddy/slideshow-expressions/13-card-approval.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "14-rewards-excited",
+      "file": "14-rewards-excited.png",
+      "source": "assets/creddy/slideshow-expressions/14-rewards-excited.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "15-listening-curious",
+      "file": "15-listening-curious.png",
+      "source": "assets/creddy/slideshow-expressions/15-listening-curious.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "16-skeptical",
+      "file": "16-skeptical.png",
+      "source": "assets/creddy/slideshow-expressions/16-skeptical.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "17-aha-idea",
+      "file": "17-aha-idea.png",
+      "source": "assets/creddy/slideshow-expressions/17-aha-idea.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "18-pointing-left",
+      "file": "18-pointing-left.png",
+      "source": "assets/creddy/slideshow-expressions/18-pointing-left.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "19-happy-laughing",
+      "file": "19-happy-laughing.png",
+      "source": "assets/creddy/slideshow-expressions/19-happy-laughing.png",
+      "width": 1080,
+      "height": 1440
+    },
+    {
+      "name": "20-urgent-stop",
+      "file": "20-urgent-stop.png",
+      "source": "assets/creddy/slideshow-expressions/20-urgent-stop.png",
+      "width": 1080,
+      "height": 1440
+    }
+  ]
+}
