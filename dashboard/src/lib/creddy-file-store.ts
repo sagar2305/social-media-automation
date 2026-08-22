@@ -426,8 +426,6 @@ export async function updateCreddySlideshowDesign(input: {
     }
     return { ...scene, text, supportText: index === 5 ? "" : supportText };
   });
-  const visibleExpressions = normalizedScenes.slice(0, 5).map((scene) => scene.expression);
-  if (new Set(visibleExpressions).size !== 5) throw new Error("Slides 1–5 must use five different Creddy expressions");
   if (!CREDDY_PHONE_TEMPLATES.includes(input.phoneTemplateId as (typeof CREDDY_PHONE_TEMPLATES)[number])) {
     throw new Error("Choose an approved Creddy app-screen template");
   }

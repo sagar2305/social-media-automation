@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BadgeCheck,
   CalendarDays,
   CheckCircle2,
   CircleX,
@@ -14,6 +15,7 @@ import {
 const sections = [
   { href: "/creddy/all-content", label: "All Content", icon: LayoutGrid },
   { href: "/creddy/content-bank/slideshows", label: "Review Queue", icon: ClipboardCheck },
+  { href: "/creddy/posts/approved", label: "Approved", icon: BadgeCheck },
   { href: "/creddy/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/creddy/posts/scheduled", label: "Scheduled", icon: Clock3 },
   { href: "/creddy/posts/published", label: "Published", icon: CheckCircle2 },

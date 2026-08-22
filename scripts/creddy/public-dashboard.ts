@@ -32,9 +32,11 @@ export function requireStableDashboardBaseUrl(
     throw new Error('DASHBOARD_BASE_URL must use a public DNS hostname');
   }
   if (EPHEMERAL_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) {
-    throw new Error(
-      'DASHBOARD_BASE_URL must use a stable named hostname; temporary trycloudflare.com URLs are forbidden',
-    );
+    if (env.CREDDY_ALLOW_TEMPORARY_TUNNEL !== 'true') {
+      throw new Error(
+        'DASHBOARD_BASE_URL must use a stable named hostname; set CREDDY_ALLOW_TEMPORARY_TUNNEL=true only for a short local test',
+      );
+    }
   }
 
   return url.origin;

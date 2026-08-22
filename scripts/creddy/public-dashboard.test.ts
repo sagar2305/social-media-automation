@@ -17,6 +17,16 @@ test('rejects temporary Cloudflare quick tunnels', () => {
   );
 });
 
+test('allows a temporary Cloudflare tunnel only with the explicit local-test flag', () => {
+  assert.equal(
+    requireStableDashboardBaseUrl({
+      DASHBOARD_BASE_URL: 'https://temporary-name.trycloudflare.com',
+      CREDDY_ALLOW_TEMPORARY_TUNNEL: 'true',
+    }),
+    'https://temporary-name.trycloudflare.com',
+  );
+});
+
 test('rejects localhost, HTTP, paths, and missing URLs', () => {
   assert.throws(() => requireStableDashboardBaseUrl({}), /required/);
   assert.throws(
