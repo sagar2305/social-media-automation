@@ -189,7 +189,7 @@ export async function submitCreddySlideshowAction(formData: FormData): Promise<v
         account: accountId,
         occurredAt,
         actor,
-        submissionId: submitted.submissionId,
+        submissionId: submitted.submissionId ?? undefined,
       });
     }
     if (accepted && mode === "now") {
@@ -201,7 +201,7 @@ export async function submitCreddySlideshowAction(formData: FormData): Promise<v
         account: accountId,
         occurredAt,
         actor,
-        submissionId: submitted.submissionId,
+        submissionId: submitted.submissionId ?? undefined,
       });
     }
     if (!accepted) {
