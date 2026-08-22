@@ -67,21 +67,30 @@ export async function saveCreddyDraftAction(formData: FormData): Promise<void> {
   redirect(`${returnTo}?updated=draft-saved`);
 }
 
-export async function updateCreddySlideshowDesignAction(formData: FormData): Promise<void> {
+export type CreddySlideshowDesignActionState = { error?: string };
+
+export async function updateCreddySlideshowDesignAction(
+  _previousState: CreddySlideshowDesignActionState,
+  formData: FormData,
+): Promise<CreddySlideshowDesignActionState> {
   const auth = await assertRole("editor");
-  if (!auth.ok) throw new Error(auth.error);
+  if (!auth.ok) return { error: auth.error };
   const scenes = Array.from({ length: 6 }, (_, index) => ({
     text: value(formData, `slide_${index + 1}_text`),
     supportText: value(formData, `slide_${index + 1}_support`),
     expression: value(formData, `slide_${index + 1}_expression`),
     backgroundStyle: value(formData, `slide_${index + 1}_background`),
   }));
-  await updateCreddySlideshowDesign({
-    id: value(formData, "id"),
-    editedBy: auth.user.email || auth.user.id,
-    scenes,
-    phoneTemplateId: value(formData, "phone_template"),
-  });
+  try {
+    await updateCreddySlideshowDesign({
+      id: value(formData, "id"),
+      editedBy: auth.user.email || auth.user.id,
+      scenes,
+      phoneTemplateId: value(formData, "phone_template"),
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Slides could not be regenerated" };
+  }
   revalidatePath("/creddy/content-bank");
   revalidatePath("/creddy/all-content");
   revalidatePath("/creddy/calendar");

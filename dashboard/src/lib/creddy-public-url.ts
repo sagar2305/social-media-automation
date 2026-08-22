@@ -15,7 +15,7 @@ export function stableCreddyDashboardOrigin(value = process.env.DASHBOARD_BASE_U
       (url.pathname !== '/' && url.pathname !== '') ||
       hostname === 'localhost' ||
       hostname.endsWith('.localhost') ||
-      hostname.endsWith('.trycloudflare.com') ||
+      (hostname.endsWith('.trycloudflare.com') && process.env.CREDDY_ALLOW_TEMPORARY_TUNNEL !== 'true') ||
       isIP(hostname) !== 0 ||
       !hostname.includes('.')
     ) {

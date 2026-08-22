@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { ImageIcon, Palette, RefreshCw, Smile, Type } from "lucide-react";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,6 +113,7 @@ export function SlideshowSlideEditor({
 }) {
   const [scenes, setScenes] = useState(() => editor.scenes.map((scene) => ({ ...scene })));
   const [phoneTemplate, setPhoneTemplate] = useState<CreddyPhoneTemplate>(editor.phoneTemplateId);
+  const [actionState, formAction, isPending] = useActionState(updateCreddySlideshowDesignAction, {});
 
   function updateScene(index: number, patch: Partial<CreddySlideEditorScene>) {
     setScenes((current) => current.map((scene, sceneIndex) => sceneIndex === index ? { ...scene, ...patch } : scene));
@@ -136,7 +137,7 @@ export function SlideshowSlideEditor({
             <strong>Design editing is protected.</strong> <span className="text-muted-foreground">{editor.blockedReason}</span>
           </div>
         ) : (
-          <form action={updateCreddySlideshowDesignAction} className="mt-5 space-y-5">
+          <form action={formAction} className="mt-5 space-y-5">
             <input name="id" type="hidden" value={id} />
             <div className="grid gap-4 xl:grid-cols-2">
               {scenes.map((scene, index) => {
@@ -180,7 +181,8 @@ export function SlideshowSlideEditor({
               })}
             </div>
             <div className="rounded-lg border bg-background p-4">
-              <Button type="submit"><RefreshCw className="size-4" />Save and regenerate slides</Button>
+              {actionState.error && <p className="mb-3 rounded-md border border-destructive/35 bg-destructive/10 p-3 text-sm text-destructive" role="alert">{actionState.error}</p>}
+              <Button disabled={isPending} type="submit"><RefreshCw className={isPending ? "size-4 animate-spin" : "size-4"} />{isPending ? "Regenerating slides…" : "Save and regenerate slides"}</Button>
               <p className="mt-2 text-xs text-muted-foreground">Creates revision {revision + 1}, preserves the previous images, invalidates old uploaded-media URLs, and returns the post to human review. No image-generation credits are used.</p>
             </div>
           </form>
