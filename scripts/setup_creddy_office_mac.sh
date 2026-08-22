@@ -16,7 +16,7 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/setup_creddy_office_mac.sh \
-    --env-file "/path/to/.creddy-boss.env" \
+    --env-file "/path/to/creddy-boss.env" \
     --data-source "/path/to/transferred/Social media automation data" \
     --data-root "/Users/<office-user>/Documents/ChatGPT/Social media automation data"
 

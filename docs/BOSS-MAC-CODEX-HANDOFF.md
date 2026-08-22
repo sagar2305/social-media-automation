@@ -16,7 +16,7 @@ Approved branch after the Creddy PR is merged: origin/main
 Discover the remaining machine-specific values yourself:
 - Resolve the exact installation commit from the current origin/main after fetching it. Show me the commit hash and Creddy PR/commit summary before installing it; proceed only after I confirm it is the reviewed version.
 - Search the mounted volumes, Downloads, Desktop, and Documents for either an encrypted Creddy .dmg or a directory named "Social media automation data". Do not search system or unrelated user directories. If exactly one candidate is found, use it. If none or more than one is found, ask me to select the correct candidate.
-- Search the same approved locations for exactly one regular file named ".creddy-boss.env". Never print, summarize, upload, or paste its values. If none or more than one is found, ask me to select the correct file.
+- Search the same approved locations for exactly one regular file named "creddy-boss.env". Never print, summarize, upload, or paste its values. If none or more than one is found, ask me to select the correct file.
 - If an encrypted image is found, open it and let macOS ask me for its password. Never ask for, read, store, or display that password in chat.
 - Derive the durable destination as "$HOME/Documents/ChatGPT/Social media automation data" for the currently signed-in office Mac user.
 - Store the resolved repository, exact commit, source path, and destination path in the final readiness report. Do not modify this handoff document just to substitute paths.
@@ -57,7 +57,7 @@ If the Mac restarts or misses a run, recover from durable state without deleting
 1. **Git:** reviewed application code only.
 2. **Secure file transfer:** the `Social media automation data` directory and
    any licensed assets not stored in Git.
-3. **Secure direct transfer:** `.creddy-boss.env`, containing Firecrawl,
+3. **Secure direct transfer:** `creddy-boss.env`, containing Firecrawl,
    Blotato, Supabase, Slack, and other local values. Transfer it with AirDrop,
    an encrypted drive/image, or an approved password manager. Never send it
    through Slack, ordinary email, a Git issue, or a pull request. Delete the
