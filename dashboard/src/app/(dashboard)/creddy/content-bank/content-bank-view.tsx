@@ -37,6 +37,7 @@ const deliveryLabels = {
 export async function CreddyContentBankPage({ mediaType, selectedId, updated }: { mediaType: "slideshow" | "video"; selectedId?: string; updated?: string }) {
   await requireRole("viewer");
   const items = await listCreddyBankItems();
+  const usingCloudMirror = items.some((item) => item.cloudBacked);
   let blotatoAccounts: BlotatoAccount[] = [];
   let blotatoAccountError: string | undefined;
   const blotatoApiKey = process.env.BLOTATO_API_KEY;
@@ -92,6 +93,8 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
           ? "Review complete six-image slideshow posts for Instagram and TikTok."
           : "Review text + music and narrated Chatterbox video formats."} Nothing publishes without human approval.</p>
       </div>
+
+      {usingCloudMirror && <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><strong>Secure cloud mirror</strong><p className="mt-1 text-muted-foreground">Photos, slideshows, videos, captions, and status are mirrored from the automation Mac. Use Slack or the Mac portal for approval and publishing; this deployed view is review-only.</p></div>}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{visiblePending.length}</div><div className="text-muted-foreground">Awaiting review on this screen</div></CardContent></Card>
@@ -204,7 +207,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
                 <div className="flex flex-wrap gap-1">{item.hashtags.map((tag) => <Badge key={tag} variant="secondary">#{tag.replace(/^#/, "")}</Badge>)}</div>
               </div>
             </div>
-            {item.mediaType === "slideshow" && item.status !== "published" && item.status !== "rejected" && <SlideshowPublishingPanel
+            {item.mediaType === "slideshow" && !item.cloudBacked && item.status !== "published" && item.status !== "rejected" && <SlideshowPublishingPanel
               accountError={blotatoAccountError}
               accounts={blotatoAccounts}
               defaultScheduledFor={defaultSchedule(24)}
@@ -217,7 +220,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
             />}
             <details className="rounded-lg border p-3"><summary className="cursor-pointer font-medium">Brief, factual claims, and evidence</summary><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{item.brief}</p><div className="mt-3 font-medium">Factual claims</div><ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">{item.factualClaims.map((claim, index) => <li key={`${claim.field}-${index}`}>{claim.field}: {String(claim.value)} · confidence {claim.confidence}{claim.conflict ? ` · conflict: ${claim.conflict}` : ""}</li>)}</ul><div className="mt-3 font-medium">Sources</div><ul className="mt-1 list-disc pl-5 text-sm">{item.sourceUrls.map((url) => <li key={url}><a className="underline" href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul></details>
 
-            {item.mediaType === "video" ? <form action={approveCreddyAction} className="space-y-3 rounded-lg border p-4">
+            {item.mediaType === "video" && !item.cloudBacked ? <form action={approveCreddyAction} className="space-y-3 rounded-lg border p-4">
               <input type="hidden" name="id" value={item.id} />
               <div><div className="font-medium">Approve and schedule</div><p className="text-xs text-muted-foreground">Times use the Mac mini/dashboard timezone. Select only configured Blotato accounts.</p></div>
               <div className="grid gap-3 lg:grid-cols-2">
@@ -236,7 +239,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
               <Button type="submit">Approve selected destinations</Button>
             </form> : null}
 
-            {item.mediaType === "video" && item.status !== "published" && item.status !== "rejected" && (
+            {item.mediaType === "video" && !item.cloudBacked && item.status !== "published" && item.status !== "rejected" && (
               <form action={rejectCreddyAction} className="rounded-lg border border-destructive/25 bg-destructive/5 p-4">
                 <input name="id" type="hidden" value={item.id} />
                 <input name="return_to" type="hidden" value={`/creddy/content-bank/${mediaType === "slideshow" ? "slideshows" : "videos"}`} />

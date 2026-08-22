@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { requireRole } from "@/lib/auth";
 import { getCreddyMediaPath } from "@/lib/creddy-file-store";
+import { downloadCreddyCloudAsset } from "@/lib/creddy-cloud-store";
 
 export async function GET(
   _request: Request,
@@ -22,6 +23,18 @@ export async function GET(
       },
     });
   } catch {
-    return new Response("Video not found", { status: 404 });
+    try {
+      const media = await downloadCreddyCloudAsset({ id, kind: format });
+      return new Response(media.body, {
+        headers: {
+          "Content-Type": media.mime,
+          "Content-Length": String(media.size),
+          "Cache-Control": "private, max-age=3600",
+          "Content-Disposition": "inline",
+        },
+      });
+    } catch {
+      return new Response("Video not found", { status: 404 });
+    }
   }
 }

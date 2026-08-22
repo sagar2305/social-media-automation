@@ -178,6 +178,8 @@ export type CreddyBankItemDto = {
   rejectedAt?: string;
   rejectionReason?: string;
   slideEditor?: CreddySlideEditor;
+  /** True when this DTO came from the deployed, read-only Supabase mirror. */
+  cloudBacked?: boolean;
 };
 
 function root(): string {
@@ -697,9 +699,13 @@ export async function listCreddyBankItems(): Promise<CreddyBankItemDto[]> {
     if (!existing || recordFreshness(record) > recordFreshness(existing)) byId.set(record.id, record);
   }
   const unique = [...byId.values()];
-  return Promise.all(
+  const localItems = await Promise.all(
     unique.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((record) => toDto(record)),
   );
+  if (localItems.length > 0) return localItems;
+
+  const { listCreddyCloudBankItems } = await import("@/lib/creddy-cloud-store");
+  return listCreddyCloudBankItems();
 }
 
 export async function writeCreddyLiveSyncReport(report: unknown): Promise<void> {
