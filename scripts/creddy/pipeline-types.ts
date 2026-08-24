@@ -43,7 +43,7 @@ export interface SourceCollectionResult {
   sourceId: string;
   sourceName: string;
   configuredUrl: string;
-  provider: 'firecrawl' | 'reddit_rss_fallback';
+  provider: 'firecrawl' | 'reddit_rss' | 'reddit_rss_fallback' | 'youtube_rss';
   status: 'completed' | 'completed_with_fallback' | 'failed';
   discoveredCount: number;
   error?: string;
@@ -63,10 +63,14 @@ export interface DiscoveryCandidateRecord {
   sourceName: string;
   searchQuery?: string;
   discoveredTitle?: string;
+  discoveredDescription?: string;
+  discoveryClass?: 'core' | 'adjacent' | 'low_relevance';
+  selectionReason?: string;
   disposition:
     | 'selected_for_scrape'
     | 'recently_checked'
     | 'deferred_capacity'
+    | 'deferred_low_relevance'
     | 'stored_raw'
     | 'unchanged'
     | 'scrape_failed';
@@ -108,6 +112,8 @@ export interface FilteredArticleRecord extends RawArticleRecord {
   qualification: {
     qualifies: true;
     matchedKeywords: string[];
+    filterRunId?: string;
+    filteredAt?: string;
   };
 }
 
@@ -117,6 +123,8 @@ export interface RejectedArticleRecord {
   sourceRecordId: string;
   canonicalUrl: string;
   rejectedAt: string;
+  filterRunId?: string;
+  dedupeRunId?: string;
   reason:
     | 'keyword_gate'
     | 'non_article'

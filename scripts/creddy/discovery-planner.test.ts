@@ -4,11 +4,11 @@ import test from 'node:test';
 import { CREDDY_SOURCES } from './config.js';
 import { buildCreddyDiscoveryPlan, filterSourceArticleLinks } from './discovery-planner.js';
 
-test('discovery plan contains thirteen listings and four searches without network access', () => {
+test('discovery plan contains approved listings and four searches without network access', () => {
   const plan = buildCreddyDiscoveryPlan();
-  assert.equal(plan.sourceOperations.length, 13);
+  assert.equal(plan.sourceOperations.length, 14);
   assert.equal(plan.searchOperations.length, 4);
-  assert.equal(plan.baselineRequests, 17);
+  assert.equal(plan.baselineRequests, 18);
 });
 
 test('source filtering keeps same-site articles and removes tracking duplicates', () => {

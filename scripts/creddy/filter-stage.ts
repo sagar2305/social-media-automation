@@ -35,7 +35,29 @@ export function articleTextForQualification(raw: RawArticleRecord): string {
     if (ARTICLE_END_MARKERS.some((pattern) => pattern.test(trimmed))) break;
     body.push(line);
   }
-  return `${raw.title}\n${body.join('\n').slice(0, 20_000)}`;
+  return `${raw.title}\n${body.join('\n').slice(0, 20_000)}`
+    // Link destinations are transport metadata, not editorial claims. In
+    // particular, X URLs contain `/status/` and previously created false
+    // matches for unrelated airline stories.
+    .replace(/\]\((?:https?:\/\/|\/)[^)]+\)/gi, ']')
+    .replace(/<?https?:\/\/\S+>?/gi, ' ');
+}
+
+function isClearlyOutsideUsMarket(text: string): boolean {
+  const normalized = text.toLocaleLowerCase('en-US');
+  const nonUsSignals = [
+    /\bindian residents?\b/g,
+    /\b(?:cards?|cardholders?) (?:issued|eligible) in india\b/g,
+    /\bindia-specific\b/g,
+  ];
+  const nonUsCount = nonUsSignals.reduce(
+    (count, pattern) => count + [...normalized.matchAll(pattern)].length,
+    0,
+  );
+  const hasUsEligibility =
+    /\b(?:u\.s\.|us|united states) (?:residents?|cardholders?|customers?|market|travelers?)\b/.test(normalized) ||
+    /\b(?:u\.s\.|us)[ -]?issued (?:cards?|credit cards?)\b/.test(normalized);
+  return nonUsCount >= 2 && !hasUsEligibility;
 }
 
 export function dataQualityRejection(raw: RawArticleRecord): Pick<RejectedArticleRecord, 'reason' | 'details'> | undefined {
@@ -49,11 +71,18 @@ export function dataQualityRejection(raw: RawArticleRecord): Pick<RejectedArticl
   if (Number.isFinite(statusCode) && statusCode >= 400) {
     return { reason: 'invalid_source_response', details: `Provider returned HTTP ${statusCode}.` };
   }
-  if (!title || /^(home|news|blog|forum|search|subscribe|contact|privacy|advertising policy)$/i.test(title)) {
+  if (
+    !title ||
+    /^(home|news|blog|forum|search|subscribe|contact|privacy|advertising policy)$/i.test(title) ||
+    /^(?:browse|see all)\b.*\b(?:guides|reviews|cards|offers)\b/i.test(title)
+  ) {
     return { reason: 'non_article', details: 'The fetched page has a navigation or non-article title.' };
   }
   if (meaningfulBody.length < 80) {
     return { reason: 'insufficient_content', details: 'Too little article text was available for safe processing.' };
+  }
+  if (isClearlyOutsideUsMarket(articleTextForQualification(raw))) {
+    return { reason: 'wrong_market', details: 'The article is explicitly scoped to non-US residents or card eligibility.' };
   }
   return undefined;
 }
@@ -117,6 +146,7 @@ export async function runFilterStage(
             sourceRecordId: raw.id,
             canonicalUrl: raw.canonicalUrl,
             rejectedAt: now.toISOString(),
+            filterRunId: runId,
             ...qualityRejection,
           };
           await writeJsonAtomic(rejectedPath, rejection);
@@ -133,6 +163,7 @@ export async function runFilterStage(
             sourceRecordId: raw.id,
             canonicalUrl: raw.canonicalUrl,
             rejectedAt: now.toISOString(),
+            filterRunId: runId,
             reason: 'keyword_gate',
             details: 'No configured OR keyword matched in travel-rewards context.',
           };
@@ -147,6 +178,8 @@ export async function runFilterStage(
           qualification: {
             qualifies: true,
             matchedKeywords: qualification.matchedKeywords,
+            filterRunId: runId,
+            filteredAt: now.toISOString(),
           },
         };
         await writeJsonAtomic(filteredPath, filtered);

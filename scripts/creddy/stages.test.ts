@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runCollectionStage } from './collection-stage.js';
+import { runCollectionStage, sourceForUrl } from './collection-stage.js';
 import { runDedupeStage } from './dedupe-stage.js';
-import { articleTextForQualification, runFilterStage } from './filter-stage.js';
+import { articleTextForQualification, dataQualityRejection, runFilterStage } from './filter-stage.js';
 import { FirecrawlClient } from './firecrawl-client.js';
 import {
   initializeCreddyDataRoot,
@@ -25,6 +25,10 @@ function jsonResponse(body: unknown): Response {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+test('multi-tenant YouTube results are not attributed to Geobreeze by hostname', () => {
+  assert.equal(sourceForUrl('https://www.youtube.com/watch?v=another-channel'), null);
+});
 
 test('collection stores new content once and respects the recheck window', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-stages-'));
@@ -66,6 +70,8 @@ test('collection stores new content once and respects the recheck window', async
     root,
     client,
     now: new Date('2026-08-19T12:00:00Z'),
+    redditFetchImpl: async () => new Response('', { status: 429 }),
+    youtubeFetchImpl: async () => new Response('', { status: 429 }),
     onProgress: (event) => progressPhases.push(event.phase),
   });
   assert.equal(first.outputCount, 1);
@@ -89,12 +95,15 @@ test('collection stores new content once and respects the recheck window', async
     'utf8',
   );
   assert.match(immutableReport, /stored: 1/);
+  assert.match(immutableReport, /Selection: selected=1 \(core=1, adjacent=0\)/);
   assert.match(immutableRawIndex, /New Transfer Bonus/);
 
   const second = await runCollectionStage({
     root,
     client,
     now: new Date('2026-08-19T13:00:00Z'),
+    redditFetchImpl: async () => new Response('', { status: 429 }),
+    youtubeFetchImpl: async () => new Response('', { status: 429 }),
   });
   assert.equal(second.outputCount, 0);
   assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 1);
@@ -224,6 +233,15 @@ test('filter rejects navigation pages before the keyword gate', async () => {
   assert.equal(rejection.reason, 'non_article');
 });
 
+test('data quality rejects browse-all guide indexes even when their footer has relevant phrases', () => {
+  const raw = {
+    title: 'Browse Credit Card Guides from Example.com',
+    markdown: 'Compare the complete catalog of guides. Airport lounge access and statement credit links appear in the navigation footer.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw)?.reason, 'non_article');
+});
+
 test('qualification ignores keywords found only in related-post and footer boilerplate', () => {
   const raw = {
     title: 'VPN cashback deal',
@@ -238,4 +256,30 @@ test('qualification ignores keywords found only in related-post and footer boile
     qualifyCreddyText(articleTextForQualification(raw)).qualifies,
     false,
   );
+});
+
+test('qualification ignores status tokens found only inside social link destinations', () => {
+  const raw = {
+    title: 'Airline improves meals but cabin cleaning still lags',
+    markdown: '[View on X](https://x.com/example/status/123?ref_url=https://airline.example/story)\nThe cabin food and cleaning experience changed.',
+  } as RawArticleRecord;
+  assert.equal(qualifyCreddyText(articleTextForQualification(raw)).qualifies, false);
+});
+
+test('filter rejects articles explicitly limited to a non-US card market', () => {
+  const raw = {
+    title: 'Status matching for Indian frequent flyers',
+    markdown: 'Indian residents can use this airline status match. Eligible cards issued in India provide hotel status to Indian residents.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw)?.reason, 'wrong_market');
+});
+
+test('market guard keeps globally relevant India content actionable to US travelers', () => {
+  const raw = {
+    title: 'How US travelers can use points in India',
+    markdown: 'US travelers can redeem airline points in India. Cardholders receive lounge access in India when flying through Delhi with US-issued credit cards.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw), undefined);
 });

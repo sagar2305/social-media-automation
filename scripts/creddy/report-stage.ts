@@ -65,12 +65,37 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const collection = await latestManifest(root, 'collection');
   const productiveCollection = await latestProductiveManifest(root, 'collection');
   const usage = collection?.providerUsage?.firecrawl;
+  const discoveryCandidates = discovery?.candidates ?? [];
+  const dispositionCount = (value: DiscoveryRunRecord['candidates'][number]['disposition']): number =>
+    discoveryCandidates.filter((item) => item.disposition === value).length;
+  const selectedDispositions = new Set<DiscoveryRunRecord['candidates'][number]['disposition']>([
+    'selected_for_scrape',
+    'stored_raw',
+    'unchanged',
+    'scrape_failed',
+  ]);
+  const selectedCandidates = discoveryCandidates.filter((item) => selectedDispositions.has(item.disposition));
+  const selectedCoreCount = selectedCandidates.filter((item) => item.discoveryClass === 'core').length;
+  const selectedAdjacentCount = selectedCandidates.filter((item) => item.discoveryClass === 'adjacent').length;
+  const lowRelevanceCount = discoveryCandidates.filter((item) => item.discoveryClass === 'low_relevance').length;
+  const emergingDomains = [...(discovery?.candidates ?? [])]
+    .filter((item) => item.sourceId.startsWith('topic-search:'))
+    .reduce<Record<string, number>>((counts, item) => {
+      try {
+        const domain = new URL(item.url).hostname.replace(/^www\./, '');
+        counts[domain] = (counts[domain] ?? 0) + 1;
+      } catch {
+        // Malformed URLs are already excluded by collection; keep reports resilient.
+      }
+      return counts;
+    }, {});
   const collectionLines = [
     '# 01 — Discovery and Firecrawl collection',
     '',
     `Generated: ${new Date().toISOString()}`,
     `Latest run: ${collection?.runId ?? 'none'}`,
     `Candidates: ${discovery?.candidateCount ?? 0}; scrape limit: ${discovery?.scrapeLimit ?? 0}; stored: ${collection?.outputCount ?? 0}; skipped: ${collection?.skippedCount ?? 0}; failed: ${collection?.failedCount ?? 0}`,
+    `Selection: selected=${selectedCandidates.length} (core=${selectedCoreCount}, adjacent=${selectedAdjacentCount}); low relevance=${lowRelevanceCount}; deferred capacity=${dispositionCount('deferred_capacity')}; deferred low relevance=${dispositionCount('deferred_low_relevance')}; recently checked=${dispositionCount('recently_checked')}`,
     `Total raw article records retained across runs: ${rawRecords.length}`,
     `Most recent productive collection: ${productiveCollection?.runId ?? 'none'} (${productiveCollection?.outputCount ?? 0} raw records stored)`,
     '',
@@ -101,13 +126,21 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '> Request counts are exact for this run. A credit total is labelled exact only when Firecrawl reports credits for every successful response.',
     '',
+    '## Emerging source observations',
+    '',
+    '> These domains were found by focused searches. They are observations only and are never added to the trusted source registry automatically.',
+    '',
+    '| Domain | Candidates this run |',
+    '|---|---:|',
+    ...Object.entries(emergingDomains).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([domain, count]) => `| ${cell(domain)} | ${count} |`),
+    '',
     '## Discovered article ledger',
     '',
-    '| Source | Article/title | URL | Disposition |',
-    '|---|---|---|---|',
-    ...(discovery?.candidates ?? []).map((item) => {
+    '| Source | Article/title | Discovery class | Selection reason | URL | Disposition |',
+    '|---|---|---|---|---|---|',
+    ...discoveryCandidates.map((item) => {
       const raw = item.rawRecordId ? rawById.get(item.rawRecordId) : undefined;
-      return `| ${cell(item.sourceName)} | ${cell(item.discoveredTitle || raw?.title || '(title available after article scrape)')} | ${cell(item.url)} | ${cell(item.disposition)} |`;
+      return `| ${cell(item.sourceName)} | ${cell(item.discoveredTitle || raw?.title || '(title available after article scrape)')} | ${cell(item.discoveryClass ?? 'legacy')} | ${cell(item.selectionReason ?? '')} | ${cell(item.url)} | ${cell(item.disposition)} |`;
     }),
   ];
   const collectionPath = safeDataPath(outputRoot, '01-discovery-and-collection.md');
@@ -185,6 +218,15 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     },
     {},
   );
+  const latestRetained = canonical.filter((item) =>
+    Boolean(filtering?.runId) && item.qualification.filterRunId === filtering?.runId,
+  );
+  const latestRejected = rejected.filter((item) =>
+    Boolean(filtering?.runId) && item.filterRunId === filtering?.runId,
+  );
+  const latestDuplicates = archivedDuplicates.filter((item) =>
+    Boolean(dedupe?.runId) && item.dedupeRunId === dedupe?.runId,
+  );
   const filterLines = [
     '# Agent 02 — Cleaning, verification, and deduplication', '',
     `Generated: ${new Date().toISOString()}`,
@@ -196,6 +238,25 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Verification status: ${Object.entries(verificationCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
     '',
     '> Agent 2 does not claim that a single-source article is true. It marks verification status and carries evidence forward for Agent 3.',
+    '',
+    '## Latest calibration batch — retained',
+    '',
+    `Retained: ${latestRetained.length}`,
+    '',
+    '| Source | Article | Why retained | URL | Record ID |',
+    '|---|---|---|---|---|',
+    ...latestRetained.map((item) => `| ${cell(item.sourceName)} | ${cell(item.title)} | ${cell(item.qualification.matchedKeywords.join(', '))} | ${cell(item.canonicalUrl)} | ${cell(item.id)} |`),
+    '',
+    '## Latest calibration batch — rejected',
+    '',
+    `Rejected: ${latestRejected.length}; duplicate evidence archived: ${latestDuplicates.length}`,
+    '',
+    '| Source | Article | Why rejected | URL | Record ID |',
+    '|---|---|---|---|---|',
+    ...[...latestRejected, ...latestDuplicates].map((item) => {
+      const raw = rawById.get(item.sourceRecordId);
+      return `| ${cell(raw?.sourceName ?? 'unknown')} | ${cell(raw?.title ?? '(title unavailable)')} | ${cell(`${item.reason}: ${item.details ?? ''}`)} | ${cell(item.canonicalUrl)} | ${cell(item.sourceRecordId)} |`;
+    }),
     '',
     '## Clean canonical article list',
     '', '| Source | Canonical article | Matched keywords | Evidence | Verification | Fact-check required | URL |', '|---|---|---|---|---:|---|---|',

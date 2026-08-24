@@ -87,8 +87,9 @@ Do not enable the feature yet. The safe order is:
 Applying the schema does not start crawling and does not alter existing
 campaign, scheduling, generation, analytics, or publishing jobs.
 
-Before any live call, `npm run creddy:plan` prints all thirteen enabled listing
-operations, four topic searches, and the seventeen-request baseline. It performs no
+Before any live call, `npm run creddy:plan` prints fourteen enabled source
+operations, four topic searches, and the eighteen-operation baseline. Direct RSS
+sources do not consume Firecrawl credits. The plan performs no
 network requests and consumes no Firecrawl credits. Newly discovered article
 URLs are additional requests only after same-site filtering and stored-identity
 deduplication.

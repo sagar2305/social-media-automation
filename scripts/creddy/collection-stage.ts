@@ -9,6 +9,7 @@ import {
   type CreddySourceConfig,
 } from './config.js';
 import { filterSourceArticleLinks } from './discovery-planner.js';
+import { selectDiscoveryCandidates } from './discovery-selection.js';
 import { FirecrawlClient } from './firecrawl-client.js';
 import { fetchRedditRss } from './reddit-rss-client.js';
 import {
@@ -31,6 +32,7 @@ import {
   type SourceCollectionResult,
   type TopicSearchCollectionResult,
 } from './pipeline-types.js';
+import { fetchYouTubeFeed } from './youtube-feed-client.js';
 
 interface UrlIndexEntry {
   lastFetchedAt: string;
@@ -48,6 +50,7 @@ export interface CollectionStageOptions {
   maxArticleScrapes?: number;
   recheckAfterHours?: number;
   redditFetchImpl?: typeof fetch;
+  youtubeFetchImpl?: typeof fetch;
   onProgress?: (event: CollectionProgressEvent) => void;
 }
 
@@ -76,9 +79,11 @@ interface DiscoveredCandidate {
   source: CreddySourceConfig | null;
   searchQuery?: string;
   discoveredTitle?: string;
+  discoveredDescription?: string;
   prefetchedMarkdown?: string;
   publishedAt?: string;
   providerMetadata?: Record<string, unknown>;
+  laneId: string;
 }
 
 function listingTitles(markdown: string | undefined, baseUrl: string): Map<string, string> {
@@ -105,11 +110,12 @@ function recordId(canonicalUrl: string, contentHash: string): string {
     .slice(0, 24);
 }
 
-function sourceForUrl(url: string): CreddySourceConfig | null {
+export function sourceForUrl(url: string): CreddySourceConfig | null {
   const host = new URL(url).hostname.replace(/^www\./, '').toLocaleLowerCase('en-US');
   return (
     CREDDY_SOURCES.find(
       (source) =>
+        source.sourceClass !== 'creator_signal' &&
         new URL(source.url).hostname.replace(/^www\./, '').toLocaleLowerCase('en-US') ===
         host,
     ) ?? null
@@ -166,7 +172,7 @@ export async function runCollectionStage(
     await writeRunManifest(options.root, manifest);
     progress({
       phase: 'run_started',
-      message: `Agent 01 started run ${runId}; collecting 13 sources and ${CREDDY_TOPIC_SEARCHES.length} topic searches.`,
+      message: `Agent 01 started run ${runId}; collecting ${getEnabledCreddySources().length} sources and ${CREDDY_TOPIC_SEARCHES.length} topic searches.`,
     });
 
     const candidates = new Map<string, DiscoveredCandidate>();
@@ -181,6 +187,70 @@ export async function runCollectionStage(
         total: enabledSources.length,
       });
       try {
+        if (source.sourceClass === 'creator_signal') {
+          const entries = await fetchYouTubeFeed(source, maxLinksPerSource, options.youtubeFetchImpl);
+          for (const entry of entries) {
+            const canonical = normalizeArticleUrl(entry.url);
+            candidates.set(canonical, {
+              url: canonical,
+              source,
+              discoveredTitle: entry.title,
+              discoveredDescription: entry.markdown.slice(0, 1_000),
+              prefetchedMarkdown: entry.markdown,
+              publishedAt: entry.publishedAt,
+              providerMetadata: entry.providerMetadata,
+              laneId: `source:${source.id}`,
+            });
+          }
+          sourceResults.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            configuredUrl: source.url,
+            provider: 'youtube_rss',
+            status: 'completed',
+            discoveredCount: entries.length,
+          });
+          progress({
+            phase: 'source_completed',
+            message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} completed via YouTube RSS; ${entries.length} videos discovered.`,
+            completed: sourceIndex + 1,
+            total: enabledSources.length,
+          });
+          continue;
+        }
+        if (source.id.startsWith('reddit-')) {
+          const redditDelayMs = Math.max(0, 3_000 - (Date.now() - lastRedditRequestAt));
+          if (redditDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, redditDelayMs));
+          lastRedditRequestAt = Date.now();
+          const entries = await fetchRedditRss(source, maxLinksPerSource, options.redditFetchImpl);
+          for (const entry of entries) {
+            const canonical = normalizeArticleUrl(entry.url);
+            candidates.set(canonical, {
+              url: canonical,
+              source,
+              discoveredTitle: entry.title,
+              prefetchedMarkdown: entry.markdown,
+              publishedAt: entry.publishedAt,
+              providerMetadata: { collectionProvider: 'reddit_rss' },
+              laneId: `source:${source.id}`,
+            });
+          }
+          sourceResults.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            configuredUrl: source.url,
+            provider: 'reddit_rss',
+            status: 'completed',
+            discoveredCount: entries.length,
+          });
+          progress({
+            phase: 'source_completed',
+            message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} completed via RSS; ${entries.length} entries discovered.`,
+            completed: sourceIndex + 1,
+            total: enabledSources.length,
+          });
+          continue;
+        }
         const listing = await options.client.scrapePage(source.url);
         const links = filterSourceArticleLinks(
           source,
@@ -193,6 +263,7 @@ export async function runCollectionStage(
             url: link,
             source,
             discoveredTitle: discoveredTitles.get(link),
+            laneId: `source:${source.id}`,
           });
         }
         sourceResults.push({
@@ -210,79 +281,22 @@ export async function runCollectionStage(
           total: enabledSources.length,
         });
       } catch (error) {
-        const firecrawlError = (error as Error).message;
-        if (source.id.startsWith('reddit-')) {
-          try {
-            const redditDelayMs = Math.max(0, 3_000 - (Date.now() - lastRedditRequestAt));
-            if (redditDelayMs > 0) {
-              await new Promise((resolve) => setTimeout(resolve, redditDelayMs));
-            }
-            lastRedditRequestAt = Date.now();
-            const entries = await fetchRedditRss(
-              source,
-              maxLinksPerSource,
-              options.redditFetchImpl,
-            );
-            for (const entry of entries) {
-              const canonical = normalizeArticleUrl(entry.url);
-              candidates.set(canonical, {
-                url: canonical,
-                source,
-                discoveredTitle: entry.title,
-                prefetchedMarkdown: entry.markdown,
-                publishedAt: entry.publishedAt,
-                providerMetadata: { collectionProvider: 'reddit_rss_fallback' },
-              });
-            }
-            sourceResults.push({
-              sourceId: source.id,
-              sourceName: source.name,
-              configuredUrl: source.url,
-              provider: 'reddit_rss_fallback',
-              status: 'completed_with_fallback',
-              discoveredCount: entries.length,
-              error: `Firecrawl unavailable; fallback used: ${firecrawlError}`,
-            });
-            progress({
-              phase: 'source_completed',
-              message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} completed with RSS fallback; ${entries.length} entries discovered.`,
-              completed: sourceIndex + 1,
-              total: enabledSources.length,
-            });
-            continue;
-          } catch (fallbackError) {
-            const combined = `${firecrawlError}; RSS fallback: ${(fallbackError as Error).message}`;
-            sourceResults.push({
-              sourceId: source.id,
-              sourceName: source.name,
-              configuredUrl: source.url,
-              provider: 'reddit_rss_fallback',
-              status: 'failed',
-              discoveredCount: 0,
-              error: combined,
-            });
-            manifest.failedCount += 1;
-            manifest.errors.push(`${source.id}: ${combined}`);
-            progress({
-              phase: 'source_failed',
-              message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} unavailable; warning recorded and collection continues.`,
-              completed: sourceIndex + 1,
-              total: enabledSources.length,
-            });
-            continue;
-          }
-        }
+        const sourceError = (error as Error).message;
         sourceResults.push({
           sourceId: source.id,
           sourceName: source.name,
           configuredUrl: source.url,
-          provider: 'firecrawl',
+          provider: source.sourceClass === 'creator_signal'
+            ? 'youtube_rss'
+            : source.id.startsWith('reddit-')
+              ? 'reddit_rss'
+              : 'firecrawl',
           status: 'failed',
           discoveredCount: 0,
-          error: firecrawlError,
+          error: sourceError,
         });
         manifest.failedCount += 1;
-        manifest.errors.push(`${source.id}: ${firecrawlError}`);
+        manifest.errors.push(`${source.id}: ${sourceError}`);
         progress({
           phase: 'source_failed',
           message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} failed; warning recorded and collection continues.`,
@@ -317,6 +331,8 @@ export async function runCollectionStage(
               source: sourceForUrl(canonical),
               searchQuery: query,
               discoveredTitle: result.title,
+              discoveredDescription: result.description,
+              laneId: `search:${query}`,
             });
             discoveredCount += 1;
           }
@@ -355,11 +371,9 @@ export async function runCollectionStage(
     manifest.inputCount = candidates.size;
     const index = await loadUrlIndex(options.root);
     const due = [...candidates.values()]
-      .filter((candidate) => shouldRecheck(index[candidate.url], now, recheckAfterHours))
-      // RSS entries already include their text, so process them before pages
-      // that require another paid/slow Firecrawl scrape.
-      .sort((a, b) => Number(Boolean(b.prefetchedMarkdown)) - Number(Boolean(a.prefetchedMarkdown)));
-    const eligible = due.slice(0, maxArticleScrapes);
+      .filter((candidate) => shouldRecheck(index[candidate.url], now, recheckAfterHours));
+    const selection = selectDiscoveryCandidates(due, maxArticleScrapes, now);
+    const eligible = selection.selected;
     manifest.skippedCount += candidates.size - eligible.length;
     progress({
       phase: 'queue_ready',
@@ -384,8 +398,13 @@ export async function runCollectionStage(
         sourceName: candidate.source?.name ?? `Firecrawl search: ${candidate.searchQuery ?? 'unknown'}`,
         searchQuery: candidate.searchQuery,
         discoveredTitle: candidate.discoveredTitle,
+        discoveredDescription: candidate.discoveredDescription,
+        discoveryClass: selection.classified.get(candidate.url)?.discoveryClass,
+        selectionReason: selection.classified.get(candidate.url)?.reason,
         disposition: eligibleUrls.has(candidate.url)
           ? 'selected_for_scrape'
+          : selection.classified.get(candidate.url)?.discoveryClass === 'low_relevance'
+            ? 'deferred_low_relevance'
           : dueUrls.has(candidate.url)
             ? 'deferred_capacity'
             : 'recently_checked',

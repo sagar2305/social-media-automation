@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creddy Agent 01 Calibration"
+  short_description: "Calibrate Creddy discovery from editorial feedback"
+  default_prompt: "Review and calibrate the latest Creddy Agent 01 discovery batch."
