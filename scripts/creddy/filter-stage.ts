@@ -29,11 +29,29 @@ const ARTICLE_END_MARKERS = [
 /** Keep navigation, related-post cards, and long comment/footer text from
  * satisfying the OR keyword gate for an otherwise unrelated article. */
 export function articleTextForQualification(raw: RawArticleRecord): string {
+  const lines = raw.markdown.split(/\r?\n/);
+  const normalizedTitle = raw.title.toLocaleLowerCase('en-US')
+    .replace(/\s+-\s+[^-]{2,40}$/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  const matchingHeading = lines.findIndex((line) => {
+    if (!/^#{1,3}\s+/.test(line.trim())) return false;
+    const heading = line.replace(/^#{1,3}\s+/, '')
+      .toLocaleLowerCase('en-US')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    return heading.length >= 20 && (normalizedTitle.includes(heading) || heading.includes(normalizedTitle));
+  });
   const body: string[] = [];
-  for (const line of raw.markdown.split(/\r?\n/)) {
+  let substantiveContentSeen = matchingHeading >= 0;
+  for (const line of lines.slice(Math.max(0, matchingHeading))) {
     const trimmed = line.trim();
-    if (ARTICLE_END_MARKERS.some((pattern) => pattern.test(trimmed))) break;
+    const isInitialHomeNavigation = /^- \[home\]\(/i.test(trimmed) && !substantiveContentSeen;
+    if (!isInitialHomeNavigation && ARTICLE_END_MARKERS.some((pattern) => pattern.test(trimmed))) break;
     body.push(line);
+    if (!substantiveContentSeen && trimmed.length >= 80 && !/^[-*]?\s*\[/.test(trimmed)) {
+      substantiveContentSeen = true;
+    }
   }
   return `${raw.title}\n${body.join('\n').slice(0, 20_000)}`
     // Link destinations are transport metadata, not editorial claims. In
@@ -57,7 +75,18 @@ function isClearlyOutsideUsMarket(text: string): boolean {
   const hasUsEligibility =
     /\b(?:u\.s\.|us|united states) (?:residents?|cardholders?|customers?|market|travelers?)\b/.test(normalized) ||
     /\b(?:u\.s\.|us)[ -]?issued (?:cards?|credit cards?)\b/.test(normalized);
-  return nonUsCount >= 2 && !hasUsEligibility;
+  if (nonUsCount >= 2 && !hasUsEligibility) return true;
+
+  // A globally useful airline story may mention Singapore; reject only when
+  // multiple signals show that the actual card products and spend thresholds
+  // belong to the Singapore market.
+  const hasCardProductContext = /\b(?:credit cards?|cardholders?|minimum spend|annual fee)\b/.test(normalized);
+  const singaporeSignals = [
+    /\bs\$\s?\d[\d,.]*/g,
+    /\b(?:dbs|uob|ocbc|maybank)\b/g,
+    /\b(?:singapore-issued|issued in singapore|singapore residents?|singapore cardholders?)\b/g,
+  ].reduce((count, pattern) => count + [...normalized.matchAll(pattern)].length, 0);
+  return hasCardProductContext && singaporeSignals >= 3 && !hasUsEligibility;
 }
 
 export function dataQualityRejection(raw: RawArticleRecord): Pick<RejectedArticleRecord, 'reason' | 'details'> | undefined {
@@ -67,7 +96,7 @@ export function dataQualityRejection(raw: RawArticleRecord): Pick<RejectedArticl
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const statusCode = Number(raw.providerMetadata.statusCode ?? 200);
+  const statusCode = Number(raw.providerMetadata?.statusCode ?? 200);
   if (Number.isFinite(statusCode) && statusCode >= 400) {
     return { reason: 'invalid_source_response', details: `Provider returned HTTP ${statusCode}.` };
   }

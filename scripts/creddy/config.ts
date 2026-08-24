@@ -271,7 +271,10 @@ export const CREDDY_FILTER_KEYWORDS = [
   'credit card perk',
   'statement credit',
   'lounge access',
+  'admirals club',
   'cardholder benefit',
+  'points upgrade',
+  'milestone bonus',
   'status',
   'tools',
 ] as const;

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { resolvedArticleUrl, runCollectionStage, sourceForUrl } from './collection-stage.js';
-import { runDedupeStage } from './dedupe-stage.js';
+import { runDedupeStage, titlesDescribeSameStory, verificationForEvidence } from './dedupe-stage.js';
 import { articleTextForQualification, dataQualityRejection, runFilterStage } from './filter-stage.js';
 import { FirecrawlClient } from './firecrawl-client.js';
 import {
@@ -361,6 +361,26 @@ test('qualification ignores keywords found only in related-post and footer boile
   );
 });
 
+test('article cleaning skips navigation before a matching article heading', () => {
+  const raw = {
+    title: 'Which credit cards reward you with milestone bonuses? - The Example',
+    markdown: [
+      '- [Home](https://example.com)',
+      '- [Credit Cards](https://example.com/cards)',
+      '# Which credit cards reward you with milestone bonuses?',
+      'Singapore credit cardholders can earn a milestone bonus after S$80,000 annual spend with UOB or S$60,000 with DBS.',
+      '## Related Articles',
+      'A US welcome offer appears only in this unrelated footer.',
+    ].join('\n'),
+    providerMetadata: {},
+  } as RawArticleRecord;
+  const articleText = articleTextForQualification(raw);
+  assert.doesNotMatch(articleText, /\[Home\]/);
+  assert.match(articleText, /S\$80,000/);
+  assert.doesNotMatch(articleText, /US welcome offer/);
+  assert.equal(dataQualityRejection(raw)?.reason, 'wrong_market');
+});
+
 test('qualification ignores status tokens found only inside social link destinations', () => {
   const raw = {
     title: 'Airline improves meals but cabin cleaning still lags',
@@ -385,4 +405,66 @@ test('market guard keeps globally relevant India content actionable to US travel
     providerMetadata: {},
   } as RawArticleRecord;
   assert.equal(dataQualityRejection(raw), undefined);
+});
+
+test('Agent 02 calibration retains points upgrades and notable Admirals Club news', () => {
+  assert.equal(
+    qualifyCreddyText('Emirates Points Upgrade Strategy: upgrade a JFK cash ticket using airline points.').qualifies,
+    true,
+  );
+  assert.equal(
+    qualifyCreddyText("American announces its largest Admirals Club airport lounge at DFW.").qualifies,
+    true,
+  );
+});
+
+test('market guard rejects Singapore card-product spend guides but not global Singapore Airlines awards', () => {
+  const localCards = {
+    title: 'Which credit cards reward you with milestone bonuses?',
+    markdown: 'Singapore credit cardholders can earn a milestone bonus. UOB requires S$80,000 annual spend, while DBS requires S$60,000 and Maybank has a separate card threshold.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(localCards)?.reason, 'wrong_market');
+
+  const globalAwards = {
+    title: 'Singapore Airlines opens US award space',
+    markdown: 'US travelers can redeem airline points from New York for Singapore Airlines business-class award seats.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(globalAwards), undefined);
+});
+
+test('near-title dedupe groups the same event but preserves offers with different numbers', () => {
+  assert.equal(
+    titlesDescribeSameStory(
+      'Chase launches elevated 100K Ink Business welcome offer',
+      'New Chase Ink Business cards get an elevated 100K welcome offer',
+    ),
+    true,
+  );
+  assert.equal(
+    titlesDescribeSameStory(
+      'Chase launches elevated 100K Ink Business welcome offer',
+      'Chase launches elevated 150K Ink Business welcome offer',
+    ),
+    false,
+  );
+});
+
+test('verification requires two confirmation-eligible sources', () => {
+  assert.equal(verificationForEvidence([
+    { sourceId: 'reddit-awardtravel', factualUse: 'signal_only' },
+  ]).status, 'community_signal_only');
+  assert.equal(verificationForEvidence([
+    { sourceId: 'reddit-awardtravel', factualUse: 'signal_only' },
+    { sourceId: 'awardwallet', factualUse: 'discovery_and_confirmation' },
+  ]).status, 'single_source_unverified');
+  assert.equal(verificationForEvidence([
+    { sourceId: 'awardwallet', factualUse: 'discovery_and_confirmation' },
+    { sourceId: 'frequent-miler', factualUse: 'discovery_and_confirmation' },
+  ]).status, 'corroborated');
+  assert.equal(verificationForEvidence([
+    { sourceId: 'thrifty-traveler', factualUse: 'discovery_only' },
+    { sourceId: 'loyalty-lobby', factualUse: 'discovery_only' },
+  ]).status, 'single_source_unverified');
 });

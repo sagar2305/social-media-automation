@@ -41,8 +41,8 @@ export function validateCreddyConfig(): void {
       throw new Error(`Topic search pair ${pair} must contain exactly two searches`);
     }
   }
-  if (CREDDY_FILTER_KEYWORDS.length !== 20) {
-    throw new Error(`Expected 20 OR keywords, found ${CREDDY_FILTER_KEYWORDS.length}`);
+  if (CREDDY_FILTER_KEYWORDS.length !== 23) {
+    throw new Error(`Expected 23 OR keywords, found ${CREDDY_FILTER_KEYWORDS.length}`);
   }
 }
 

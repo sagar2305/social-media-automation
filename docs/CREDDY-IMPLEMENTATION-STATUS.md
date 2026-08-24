@@ -8,8 +8,8 @@
 
 1. Agent 01 collects 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Reddit and creator feeds bypass Firecrawl when a direct feed is available.
 2. Immutable raw files are partitioned by date/run in the dedicated data project.
-3. OR-keyword filtering, context checks, cleaning, exact duplicate detection, and
-   supporting-evidence grouping produce canonical news records.
+3. OR-keyword filtering, context checks, article-body cleaning, exact and conservative
+   near-title duplicate detection, and supporting-evidence grouping produce canonical news records.
 4. Codex scheduled analysis assigns importance/confidence and routes each record
    to auto-process, reject/archive/defer, or rare Slack review.
 5. Slack is allowed only for an important, material, message-changing conflict
@@ -61,7 +61,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 114 automated unit/integration tests pass.
+- 119 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.
@@ -70,7 +70,7 @@ their own provider keys and credits.
 - A cloned-voice Creddy production render completed successfully at 1080x1920,
   17.4 seconds, H.264/AAC, 3.5 MB.
 - Config validation confirms 18 enabled sources, 12 rotating searches (six active
-  per editorial window), and 20 OR keywords.
+  per editorial window), and 23 OR keywords.
 - Pipeline status resolves the dedicated data root and reports empty queues while
   disabled.
 
