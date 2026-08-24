@@ -38,7 +38,7 @@ test('topic and keyword configuration matches the approved plan', () => {
   assert.equal(CREDDY_TOPIC_SEARCHES.length, 12);
   assert.deepEqual(new Set(CREDDY_TOPIC_SEARCHES.map((search) => search.pair)), new Set([0, 1, 2, 3, 4, 5]));
   assert.deepEqual(new Set(CREDDY_TOPIC_SEARCHES.map((search) => search.intent)), new Set(['timely', 'evergreen', 'experimental']));
-  assert.equal(CREDDY_FILTER_KEYWORDS.length, 20);
+  assert.equal(CREDDY_FILTER_KEYWORDS.length, 23);
   assert.equal(CREDDY_DISCOVERY_PROFILE.maxLinksPerSourceDefault, 20);
   assert.equal(CREDDY_DISCOVERY_PROFILE.calibrationScrapeLimit, 20);
   assert.equal(CREDDY_DISCOVERY_PROFILE.productionScrapeLimit, 40);
@@ -90,6 +90,9 @@ test('expanded editorial scope retains points sales, award space, and meaningful
   assert.equal(qualifyCreddyText('New airline award space opens for loyalty redemptions.').qualifies, true);
   assert.equal(qualifyCreddyText('Major travel card benefit changes next month.').qualifies, true);
   assert.equal(qualifyCreddyText('Chase adds a new StubHub statement credit for cardholders.').qualifies, true);
+  assert.equal(qualifyCreddyText('How to use Emirates points upgrades for an airline ticket.').qualifies, true);
+  assert.equal(qualifyCreddyText('American announces a new Admirals Club airport lounge at DFW.').qualifies, true);
+  assert.equal(qualifyCreddyText('A US travel credit card adds a milestone bonus after annual spend.').qualifies, true);
 });
 
 test('new Creddy pipeline is disabled by default', () => {

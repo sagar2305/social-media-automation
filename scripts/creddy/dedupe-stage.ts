@@ -45,20 +45,29 @@ function canonicalId(article: FilteredArticleRecord): string {
     .slice(0, 24);
 }
 
-function verificationFor(
-  article: Pick<CanonicalNewsRecord, 'factualUse'>,
-  evidenceSourceIds: readonly string[],
+interface VerificationEvidence {
+  sourceId: string;
+  factualUse: CanonicalNewsRecord['factualUse'];
+}
+
+export function verificationForEvidence(
+  evidence: readonly VerificationEvidence[],
 ): NonNullable<CanonicalNewsRecord['verification']> {
-  const sources = [...new Set(evidenceSourceIds)].sort();
-  if (sources.length >= 2 && article.factualUse !== 'signal_only') {
+  const sources = [...new Set(evidence.map((item) => item.sourceId))].sort();
+  const confirmationSources = [...new Set(
+    evidence
+      .filter((item) => item.factualUse === 'discovery_and_confirmation')
+      .map((item) => item.sourceId),
+  )].sort();
+  if (confirmationSources.length >= 2) {
     return {
       status: 'corroborated',
       evidenceSourceIds: sources,
       requiresFactCheck: false,
-      reasons: ['Matching evidence was retained from at least two distinct sources.'],
+      reasons: ['Matching evidence was retained from at least two distinct confirmation-eligible sources.'],
     };
   }
-  if (article.factualUse === 'signal_only') {
+  if (evidence.length > 0 && evidence.every((item) => item.factualUse === 'signal_only')) {
     return {
       status: 'community_signal_only',
       evidenceSourceIds: sources,
@@ -70,8 +79,46 @@ function verificationFor(
     status: 'single_source_unverified',
     evidenceSourceIds: sources,
     requiresFactCheck: true,
-    reasons: ['Only one distinct source currently supports this article.'],
+    reasons: confirmationSources.length === 1
+      ? ['Only one confirmation-eligible source currently supports this story.']
+      : ['Discovery-only sources support this story; official or confirmation-eligible verification is still required.'],
   };
+}
+
+const TITLE_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'announced', 'announces', 'are', 'at', 'for', 'from', 'get', 'gets', 'in', 'is',
+  'launch', 'launched', 'launches', 'new', 'of', 'on', 'the', 'to', 'with',
+]);
+
+const TITLE_TOKEN_ALIASES: Record<string, string> = {
+  bonuses: 'bonus',
+  cards: 'card',
+  offers: 'offer',
+};
+
+function titleTokens(title: string): Set<string> {
+  return new Set(
+    title.toLocaleLowerCase('en-US')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length > 1 && !TITLE_STOP_WORDS.has(token))
+      .map((token) => TITLE_TOKEN_ALIASES[token] ?? token),
+  );
+}
+
+function meaningfulNumbers(tokens: Set<string>): string[] {
+  return [...tokens].filter((token) => /\d/.test(token)).sort();
+}
+
+/** Conservative cross-publisher near-title match for the same reported event. */
+export function titlesDescribeSameStory(left: string, right: string): boolean {
+  const a = titleTokens(left);
+  const b = titleTokens(right);
+  if (a.size < 5 || b.size < 5) return false;
+  if (meaningfulNumbers(a).join('|') !== meaningfulNumbers(b).join('|')) return false;
+  const intersection = [...a].filter((token) => b.has(token)).length;
+  const union = new Set([...a, ...b]).size;
+  return intersection / union >= 0.72;
 }
 
 export interface DeduplicationProgressEvent {
@@ -142,15 +189,18 @@ export async function runDedupeStage(
     }
     const rawRecords = await Promise.all(
       (await listJsonFiles(safeDataPath(root, '01-raw')))
-        .map((path) => readJson<{ id: string; sourceId: string }>(path)),
+        .map((path) => readJson<Pick<FilteredArticleRecord, 'id' | 'sourceId' | 'factualUse'>>(path)),
     );
-    const sourceByRawId = new Map(rawRecords.map((record) => [record.id, record.sourceId]));
+    const evidenceByRawId = new Map(rawRecords.map((record) => [record.id, {
+      sourceId: record.sourceId,
+      factualUse: record.factualUse,
+    }]));
     for (const record of existing) {
-      const evidenceSourceIds = record.evidenceRecordIds
-        .map((id) => sourceByRawId.get(id))
-        .filter((id): id is string => Boolean(id));
-      if (evidenceSourceIds.length === 0) evidenceSourceIds.push(record.sourceId);
-      record.verification = verificationFor(record, evidenceSourceIds);
+      const evidence = record.evidenceRecordIds
+        .map((id) => evidenceByRawId.get(id))
+        .filter((item): item is VerificationEvidence => Boolean(item));
+      if (evidence.length === 0) evidence.push({ sourceId: record.sourceId, factualUse: record.factualUse });
+      record.verification = verificationForEvidence(evidence);
       await writeJsonAtomic(safeDataPath(canonicalDir, `${record.canonicalId}.json`), record);
     }
     const byUrl = new Map(existing.map((record) => [record.canonicalUrl, record]));
@@ -173,18 +223,24 @@ export async function runDedupeStage(
           continue;
         }
 
+        const exactTitleMatch = article.titleFingerprint ? byTitle.get(article.titleFingerprint) : undefined;
+        const nearTitleMatch = exactTitleMatch ? undefined : existing.find((record) =>
+          record.sourceId !== article.sourceId && titlesDescribeSameStory(record.title, article.title));
         const match =
           byUrl.get(article.canonicalUrl) ??
           byContent.get(article.contentHash) ??
-          (article.titleFingerprint ? byTitle.get(article.titleFingerprint) : undefined);
+          exactTitleMatch ??
+          nearTitleMatch;
         if (match) {
           if (!match.evidenceRecordIds.includes(article.id)) {
             match.evidenceRecordIds.push(article.id);
-            const evidenceSourceIds = match.evidenceRecordIds
-              .map((id) => sourceByRawId.get(id))
-              .filter((id): id is string => Boolean(id));
-            if (!evidenceSourceIds.includes(article.sourceId)) evidenceSourceIds.push(article.sourceId);
-            match.verification = verificationFor(match, evidenceSourceIds);
+            const evidence = match.evidenceRecordIds
+              .map((id) => evidenceByRawId.get(id))
+              .filter((item): item is VerificationEvidence => Boolean(item));
+            if (!evidence.some((item) => item.sourceId === article.sourceId)) {
+              evidence.push({ sourceId: article.sourceId, factualUse: article.factualUse });
+            }
+            match.verification = verificationForEvidence(evidence);
             await writeJsonAtomic(safeDataPath(canonicalDir, `${match.canonicalId}.json`), match);
           }
           const reason: RejectedArticleRecord['reason'] = byUrl.has(article.canonicalUrl)
@@ -219,13 +275,14 @@ export async function runDedupeStage(
           evidenceRecordIds: [article.id],
           cleanedMarkdown: cleanMarkdown(article.markdown),
           deduplicatedAt: now.toISOString(),
-          verification: verificationFor(article, [article.sourceId]),
+          verification: verificationForEvidence([{ sourceId: article.sourceId, factualUse: article.factualUse }]),
         };
         await writeJsonAtomic(safeDataPath(canonicalDir, `${id}.json`), canonical);
         await writeJsonAtomic(processedMarker, { canonicalId: id, reason: 'new_canonical' });
         byUrl.set(canonical.canonicalUrl, canonical);
         byContent.set(canonical.contentHash, canonical);
         if (canonical.titleFingerprint) byTitle.set(canonical.titleFingerprint, canonical);
+        existing.push(canonical);
         manifest.outputCount += 1;
         progress({ phase: 'record_canonicalized', message: `New canonical (${canonical.verification?.status}): ${canonical.title || canonical.canonicalUrl}`, completed: manifest.inputCount, total: filteredPaths.length });
       } catch (error) {
