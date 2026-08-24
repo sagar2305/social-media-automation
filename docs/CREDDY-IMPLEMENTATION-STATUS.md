@@ -10,8 +10,11 @@
 2. Immutable raw files are partitioned by date/run in the dedicated data project.
 3. OR-keyword filtering, context checks, article-body cleaning, exact and conservative
    near-title duplicate detection, and supporting-evidence grouping produce canonical news records.
-4. Codex scheduled analysis assigns importance/confidence and routes each record
-   to auto-process, reject/archive/defer, or rare Slack review.
+4. Codex scheduled analysis uses the `creddy-ranking-v3` viral rubric, channel-fit
+   predictions, freshness, product fit, importance, and confidence to calculate
+   editorial priority. Editorial upside stays independent of evidence readiness;
+   the stage emits a diversified five-story slate and verification queue before
+   routing any fully supported record onward.
 5. Slack is allowed only for an important, material, message-changing conflict
    after verification is exhausted. Signed Process/Skip/Hold actions are audited
    and idempotent.
@@ -61,7 +64,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 119 automated unit/integration tests pass.
+- 125 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.

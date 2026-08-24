@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 
 import { recordAgent1Feedback } from './agent1-feedback.js';
+import { recordAnalysisPerformanceFeedback } from './analysis-feedback.js';
 import {
   acceptAnalysisDecision,
   auditAnalysisDecisionBatch,
@@ -196,6 +197,15 @@ async function main(): Promise<void> {
       deduplication,
       reports: reports.filter((path) => path.includes('01-') || path.includes('02-')),
     }, null, 2));
+    return;
+  }
+  if (command === 'agent-3-feedback') {
+    await initializeCreddyDataRoot(root);
+    const input = await readJson<Parameters<typeof recordAnalysisPerformanceFeedback>[1]>(
+      argument(3, 'Agent 03 feedback JSON file'),
+    );
+    const result = await recordAnalysisPerformanceFeedback(root, input);
+    console.log(JSON.stringify({ created: result.created, recordId: result.record.id }, null, 2));
     return;
   }
 

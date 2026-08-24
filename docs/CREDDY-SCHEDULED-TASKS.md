@@ -7,7 +7,7 @@ external APIs and use their own keys.
 
 1. **Agent 01 — Collect** — twice daily for 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Run it with `npm run creddy:pipeline -- agent-1`; the command collects and writes both latest and immutable run-scoped reports before returning.
 2. **Agent 02 — Clean, verify, and deduplicate** — applies US/travel-rewards safeguards, removes boilerplate and duplicates, and preserves evidence.
-3. **Agent 03 — Rank and route** — scores product fit, editorial popularity, importance, and confidence, then makes the deterministic route decision.
+3. **Agent 03 — Rank and route** — applies the `creddy-ranking-v3` viral rubric, predicts channel fit, and calculates editorial priority independently of verification readiness. It emits a diversified five-story slate, an ordered verification queue, and a deterministic operational route; unverified stories never enter production.
 4. **Agent 04 — Write copy** — creates scripts, narration, platform captions, CTA, claims, sources, and production briefs only.
 5. **Agent 05 — Plan visuals** — chooses the supported Creddy theme, scenes, and mascot expressions without changing accepted copy or claims.
 6. **Agent 06 — Produce videos** — Video Factory renders exactly one text+music and one narrated video per package, then stops.
@@ -25,7 +25,7 @@ conflicts before production.
 |---:|---|---|
 | 01 | 08:00 and 18:00 | `01-discovery-and-collection.md` plus raw/discovery files |
 | 02 | 08:20 and 18:20 | `02-filtering-and-deduplication.md` |
-| 03 | 08:35 and 18:35 | `03-ranking-and-routing.md` with every score and reason |
+| 03 | 08:35 and 18:35 | `03-ranking-and-routing.md` with every score, hook, channel prediction, verification need, and diversified slate |
 | 04 | 09:30 and 19:30 | `04-content-writing.md` |
 | 05 | 10:00 and 20:00 | `05-visual-planning.md` |
 | 06 | 10:30, 11:30, 12:30 and 20:30, 21:30, 22:30 | `06-video-production.md`; repeated runs reconcile asynchronous renders idempotently |

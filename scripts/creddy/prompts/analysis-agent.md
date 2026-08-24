@@ -27,6 +27,10 @@ not directly about a credit-card benefit, transferable points/miles, award trave
 an airline/hotel loyalty program, status, or a benefit Creddy can track. Incidental
 keyword matches never establish product fit.
 
+Create ranking-v3 decisions with `rubricVersion: "creddy-ranking-v3"`. Keep
+editorial potential independent from verification readiness: an exciting story
+may rank highly while its operational `route` remains `reverify`.
+
 Use these deterministic 0–100 rubrics and explain every material score:
 
 - Product fit: direct card/points/award/loyalty relevance 35; actionable value
@@ -40,6 +44,33 @@ Use these deterministic 0–100 rubrics and explain every material score:
 - Confidence: source authority and specificity 35; corroboration 25; internally
   consistent claims 20; dates/amounts/eligibility clarity 20. Community signal-only
   evidence cannot exceed 60 without independent confirmation.
+- Viral potential: hook strength 15; audience breadth 15; financial magnitude 15;
+  novelty 10; urgency/FOMO 10; practical utility 10; visual potential 10;
+  discussion potential 5; emotional aspiration 5; share/save potential 5. Store
+  all ten component scores plus their deterministic weighted `score`.
+- Freshness: 100 means newly actionable now; reduce for old, recurring, premature,
+  stale, or unclear-dated stories. Do not confuse freshness with factual confidence.
+
+Also score channel fit independently for `instagramTikTok`, `blogSeo`,
+`newsletter`, and `evergreen`. Classify one concrete hook such as
+`highest_ever_offer`, `deadline_fomo`, `is_it_worth_it`, `forgotten_benefit`,
+`program_change`, `tool_failed`, `luxury_preview`, or `mistake_to_avoid`, and
+explain why it fits. Choose one portfolio category: `card_offer`, `loyalty_news`,
+`redemption`, `travel_development`, or `evergreen_education`.
+
+Calculate `editorialPriorityScore` exactly as: viral potential 30%, product fit
+25%, importance 20%, freshness 15%, and confidence 10%, rounded to the nearest
+integer. Set `editorialDisposition` independently to `produce`, `evergreen`,
+`defer`, or `reject`.
+
+Set `verificationState` to `ready`, `official_source_needed`,
+`independent_confirmation_needed`, or `community_signal_only`, with exact
+`verificationRequirements`. The operational route follows both axes:
+
+- produce + ready -> `auto_process`
+- evergreen + ready -> `evergreen_queue`
+- produce/evergreen + any non-ready state -> `reverify`
+- defer -> `defer`; reject -> `rejected`
 
 Routing rules:
 
@@ -64,5 +95,14 @@ If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
 Finish with `npm run creddy:pipeline -- report`. Report route counts, top-ranked
-items, pending count, failures, and the exact ranking report path. Do not generate
+items, the diversified five-story editorial slate, the priority-ordered
+verification queue, pending count, failures, and the exact ranking report path.
+The slate may include verification-blocked candidates, but they must never enter
+production until ready. Prefer category diversity and no more than two items from
+one category or primary program. Do not generate
 scripts, captions, images, videos, approvals, schedules, or posts.
+
+When the operator later supplies editorial corrections or observed performance,
+record append-only local feedback with `agent-3-feedback <json-file>`. Never invent
+views, watch time, shares, saves, comments, clicks, or conversions. Use accumulated
+feedback only as calibration evidence; do not silently rewrite historical scores.
