@@ -42,6 +42,82 @@ export interface AnalysisBatchAudit {
   routeCounts: Record<string, number>;
 }
 
+export const CREDDY_RANKING_V3_WEIGHTS = {
+  viralPotential: 0.30,
+  productFit: 0.25,
+  importance: 0.20,
+  freshness: 0.15,
+  confidence: 0.10,
+} as const;
+
+export function calculateViralPotentialScore(
+  viral: NonNullable<AnalysisDecisionRecord['viralPotential']>,
+): number {
+  return Math.round(
+    viral.hookStrength * 0.15 +
+    viral.audienceBreadth * 0.15 +
+    viral.financialMagnitude * 0.15 +
+    viral.novelty * 0.10 +
+    viral.urgency * 0.10 +
+    viral.practicalUtility * 0.10 +
+    viral.visualPotential * 0.10 +
+    viral.discussionPotential * 0.05 +
+    viral.emotionalAspiration * 0.05 +
+    viral.shareSavePotential * 0.05,
+  );
+}
+
+export function calculateEditorialPriorityScore(
+  decision: Pick<AnalysisDecisionRecord, 'viralPotential' | 'productFitScore' | 'importanceScore' | 'freshnessScore' | 'confidenceScore'>,
+): number {
+  if (!decision.viralPotential || decision.productFitScore === undefined || decision.freshnessScore === undefined) {
+    throw new Error('Ranking v3 priority requires viral potential, product fit, freshness, importance, and confidence');
+  }
+  return Math.round(
+    decision.viralPotential.score * CREDDY_RANKING_V3_WEIGHTS.viralPotential +
+    decision.productFitScore * CREDDY_RANKING_V3_WEIGHTS.productFit +
+    decision.importanceScore * CREDDY_RANKING_V3_WEIGHTS.importance +
+    decision.freshnessScore * CREDDY_RANKING_V3_WEIGHTS.freshness +
+    decision.confidenceScore * CREDDY_RANKING_V3_WEIGHTS.confidence,
+  );
+}
+
+export function selectEditorialPortfolio(
+  decisions: AnalysisDecisionRecord[],
+  limit = 5,
+): AnalysisDecisionRecord[] {
+  const eligible = decisions
+    .filter((item) => item.rubricVersion === 'creddy-ranking-v3' &&
+      (item.editorialDisposition === 'produce' || item.editorialDisposition === 'evergreen'))
+    .sort((a, b) => (b.editorialPriorityScore ?? -1) - (a.editorialPriorityScore ?? -1) ||
+      (b.viralPotential?.score ?? -1) - (a.viralPotential?.score ?? -1));
+  const selected: AnalysisDecisionRecord[] = [];
+  const categoryCounts = new Map<string, number>();
+  const programCounts = new Map<string, number>();
+  const add = (item: AnalysisDecisionRecord): void => {
+    selected.push(item);
+    const category = item.portfolioCategory ?? 'uncategorized';
+    const program = item.affectedPrograms[0] ?? 'none';
+    categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+    programCounts.set(program, (programCounts.get(program) ?? 0) + 1);
+  };
+  for (const item of eligible) {
+    if (selected.length >= limit) break;
+    const category = item.portfolioCategory ?? 'uncategorized';
+    const program = item.affectedPrograms[0] ?? 'none';
+    if ((categoryCounts.get(category) ?? 0) === 0 && (programCounts.get(program) ?? 0) < 2) add(item);
+  }
+  for (const item of eligible) {
+    if (selected.length >= limit) break;
+    if (selected.includes(item)) continue;
+    const category = item.portfolioCategory ?? 'uncategorized';
+    const program = item.affectedPrograms[0] ?? 'none';
+    if ((categoryCounts.get(category) ?? 0) >= 2 || (programCounts.get(program) ?? 0) >= 2) continue;
+    add(item);
+  }
+  return selected;
+}
+
 function score(value: unknown, name: string): asserts value is number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
     throw new Error(`${name} must be a number from 0 to 100`);
@@ -76,6 +152,53 @@ export function validateAnalysisDecision(
     score(claim.confidence, `claim:${claim.field}:confidence`);
     strings(claim.sourceRecordIds, `claim:${claim.field}:sourceRecordIds`);
     if (claim.sourceRecordIds.length === 0) throw new Error(`Claim ${claim.field} has no evidence`);
+  }
+
+  if (decision.rubricVersion === 'creddy-ranking-v3') {
+    if (!decision.viralPotential || !decision.channelScores) throw new Error('Ranking v3 requires viral and channel scores');
+    for (const [name, value] of Object.entries(decision.viralPotential)) {
+      if (name === 'reasons') continue;
+      score(value, `viralPotential.${name}`);
+    }
+    strings(decision.viralPotential.reasons, 'viralPotential.reasons');
+    for (const name of ['instagramTikTok', 'blogSeo', 'newsletter', 'evergreen'] as const) {
+      score(decision.channelScores[name], `channelScores.${name}`);
+    }
+    score(decision.freshnessScore, 'freshnessScore');
+    score(decision.editorialPriorityScore, 'editorialPriorityScore');
+    if (!decision.editorialDisposition || !decision.verificationState ||
+        !decision.hookType || !decision.hookRationale || !decision.portfolioCategory) {
+      throw new Error('Ranking v3 requires editorial disposition, verification state, hook, and portfolio category');
+    }
+    strings(decision.verificationRequirements, 'verificationRequirements');
+    if (decision.viralPotential.reasons.length === 0) throw new Error('Ranking v3 requires viral potential reasons');
+    if (decision.verificationState === 'ready' && decision.verificationRequirements.length > 0) {
+      throw new Error('Ready rankings cannot retain verification requirements');
+    }
+    if (decision.verificationState !== 'ready' && decision.verificationRequirements.length === 0) {
+      throw new Error('Non-ready rankings require specific verification requirements');
+    }
+    if (decision.viralPotential.score !== calculateViralPotentialScore(decision.viralPotential)) {
+      throw new Error('viralPotential.score does not match the deterministic rubric');
+    }
+    if (decision.editorialPriorityScore !== calculateEditorialPriorityScore(decision)) {
+      throw new Error('editorialPriorityScore does not match the deterministic weighting');
+    }
+    if (decision.verificationState === 'community_signal_only' && decision.confidenceScore > 60) {
+      throw new Error('Community signal-only confidence cannot exceed 60');
+    }
+    const expectedRoute = decision.editorialDisposition === 'reject'
+      ? 'rejected'
+      : decision.editorialDisposition === 'defer'
+        ? 'defer'
+        : decision.verificationState !== 'ready'
+          ? 'reverify'
+          : decision.editorialDisposition === 'evergreen'
+            ? 'evergreen_queue'
+            : 'auto_process';
+    if (decision.route !== expectedRoute) {
+      throw new Error(`Ranking v3 route ${decision.route} conflicts with editorial and verification states; expected ${expectedRoute}`);
+    }
   }
 
   const qualifiesForSlack =
@@ -211,6 +334,7 @@ export async function runAnalysisQueueStage(
         activeCanonicalIds.has(completed.canonicalId) &&
         (!Number.isFinite(completed.productFitScore) ||
           !Number.isFinite(completed.popularityScore) ||
+          completed.rubricVersion !== 'creddy-ranking-v3' ||
           !passesCurrentPolicy)
       ) {
         await rename(path, safeDataPath(legacyDir, `${completed.canonicalId}.json`));
@@ -233,7 +357,7 @@ export async function runAnalysisQueueStage(
           id: article.canonicalId,
           canonicalId: article.canonicalId,
           queuedAt: now.toISOString(),
-          instructionsVersion: 'creddy-ranking-v2',
+          instructionsVersion: 'creddy-ranking-v3',
           article,
         };
         await writeJsonAtomic(pendingPath, task);

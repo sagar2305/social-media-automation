@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { CREDDY_DISCOVERY_PROFILE } from './config.js';
+import { selectEditorialPortfolio } from './analysis-stage.js';
 import {
   listJsonFiles,
   pathExists,
@@ -10,6 +11,7 @@ import {
 } from './pipeline-store.js';
 import type {
   AnalysisDecisionRecord,
+  AnalysisPerformanceFeedbackRecord,
   AnalysisTaskRecord,
   CanonicalNewsRecord,
   ContentBankRecord,
@@ -394,9 +396,21 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const activeCanonicalIds = new Set(canonical.map((item) => item.canonicalId));
   const decisions = allDecisions.filter((item) => activeCanonicalIds.has(item.canonicalId));
   decisions.sort((a, b) =>
+    (b.editorialPriorityScore ?? -1) - (a.editorialPriorityScore ?? -1) ||
+    (b.viralPotential?.score ?? -1) - (a.viralPotential?.score ?? -1) ||
     (b.productFitScore ?? -1) - (a.productFitScore ?? -1) ||
     (b.popularityScore ?? -1) - (a.popularityScore ?? -1) ||
     b.importanceScore - a.importanceScore || b.confidenceScore - a.confidenceScore);
+  const portfolio = selectEditorialPortfolio(decisions, 5);
+  const verificationQueue = decisions.filter((item) =>
+    item.rubricVersion === 'creddy-ranking-v3' &&
+    item.verificationState !== 'ready' &&
+    (item.editorialDisposition === 'produce' || item.editorialDisposition === 'evergreen'));
+  const performanceFeedback = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, 'feedback', 'agent-03')))
+      .map((path) => readJson<AnalysisPerformanceFeedbackRecord>(path)),
+  );
+  const decisionByCanonicalId = new Map(decisions.map((item) => [item.canonicalId, item]));
   const pendingAnalysis = (await Promise.all(
     (await listJsonFiles(safeDataPath(root, '04-analysis-queue', 'pending')))
       .map((path) => readJson<AnalysisTaskRecord>(path)),
@@ -411,12 +425,48 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Active canonical inputs: ${canonical.length}; completed rankings: ${decisions.length}; pending rankings: ${pendingAnalysis.length}`,
     `Routes: ${Object.entries(routeCounts).map(([route, count]) => `${route}=${count}`).join(', ') || 'none'}`,
     '',
-    '> Popularity is an estimated editorial-interest score, not measured social views. Legacy rows show `n/a` until re-analysis.',
+    '> Viral potential and channel scores are editorial predictions, not measured views. Legacy rows show `n/a` until ranking v3 re-analysis.',
+    '> Editorial priority is independent of verification readiness. Nothing enters production until its operational route is ready.',
     '> Slack review is allowed only for a high-importance material conflict that changes the message after verification is exhausted.',
     '',
-    '| Rank | Headline | Product fit | Popularity | Importance | Confidence | Route | Reasons |',
-    '|---:|---|---:|---:|---:|---:|---|---|',
-    ...decisions.map((item, index) => `| ${index + 1} | ${cell(item.headline)} | ${item.productFitScore ?? 'n/a'} | ${item.popularityScore ?? 'n/a'} | ${item.importanceScore} | ${item.confidenceScore} | ${cell(item.route)} | ${cell([...item.importanceReasons, ...item.rejectionReasons].join('; '))} |`),
+    '| Rank | Headline | Priority | Viral | Product fit | Freshness | Confidence | Hook | Best channel | Verification | Route |',
+    '|---:|---|---:|---:|---:|---:|---:|---|---|---|---|',
+    ...decisions.map((item, index) => {
+      const channels = item.channelScores ? Object.entries(item.channelScores).sort((a, b) => b[1] - a[1])[0] : undefined;
+      return `| ${index + 1} | ${cell(item.headline)} | ${item.editorialPriorityScore ?? 'n/a'} | ${item.viralPotential?.score ?? item.popularityScore ?? 'n/a'} | ${item.productFitScore ?? 'n/a'} | ${item.freshnessScore ?? 'n/a'} | ${item.confidenceScore} | ${cell(item.hookType ?? 'legacy')} | ${cell(channels ? `${channels[0]} (${channels[1]})` : 'n/a')} | ${cell(item.verificationState ?? 'legacy')} | ${cell(item.route)} |`;
+    }),
+    '',
+    `## Recommended five-story slate (${portfolio.length})`,
+    '',
+    '> This is the highest-upside diversified editorial slate. Items that still require verification remain blocked from production.',
+    '',
+    '| Slate | Headline | Category | Priority | Viral | Hook | Verification | Operational route |',
+    '|---:|---|---|---:|---:|---|---|---|',
+    ...portfolio.map((item, index) => `| ${index + 1} | ${cell(item.headline)} | ${cell(item.portfolioCategory)} | ${item.editorialPriorityScore} | ${item.viralPotential?.score} | ${cell(item.hookType)} | ${cell(item.verificationState)} | ${cell(item.route)} |`),
+    '',
+    `## Verification queue (${verificationQueue.length})`,
+    '',
+    '| Priority | Headline | Verification needed |',
+    '|---:|---|---|',
+    ...verificationQueue.map((item) => `| ${item.editorialPriorityScore} | ${cell(item.headline)} | ${cell(item.verificationRequirements?.join('; '))} |`),
+    '',
+    `## Editorial and performance feedback (${performanceFeedback.length})`,
+    '',
+    '> Feedback is append-only local data. Predicted scores can be compared with observed channel results after content is published.',
+    '',
+    '| Recorded | Headline | Channel | Predicted channel score | Verdict | Views | Shares | Saves | Clicks | Conversions | Note |',
+    '|---|---|---|---:|---|---:|---:|---:|---:|---:|---|',
+    ...performanceFeedback.map((item) => {
+      const decision = decisionByCanonicalId.get(item.canonicalId);
+      const predicted = item.channel === 'instagram_tiktok'
+        ? decision?.channelScores?.instagramTikTok
+        : item.channel === 'blog_seo'
+          ? decision?.channelScores?.blogSeo
+          : item.channel === 'newsletter'
+            ? decision?.channelScores?.newsletter
+            : decision?.channelScores?.evergreen;
+      return `| ${cell(item.recordedAt)} | ${cell(decision?.headline ?? item.canonicalId)} | ${cell(item.channel)} | ${predicted ?? 'n/a'} | ${cell(item.editorialVerdict ?? '')} | ${item.views ?? ''} | ${item.shares ?? ''} | ${item.saves ?? ''} | ${item.clicks ?? ''} | ${item.conversions ?? ''} | ${cell(item.note ?? '')} |`;
+    }),
     '',
     `## Awaiting scheduled ranking (${pendingAnalysis.length})`,
     '',
@@ -453,10 +503,10 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
       '',
       '> Scores are cumulative for all currently active canonical articles. JSON decision records remain the source of truth.',
       '',
-      '| Rank | Headline | Product fit | Popularity | Importance | Confidence | Route | Importance / rejection reasons | Confidence reasons | Evidence IDs |',
-      '|---:|---|---:|---:|---:|---:|---|---|---|---|',
+      '| Rank | Headline | Priority | Viral | Product fit | Importance | Freshness | Confidence | Editorial disposition | Verification | Route | Hook | Channel scores | Evidence IDs |',
+      '|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|---|',
       ...decisions.map((item, index) =>
-        `| ${index + 1} | ${cell(item.headline)} | ${item.productFitScore ?? 'n/a'} | ${item.popularityScore ?? 'n/a'} | ${item.importanceScore} | ${item.confidenceScore} | ${cell(item.route)} | ${cell([...item.importanceReasons, ...item.rejectionReasons].join('; '))} | ${cell(item.confidenceReasons.join('; '))} | ${cell(item.evidenceRecordIds.join(', '))} |`),
+        `| ${index + 1} | ${cell(item.headline)} | ${item.editorialPriorityScore ?? 'n/a'} | ${item.viralPotential?.score ?? item.popularityScore ?? 'n/a'} | ${item.productFitScore ?? 'n/a'} | ${item.importanceScore} | ${item.freshnessScore ?? 'n/a'} | ${item.confidenceScore} | ${cell(item.editorialDisposition ?? 'legacy')} | ${cell(item.verificationState ?? 'legacy')} | ${cell(item.route)} | ${cell(item.hookType ?? 'legacy')} | ${cell(item.channelScores ? JSON.stringify(item.channelScores) : 'n/a')} | ${cell(item.evidenceRecordIds.join(', '))} |`),
     ];
     const rankingLedgerPath = safeDataPath(
       root,

@@ -170,7 +170,7 @@ export interface AnalysisTaskRecord {
   id: string;
   canonicalId: string;
   queuedAt: string;
-  instructionsVersion: 'creddy-analysis-v1' | 'creddy-ranking-v2';
+  instructionsVersion: 'creddy-analysis-v1' | 'creddy-ranking-v2' | 'creddy-ranking-v3';
   article: CanonicalNewsRecord;
 }
 
@@ -210,6 +210,36 @@ export interface AnalysisDecisionRecord {
   productFitScore?: number;
   /** Estimated audience-interest potential, not measured social engagement. */
   popularityScore?: number;
+  /** Ranking v3 separates editorial upside from factual readiness. */
+  rubricVersion?: 'creddy-ranking-v3';
+  viralPotential?: {
+    score: number;
+    hookStrength: number;
+    audienceBreadth: number;
+    financialMagnitude: number;
+    novelty: number;
+    urgency: number;
+    practicalUtility: number;
+    visualPotential: number;
+    discussionPotential: number;
+    emotionalAspiration: number;
+    shareSavePotential: number;
+    reasons: string[];
+  };
+  channelScores?: {
+    instagramTikTok: number;
+    blogSeo: number;
+    newsletter: number;
+    evergreen: number;
+  };
+  freshnessScore?: number;
+  editorialPriorityScore?: number;
+  editorialDisposition?: 'produce' | 'evergreen' | 'defer' | 'reject';
+  verificationState?: 'ready' | 'official_source_needed' | 'independent_confirmation_needed' | 'community_signal_only';
+  verificationRequirements?: string[];
+  hookType?: string;
+  hookRationale?: string;
+  portfolioCategory?: 'card_offer' | 'loyalty_news' | 'redemption' | 'travel_development' | 'evergreen_education';
   importanceScore: number;
   confidenceScore: number;
   importanceReasons: string[];
@@ -220,6 +250,23 @@ export interface AnalysisDecisionRecord {
   route: CreddyAnalysisRoute;
   rejectionReasons: string[];
   evidenceRecordIds: string[];
+}
+
+export interface AnalysisPerformanceFeedbackRecord {
+  version: typeof CREDDY_PIPELINE_VERSION;
+  id: string;
+  canonicalId: string;
+  recordedAt: string;
+  channel: 'instagram_tiktok' | 'blog_seo' | 'newsletter' | 'evergreen';
+  editorialVerdict?: 'promote' | 'accurate' | 'demote';
+  views?: number;
+  watchTimeSeconds?: number;
+  shares?: number;
+  saves?: number;
+  comments?: number;
+  clicks?: number;
+  conversions?: number;
+  note?: string;
 }
 
 export interface ContentPackageRecord {

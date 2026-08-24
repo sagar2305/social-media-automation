@@ -7,7 +7,10 @@ import test from 'node:test';
 import {
   acceptAnalysisDecision,
   auditAnalysisDecisionBatch,
+  calculateEditorialPriorityScore,
+  calculateViralPotentialScore,
   runAnalysisQueueStage,
+  selectEditorialPortfolio,
   validateAnalysisDecision,
 } from './analysis-stage.js';
 import { acceptContentPackage, validateContentPackage } from './content-stage.js';
@@ -85,6 +88,77 @@ function decision(route: AnalysisDecisionRecord['route'] = 'auto_process'): Anal
     evidenceRecordIds: ['raw-1'],
   };
 }
+
+function rankingV3(overrides: Partial<AnalysisDecisionRecord> = {}): AnalysisDecisionRecord {
+  const item = decision();
+  item.rubricVersion = 'creddy-ranking-v3';
+  item.viralPotential = {
+    score: 0,
+    hookStrength: 85,
+    audienceBreadth: 80,
+    financialMagnitude: 90,
+    novelty: 75,
+    urgency: 85,
+    practicalUtility: 90,
+    visualPotential: 70,
+    discussionPotential: 75,
+    emotionalAspiration: 70,
+    shareSavePotential: 85,
+    reasons: ['Large, timely, useful offer with a concrete hook'],
+  };
+  item.viralPotential.score = calculateViralPotentialScore(item.viralPotential);
+  item.channelScores = { instagramTikTok: 85, blogSeo: 78, newsletter: 88, evergreen: 55 };
+  item.freshnessScore = 90;
+  item.editorialDisposition = 'produce';
+  item.verificationState = 'ready';
+  item.verificationRequirements = [];
+  item.hookType = 'highest_ever_offer';
+  item.hookRationale = 'A record bonus gives the audience a clear reason to stop and act.';
+  item.portfolioCategory = 'card_offer';
+  Object.assign(item, overrides);
+  item.editorialPriorityScore = calculateEditorialPriorityScore(item);
+  return item;
+}
+
+test('ranking v3 validates deterministic viral and priority scores', () => {
+  const valid = rankingV3();
+  assert.equal(validateAnalysisDecision(valid).rubricVersion, 'creddy-ranking-v3');
+  valid.editorialPriorityScore! -= 1;
+  assert.throws(() => validateAnalysisDecision(valid), /editorialPriorityScore/);
+});
+
+test('ranking v3 keeps editorial upside separate from verification route', () => {
+  const blocked = rankingV3({
+    verificationState: 'official_source_needed',
+    verificationRequirements: ['Verify offer terms with the issuer.'],
+    route: 'reverify',
+    confidenceScore: 72,
+  });
+  blocked.editorialPriorityScore = calculateEditorialPriorityScore(blocked);
+  assert.equal(validateAnalysisDecision(blocked).route, 'reverify');
+  assert.deepEqual(selectEditorialPortfolio([blocked], 5), [blocked]);
+});
+
+test('portfolio selection favors category diversity before a second card offer', () => {
+  const cardA = rankingV3({ id: 'card-a', canonicalId: 'card-a', affectedPrograms: ['Amex'], editorialPriorityScore: undefined });
+  const cardB = rankingV3({ id: 'card-b', canonicalId: 'card-b', affectedPrograms: ['Chase'], productFitScore: 88, portfolioCategory: 'card_offer' });
+  const redemption = rankingV3({ id: 'redemption', canonicalId: 'redemption', affectedPrograms: ['Qatar'], productFitScore: 82, portfolioCategory: 'redemption' });
+  const travel = rankingV3({ id: 'travel', canonicalId: 'travel', affectedPrograms: ['American'], productFitScore: 75, portfolioCategory: 'travel_development' });
+  const selected = selectEditorialPortfolio([cardA, cardB, redemption, travel], 3);
+  assert.deepEqual(new Set(selected.map((item) => item.portfolioCategory)), new Set(['card_offer', 'redemption', 'travel_development']));
+});
+
+test('portfolio selection limits one primary program to two stories', () => {
+  const candidates = ['card_offer', 'redemption', 'travel_development'].map((portfolioCategory, index) =>
+    rankingV3({
+      id: `amex-${index}`,
+      canonicalId: `amex-${index}`,
+      affectedPrograms: ['Amex Membership Rewards'],
+      portfolioCategory: portfolioCategory as NonNullable<AnalysisDecisionRecord['portfolioCategory']>,
+      editorialPriorityScore: undefined,
+    }));
+  assert.equal(selectEditorialPortfolio(candidates, 5).length, 2);
+});
 
 test('Slack routing is rejected unless every rare-review condition is true', () => {
   const invalid = decision('slack_review');
