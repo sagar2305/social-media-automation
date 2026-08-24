@@ -6,7 +6,7 @@
 
 ## Implemented flow
 
-1. Agent 01 collects the 13 original US-market sources, Geobreeze Travel via YouTube RSS, and four focused topic searches. Reddit and creator feeds bypass Firecrawl when a direct feed is available.
+1. Agent 01 collects 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Reddit and creator feeds bypass Firecrawl when a direct feed is available.
 2. Immutable raw files are partitioned by date/run in the dedicated data project.
 3. OR-keyword filtering, context checks, cleaning, exact duplicate detection, and
    supporting-evidence grouping produce canonical news records.
@@ -61,7 +61,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 47 automated unit/integration tests pass.
+- 114 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.
@@ -69,8 +69,8 @@ their own provider keys and credits.
   production dependencies are installed under Python 3.12.
 - A cloned-voice Creddy production render completed successfully at 1080x1920,
   17.4 seconds, H.264/AAC, 3.5 MB.
-- Config validation confirms 13 enabled sources, four searches, and eight OR
-  keywords.
+- Config validation confirms 18 enabled sources, 12 rotating searches (six active
+  per editorial window), and 20 OR keywords.
 - Pipeline status resolves the dedicated data root and reports empty queues while
   disabled.
 

@@ -176,7 +176,7 @@ async function main(): Promise<void> {
     const collection = await runCollectionStage({
       root,
       client: new FirecrawlClient({ apiKey: key }),
-      maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, 10, 'CREDDY_MAX_LINKS_PER_SOURCE'),
+      maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, CREDDY_DISCOVERY_PROFILE.maxLinksPerSourceDefault, 'CREDDY_MAX_LINKS_PER_SOURCE'),
       maxArticleScrapes: CREDDY_DISCOVERY_PROFILE.calibrationScrapeLimit,
       recheckAfterHours: CREDDY_DISCOVERY_PROFILE.freshnessHours,
       onProgress: (event) => console.log(`[Agent 01 calibration][${event.phase}] ${event.message}`),
@@ -208,8 +208,8 @@ async function main(): Promise<void> {
     const result = await runCollectionStage({
       root,
       client: new FirecrawlClient({ apiKey: key }),
-      maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, 10, 'CREDDY_MAX_LINKS_PER_SOURCE'),
-      maxArticleScrapes: positiveInteger(process.env.CREDDY_MAX_ARTICLE_SCRAPES, 40, 'CREDDY_MAX_ARTICLE_SCRAPES'),
+      maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, CREDDY_DISCOVERY_PROFILE.maxLinksPerSourceDefault, 'CREDDY_MAX_LINKS_PER_SOURCE'),
+      maxArticleScrapes: positiveInteger(process.env.CREDDY_MAX_ARTICLE_SCRAPES, CREDDY_DISCOVERY_PROFILE.productionScrapeLimit, 'CREDDY_MAX_ARTICLE_SCRAPES'),
       recheckAfterHours: positiveNumber(process.env.CREDDY_RECHECK_HOURS, CREDDY_DISCOVERY_PROFILE.freshnessHours, 'CREDDY_RECHECK_HOURS'),
       ...(command === 'agent-1'
         ? {

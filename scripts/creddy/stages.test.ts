@@ -55,6 +55,11 @@ test('collection stores new content once and respects the recheck window', async
                   title: 'Doctor of Credit transfer bonus',
                   url: 'https://google.com/goto?url=opaque-doctor-of-credit',
                 }]
+              : body.query?.includes('"welcome bonus"')
+                ? [{
+                    title: 'Chase welcome offer points update',
+                    url: 'https://google.com/goto?url=second-opaque-doctor-of-credit',
+                  }]
               : [],
           },
           creditsUsed: 1,
@@ -69,7 +74,8 @@ test('collection stores new content once and respects the recheck window', async
           },
         });
       }
-      if (body.url === 'https://google.com/goto?url=opaque-doctor-of-credit') {
+      if (body.url === 'https://google.com/goto?url=opaque-doctor-of-credit'
+        || body.url === 'https://google.com/goto?url=second-opaque-doctor-of-credit') {
         return jsonResponse({
           success: true,
           data: {
@@ -131,12 +137,22 @@ test('collection stores new content once and respects the recheck window', async
       disposition: string;
       rawRecordId?: string;
       discoveredTitle?: string;
+      publisherKey?: string;
+      resolvedPublisherKey?: string;
+      eventFingerprint?: string;
+      resolvedEventFingerprint?: string;
     }>;
   }>(discoveryFiles[0]);
   assert.equal(discovery.candidates[0].discoveredTitle, 'Test transfer bonus');
   const redirectedDiscovery = discovery.candidates.find((item) => item.url.includes('opaque-doctor-of-credit'));
+  const secondRedirectedDiscovery = discovery.candidates.find((item) => item.url.includes('second-opaque-doctor-of-credit'));
   assert.equal(redirectedDiscovery?.sourceId, 'doctor-of-credit');
   assert.equal(redirectedDiscovery?.disposition, 'unchanged');
+  assert.equal(redirectedDiscovery?.publisherKey, 'unknown:transfer-bonus');
+  assert.equal(secondRedirectedDiscovery?.publisherKey, 'unknown:card-offer');
+  assert.equal(redirectedDiscovery?.resolvedPublisherKey, 'doctor-of-credit');
+  assert.equal(secondRedirectedDiscovery?.resolvedPublisherKey, 'doctor-of-credit');
+  assert.equal(redirectedDiscovery?.resolvedEventFingerprint, secondRedirectedDiscovery?.resolvedEventFingerprint);
   assert.ok(progressPhases.includes('run_started'));
   assert.ok(progressPhases.includes('source_started'));
   assert.ok(progressPhases.includes('search_completed'));
@@ -153,8 +169,9 @@ test('collection stores new content once and respects the recheck window', async
     'utf8',
   );
   assert.match(immutableReport, /stored: 2/);
-  assert.match(immutableReport, /Selection: selected=3 \(core=3, adjacent=0\)/);
-  assert.doesNotMatch(immutableReport, /\| doctorofcredit\.com \|/);
+  assert.match(immutableReport, /Selection: selected=4 \(core=4, adjacent=0\)/);
+  assert.match(immutableReport, /\| unknown:transfer-bonus \| 1 \|/);
+  assert.match(immutableReport, /\| unknown:card-offer \| 1 \|/);
   assert.match(immutableRawIndex, /New Transfer Bonus/);
 
   const rawRecords = await Promise.all(
@@ -311,6 +328,18 @@ test('data quality rejects browse-all guide indexes even when their footer has r
   const raw = {
     title: 'Browse Credit Card Guides from Example.com',
     markdown: 'Compare the complete catalog of guides. Airport lounge access and statement credit links appear in the navigation footer.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw)?.reason, 'non_article');
+});
+
+test('data quality rejects observed multi-topic link roundups', () => {
+  const raw = {
+    sourceId: 'miles-to-memories',
+    sourceName: 'Miles to Memories',
+    canonicalUrl: 'https://milestomemories.com/around-the-web-1098',
+    title: "Amazon lawsuit, insure your points from devaluation, and Paris day trips",
+    markdown: 'A collection of unrelated links. One link discusses protecting points from devaluation while the other links cover unrelated news.',
     providerMetadata: {},
   } as RawArticleRecord;
   assert.equal(dataQualityRejection(raw)?.reason, 'non_article');
