@@ -5,7 +5,7 @@ output, manifest, and retry boundary. Scheduled analysis and content generation 
 Codex task usage; they do not require `OPENAI_API_KEY`. Firecrawl and Blotato remain
 external APIs and use their own keys.
 
-1. **Agent 01 — Collect** — twice daily for the 13 original sources, the approved Geobreeze creator signal, and four focused topic searches. Run it with `npm run creddy:pipeline -- agent-1`; the command collects and writes both latest and immutable run-scoped reports before returning.
+1. **Agent 01 — Collect** — twice daily for 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Run it with `npm run creddy:pipeline -- agent-1`; the command collects and writes both latest and immutable run-scoped reports before returning.
 2. **Agent 02 — Clean, verify, and deduplicate** — applies US/travel-rewards safeguards, removes boilerplate and duplicates, and preserves evidence.
 3. **Agent 03 — Rank and route** — scores product fit, editorial popularity, importance, and confidence, then makes the deterministic route decision.
 4. **Agent 04 — Write copy** — creates scripts, narration, platform captions, CTA, claims, sources, and production briefs only.

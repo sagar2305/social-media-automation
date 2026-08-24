@@ -24,9 +24,18 @@ export interface CreddySourceConfig {
   factualUse: 'discovery_and_confirmation' | 'discovery_only' | 'signal_only';
 }
 
+export type CreddyQueryIntent = 'timely' | 'evergreen' | 'experimental';
+
+export interface CreddyTopicSearch {
+  id: string;
+  query: string;
+  intent: CreddyQueryIntent;
+  pair: number;
+}
+
 /**
- * The thirteen original boss-approved sources plus the approved Geobreeze
- * creator signal participate in shadow ingestion. Source
+ * The original boss-approved sources plus the explicitly approved discovery
+ * candidates and creator signals participate in shadow ingestion. Source
  * tier and factualUse still control how evidence is trusted: community sources
  * are signals only and can never serve as sole factual confirmation.
  */
@@ -171,20 +180,74 @@ export const CREDDY_SOURCES: readonly CreddySourceConfig[] = [
     enabledByDefault: true,
     factualUse: 'signal_only',
   },
+  {
+    id: 'thrifty-traveler',
+    name: 'Thrifty Traveler',
+    url: 'https://thriftytraveler.com/news/',
+    sourceClass: 'specialist_publication',
+    tier: 'C',
+    cadence: 'twice_daily',
+    enabledByDefault: true,
+    factualUse: 'discovery_only',
+  },
+  {
+    id: 'loyalty-lobby',
+    name: 'LoyaltyLobby',
+    url: 'https://loyaltylobby.com/',
+    sourceClass: 'specialist_publication',
+    tier: 'C',
+    cadence: 'twice_daily',
+    enabledByDefault: true,
+    factualUse: 'discovery_only',
+  },
+  {
+    id: 'miles-to-memories',
+    name: 'Miles to Memories',
+    url: 'https://milestomemories.com/',
+    sourceClass: 'specialist_publication',
+    tier: 'C',
+    cadence: 'twice_daily',
+    enabledByDefault: true,
+    factualUse: 'discovery_only',
+  },
+  {
+    id: 'max-miles-points',
+    name: 'Max Miles Points',
+    url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCMIftenASZwDCmalbdEwUig',
+    sourceClass: 'creator_signal',
+    tier: 'D',
+    cadence: 'twice_daily',
+    enabledByDefault: true,
+    factualUse: 'signal_only',
+  },
 ] as const;
 
-export const CREDDY_TOPIC_SEARCHES = [
-  '"transfer bonus" points miles airline hotel loyalty',
-  '("award chart" OR devaluation OR "program change") points miles airline hotel',
-  '("status match" OR "status challenge" OR "elite status") airline hotel loyalty',
-  '("sweet spot" OR redemption) points miles airline hotel',
+export const CREDDY_TOPIC_SEARCHES: readonly CreddyTopicSearch[] = [
+  { id: 'transfer-bonus', pair: 0, intent: 'timely', query: '"transfer bonus" points miles airline hotel loyalty' },
+  { id: 'transfer-partner-change', pair: 0, intent: 'timely', query: '("new transfer partner" OR "transfer partner removed") credit card points miles' },
+  { id: 'program-change', pair: 1, intent: 'timely', query: '("award chart" OR devaluation OR "program change") points miles airline hotel' },
+  { id: 'award-availability', pair: 1, intent: 'timely', query: '("award availability" OR "promo awards" OR "award sale") points miles' },
+  { id: 'status', pair: 2, intent: 'timely', query: '("status match" OR "status challenge" OR "elite status") airline hotel loyalty' },
+  { id: 'hotel-promotion', pair: 2, intent: 'timely', query: '("hotel promotion" OR "bonus points promotion" OR "free night") loyalty program' },
+  { id: 'redemption', pair: 3, intent: 'evergreen', query: '("sweet spot" OR redemption) points miles airline hotel' },
+  { id: 'points-sale', pair: 3, intent: 'timely', query: '("buy points" OR "points sale" OR "buy miles") airline hotel bonus' },
+  { id: 'card-offer', pair: 4, intent: 'timely', query: '("welcome bonus" OR "card benefit" OR "annual fee increase") travel credit card' },
+  { id: 'expiring-benefit', pair: 4, intent: 'timely', query: '("ending soon" OR expiring OR deadline) credit card points miles benefit' },
+  { id: 'shopping-portal', pair: 5, intent: 'experimental', query: '("shopping portal" OR "card-linked offer") points miles bonus' },
+  { id: 'award-tools', pair: 5, intent: 'evergreen', query: '("award search tool" OR "points booking tool") airline hotel rewards' },
 ] as const;
 
 export const CREDDY_DISCOVERY_PROFILE = {
   freshnessHours: 24,
+  maxLinksPerSourceDefault: 20,
   calibrationScrapeLimit: 20,
+  productionScrapeLimit: 40,
   coreShare: 0.8,
   adjacentShare: 0.2,
+  maxPerPublisher: 3,
+  maxPerEvent: 2,
+  targetPublishers: 8,
+  editorialTarget: { timely: 0.7, evergreen: 0.2, experimental: 0.1 },
   promisingSourceMinimumRetained: 3,
   promisingSourceMinimumRuns: 2,
 } as const;
@@ -218,22 +281,35 @@ export const CREDDY_BROAD_CONTEXT_KEYWORDS = new Set(['status', 'tools']);
 export const CREDDY_TRAVEL_REWARDS_CONTEXT = [
   'airline',
   'airport',
+  'aadvantage',
+  'aeroplan',
   'award',
   'amex',
   'american express',
+  'atmos rewards',
+  'avios',
+  'bonvoy',
   'cardholder',
   'cardmember',
   'chase',
+  'citi',
   'credit card',
   'elite',
   'flight',
+  'flying blue',
   'hotel',
+  'hilton honors',
+  'ihg',
   'loyalty',
+  'mileageplus',
   'miles',
   'points',
   'program',
+  'rapid rewards',
+  'skymiles',
   'transfer',
   'travel',
+  'world of hyatt',
 ] as const;
 
 export const CREDDY_OFFICIAL_VERIFICATION_REQUIRED_FIELDS = [

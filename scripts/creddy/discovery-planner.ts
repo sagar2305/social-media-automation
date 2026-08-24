@@ -1,8 +1,9 @@
 import {
-  CREDDY_TOPIC_SEARCHES,
   getEnabledCreddySources,
   type CreddySourceConfig,
+  type CreddyQueryIntent,
 } from './config.js';
+import { activeCreddyTopicSearches } from './discovery-cadence.js';
 import { normalizeArticleUrl } from './article-identity.js';
 
 const EXCLUDED_PATH_SEGMENTS = new Set([
@@ -60,7 +61,9 @@ export interface SourceDiscoveryOperation {
 
 export interface TopicSearchOperation {
   kind: 'topic_search';
+  id: string;
   query: string;
+  intent: CreddyQueryIntent;
 }
 
 export interface CreddyDiscoveryPlan {
@@ -69,16 +72,18 @@ export interface CreddyDiscoveryPlan {
   baselineRequests: number;
 }
 
-export function buildCreddyDiscoveryPlan(): CreddyDiscoveryPlan {
+export function buildCreddyDiscoveryPlan(now = new Date()): CreddyDiscoveryPlan {
   const sourceOperations = getEnabledCreddySources().map((source) => ({
     kind: 'source_listing' as const,
     sourceId: source.id,
     sourceName: source.name,
     url: source.url,
   }));
-  const searchOperations = CREDDY_TOPIC_SEARCHES.map((query) => ({
+  const searchOperations = activeCreddyTopicSearches(now).map((search) => ({
     kind: 'topic_search' as const,
-    query,
+    id: search.id,
+    query: search.query,
+    intent: search.intent,
   }));
 
   return {
@@ -98,6 +103,7 @@ function isLikelySourceArticle(source: CreddySourceConfig, url: URL): boolean {
   if (SOURCE_EXCLUDED_PATHS[source.id]?.has(lowerPath)) return false;
 
   if (source.id === 'awardwallet' && lowerPath.startsWith('/blog/link/')) return false;
+  if (source.id === 'miles-to-memories' && /^\/around-the-web-\d+$/i.test(lowerPath)) return false;
   if (source.id === 'the-points-guy') {
     if (lowerPath.startsWith('/lp/') || lowerPath.startsWith('/newsletters/')) return false;
     if (['/cardmatch', '/credit-cards/best', '/tsa'].includes(lowerPath)) return false;

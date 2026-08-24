@@ -78,6 +78,9 @@ export function dataQualityRejection(raw: RawArticleRecord): Pick<RejectedArticl
   ) {
     return { reason: 'non_article', details: 'The fetched page has a navigation or non-article title.' };
   }
+  if (raw.sourceId === 'miles-to-memories' && /\/around-the-web-\d+$/i.test(new URL(raw.canonicalUrl).pathname)) {
+    return { reason: 'non_article', details: 'The fetched page is a multi-topic link roundup rather than one source article.' };
+  }
   if (meaningfulBody.length < 80) {
     return { reason: 'insufficient_content', details: 'Too little article text was available for safe processing.' };
   }

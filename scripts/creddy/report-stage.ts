@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
+import { CREDDY_DISCOVERY_PROFILE } from './config.js';
 import {
   listJsonFiles,
   pathExists,
@@ -77,6 +78,28 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const selectedCandidates = discoveryCandidates.filter((item) => selectedDispositions.has(item.disposition));
   const selectedCoreCount = selectedCandidates.filter((item) => item.discoveryClass === 'core').length;
   const selectedAdjacentCount = selectedCandidates.filter((item) => item.discoveryClass === 'adjacent').length;
+  const selectedPublisherCounts = selectedCandidates.reduce<Record<string, number>>((counts, item) => {
+    const publisher = item.publisherKey ?? 'unknown';
+    counts[publisher] = (counts[publisher] ?? 0) + 1;
+    return counts;
+  }, {});
+  const selectedEventCounts = selectedCandidates.reduce<Record<string, number>>((counts, item) => {
+    const event = item.eventFingerprint?.trim();
+    if (!event) return counts;
+    counts[event] = (counts[event] ?? 0) + 1;
+    return counts;
+  }, {});
+  const selectedIntentCounts = selectedCandidates.reduce<Record<string, number>>((counts, item) => {
+    const intent = item.queryIntent ?? 'unclassified';
+    counts[intent] = (counts[intent] ?? 0) + 1;
+    return counts;
+  }, {});
+  const publisherEntries = Object.entries(selectedPublisherCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const eventEntries = Object.entries(selectedEventCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const maximumPublisherCount = Math.max(0, ...publisherEntries.map(([, count]) => count));
+  const maximumEventCount = Math.max(0, ...eventEntries.map(([, count]) => count));
   const lowRelevanceCount = discoveryCandidates.filter((item) => item.discoveryClass === 'low_relevance').length;
   const emergingDomains = [...(discovery?.candidates ?? [])]
     .filter((item) => item.sourceId.startsWith('topic-search:'))
@@ -98,6 +121,9 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Latest run: ${collection?.runId ?? 'none'}`,
     `Candidates: ${discovery?.candidateCount ?? 0}; scrape limit: ${discovery?.scrapeLimit ?? 0}; stored: ${collection?.outputCount ?? 0}; skipped: ${collection?.skippedCount ?? 0}; failed: ${collection?.failedCount ?? 0}`,
     `Selection: selected=${selectedCandidates.length} (core=${selectedCoreCount}, adjacent=${selectedAdjacentCount}); low relevance=${lowRelevanceCount}; deferred capacity=${dispositionCount('deferred_capacity')}; deferred low relevance=${dispositionCount('deferred_low_relevance')}; recently checked=${dispositionCount('recently_checked')}`,
+    `Selection publisher diversity: ${publisherEntries.length} pre-scrape publisher lanes (best-effort target ${CREDDY_DISCOVERY_PROFILE.targetPublishers}); maximum selected per lane ${maximumPublisherCount} (hard limit ${CREDDY_DISCOVERY_PROFILE.maxPerPublisher}).`,
+    `Selection event diversity: ${eventEntries.length} classified pre-scrape event fingerprints; maximum selected per event ${maximumEventCount} (hard limit ${CREDDY_DISCOVERY_PROFILE.maxPerEvent}); blank/legacy fingerprints are excluded from this audit.`,
+    `Editorial intent proxy: timely=${selectedIntentCounts.timely ?? 0}, evergreen=${selectedIntentCounts.evergreen ?? 0}, experimental=${selectedIntentCounts.experimental ?? 0}, unclassified source-listing=${selectedIntentCounts.unclassified ?? 0}. The ${CREDDY_DISCOVERY_PROFILE.editorialTarget.timely * 100}/${CREDDY_DISCOVERY_PROFILE.editorialTarget.evergreen * 100}/${CREDDY_DISCOVERY_PROFILE.editorialTarget.experimental * 100} mix is a reporting target, not a hard selection rule; source-listing candidates are unclassified.`,
     `Total raw article records retained across runs: ${rawRecords.length}`,
     `Most recent productive collection: ${productiveCollection?.runId ?? 'none'} (${productiveCollection?.outputCount ?? 0} raw records stored)`,
     '',
@@ -110,10 +136,12 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '## Additional topic searches',
     '',
-    '| Query | Provider | Status | New candidates | Error |',
-    '|---|---|---|---:|---|',
+    `Inactive rotating query IDs this window: ${(discovery?.inactiveTopicSearchIds ?? []).join(', ') || 'none'}`,
+    '',
+    '| Query ID | Intent | Query | Provider | Status | New candidates | Error |',
+    '|---|---|---|---|---|---:|---|',
     ...(discovery?.topicSearchResults ?? []).map((item) =>
-      `| ${cell(item.query)} | ${cell(item.provider)} | ${cell(item.status)} | ${item.discoveredCount} | ${cell(item.error ?? '')} |`),
+      `| ${cell(item.id ?? 'legacy')} | ${cell(item.intent ?? 'unknown')} | ${cell(item.query)} | ${cell(item.provider)} | ${cell(item.status)} | ${item.discoveredCount} | ${cell(item.error ?? '')} |`),
     '',
     '## Provider usage',
     '',
@@ -128,6 +156,16 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '> Request counts are exact for this run. A credit total is labelled exact only when Firecrawl reports credits for every successful response.',
     '',
+    '## Selection diversity audit',
+    '',
+    '| Pre-scrape publisher lane | Selected |',
+    '|---|---:|',
+    ...publisherEntries.map(([publisher, count]) => `| ${cell(publisher)} | ${count} |`),
+    '',
+    '| Pre-scrape event fingerprint | Selected |',
+    '|---|---:|',
+    ...eventEntries.map(([event, count]) => `| ${cell(event)} | ${count} |`),
+    '',
     '## Emerging source observations',
     '',
     '> These domains were found by focused searches. They are observations only and are never added to the trusted source registry automatically.',
@@ -138,11 +176,11 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '## Discovered article ledger',
     '',
-    '| Source | Article/title | Discovery class | Selection reason | URL | Disposition |',
-    '|---|---|---|---|---|---|',
+    '| Source | Article/title | Selection publisher lane | Resolved publisher | Query intent | Selection event | Resolved event | Discovery class | Selection reason | URL | Disposition |',
+    '|---|---|---|---|---|---|---|---|---|---|---|',
     ...discoveryCandidates.map((item) => {
       const raw = item.rawRecordId ? rawById.get(item.rawRecordId) : undefined;
-      return `| ${cell(item.sourceName)} | ${cell(item.discoveredTitle || raw?.title || '(title available after article scrape)')} | ${cell(item.discoveryClass ?? 'legacy')} | ${cell(item.selectionReason ?? '')} | ${cell(item.url)} | ${cell(item.disposition)} |`;
+      return `| ${cell(item.sourceName)} | ${cell(item.discoveredTitle || raw?.title || '(title available after article scrape)')} | ${cell(item.publisherKey ?? 'unknown')} | ${cell(item.resolvedPublisherKey ?? 'unresolved')} | ${cell(item.queryIntent ?? 'unclassified')} | ${cell(item.eventFingerprint ?? 'legacy-unclassified')} | ${cell(item.resolvedEventFingerprint ?? 'unresolved')} | ${cell(item.discoveryClass ?? 'legacy')} | ${cell(item.selectionReason ?? '')} | ${cell(item.url)} | ${cell(item.disposition)} |`;
     }),
   ];
   const collectionPath = safeDataPath(outputRoot, '01-discovery-and-collection.md');

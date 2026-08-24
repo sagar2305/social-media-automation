@@ -50,7 +50,9 @@ export interface SourceCollectionResult {
 }
 
 export interface TopicSearchCollectionResult {
+  id?: string;
   query: string;
+  intent?: 'timely' | 'evergreen' | 'experimental';
   provider: 'firecrawl';
   status: 'completed' | 'failed';
   discoveredCount: number;
@@ -62,6 +64,14 @@ export interface DiscoveryCandidateRecord {
   sourceId: string;
   sourceName: string;
   searchQuery?: string;
+  queryId?: string;
+  queryIntent?: 'timely' | 'evergreen' | 'experimental';
+  /** Immutable publisher lane used when the pre-scrape selector enforced caps. */
+  publisherKey?: string;
+  /** Informational identity resolved from the completed article scrape. */
+  resolvedPublisherKey?: string;
+  eventFingerprint?: string;
+  resolvedEventFingerprint?: string;
   discoveredTitle?: string;
   discoveredDescription?: string;
   discoveryClass?: 'core' | 'adjacent' | 'low_relevance';
@@ -86,6 +96,7 @@ export interface DiscoveryRunRecord {
   scrapeLimit: number;
   sourceResults?: SourceCollectionResult[];
   topicSearchResults?: TopicSearchCollectionResult[];
+  inactiveTopicSearchIds?: string[];
   candidates: DiscoveryCandidateRecord[];
 }
 
