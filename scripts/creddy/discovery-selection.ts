@@ -20,7 +20,12 @@ export interface ClassifiedDiscoveryCandidate<T> {
 const CORE_SIGNALS = [
   'transfer bonus', 'transfer partner', 'award chart', 'award space', 'devaluation',
   'redemption', 'sweet spot', 'status match', 'status challenge', 'elite status',
-  'points sale', 'miles sale', 'welcome offer', 'card benefit', 'loyalty program',
+  'points sale', 'miles sale', 'welcome offer', 'welcome bonus', 'bonus points',
+  'statement credit', 'new benefit', 'benefits are live', 'benefit change',
+  'credit card perk', 'card perk', 'promo award', 'shopping portal',
+  'points and miles travel deal', 'milestone bonus', 'points transfer',
+  'points now transfer', 'miles now transfer',
+  'expiration policy', 'price increase', 'card benefit', 'loyalty program',
 ];
 
 const OBVIOUS_NOISE = [

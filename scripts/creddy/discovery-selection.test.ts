@@ -31,6 +31,34 @@ test('selection is deterministic, fair by lane, and caps adjacent exploration at
   assert.deepEqual(result.selected, selectDiscoveryCandidates([...core, ...adjacent], 20).selected);
 });
 
+test('explicit card offers, benefit changes, and loyalty promotions classify as core', () => {
+  const coreTitles = [
+    'Marriott Card 150K Bonus Points + $250 Statement Credit Offer',
+    "The Citi AAdvantage Executive's new benefits are live",
+    'August Flying Blue Promo Awards',
+    'How to maximize online shopping portals for airline points',
+    'This underrated credit card perk includes US Open access',
+    'New 125K Welcome Bonus on the AAdvantage Executive Card',
+    'Amex points now transfer to ALL Accor hotels',
+    'Which credit cards offer milestone bonuses?',
+  ];
+  for (const [index, discoveredTitle] of coreTitles.entries()) {
+    assert.equal(classifyDiscoveryCandidate({
+      url: `https://example.com/core-${index}`,
+      laneId: 'source:example',
+      discoveredTitle,
+    }).discoveryClass, 'core', discoveredTitle);
+  }
+});
+
+test('generic evergreen card indexes remain adjacent without a timely core signal', () => {
+  assert.equal(classifyDiscoveryCandidate({
+    url: 'https://example.com/best-card-offers',
+    laneId: 'source:example',
+    discoveredTitle: 'Best Credit Card Offers',
+  }).discoveryClass, 'adjacent');
+});
+
 test('selection provides bounded lane coverage across sequential twice-daily slots', () => {
   const adjacent = Array.from({ length: 14 }, (_, index) => ({
     url: `https://adjacent.example/${index}`,
