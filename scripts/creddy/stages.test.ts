@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runCollectionStage } from './collection-stage.js';
+import { resolvedArticleUrl, runCollectionStage, sourceForUrl } from './collection-stage.js';
 import { runDedupeStage } from './dedupe-stage.js';
-import { articleTextForQualification, runFilterStage } from './filter-stage.js';
+import { articleTextForQualification, dataQualityRejection, runFilterStage } from './filter-stage.js';
 import { FirecrawlClient } from './firecrawl-client.js';
 import {
   initializeCreddyDataRoot,
@@ -26,15 +26,39 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+test('multi-tenant YouTube results are not attributed to Geobreeze by hostname', () => {
+  assert.equal(sourceForUrl('https://www.youtube.com/watch?v=another-channel'), null);
+});
+
+test('search redirects use the publisher URL reported by the completed scrape', () => {
+  assert.equal(
+    resolvedArticleUrl('https://google.com/goto?url=opaque', {
+      url: 'https://Publisher.Example/story/?utm_source=google#details',
+    }),
+    'https://publisher.example/story',
+  );
+});
+
 test('collection stores new content once and respects the recheck window', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-stages-'));
   const progressPhases: string[] = [];
   const client = new FirecrawlClient({
     apiKey: 'test',
     fetchImpl: async (url, init) => {
-      const body = JSON.parse(String(init?.body)) as { url?: string };
+      const body = JSON.parse(String(init?.body)) as { url?: string; query?: string };
       if (String(url).endsWith('/search')) {
-        return jsonResponse({ success: true, data: { news: [] }, creditsUsed: 1 });
+        return jsonResponse({
+          success: true,
+          data: {
+            news: body.query?.includes('"transfer bonus"')
+              ? [{
+                  title: 'Doctor of Credit transfer bonus',
+                  url: 'https://google.com/goto?url=opaque-doctor-of-credit',
+                }]
+              : [],
+          },
+          creditsUsed: 1,
+        });
       }
       if (body.url === 'https://awardwallet.com/blog/test-transfer-bonus') {
         return jsonResponse({
@@ -45,16 +69,43 @@ test('collection stores new content once and respects the recheck window', async
           },
         });
       }
+      if (body.url === 'https://google.com/goto?url=opaque-doctor-of-credit') {
+        return jsonResponse({
+          success: true,
+          data: {
+            markdown: 'Doctor of Credit reports a new airline transfer bonus for loyalty points.',
+            metadata: {
+              title: 'Doctor of Credit transfer bonus',
+              url: 'https://www.doctorofcredit.com/new-transfer-bonus/',
+            },
+          },
+        });
+      }
+      if (body.url === 'https://doctorofcredit.com/new-transfer-bonus') {
+        return jsonResponse({
+          success: true,
+          data: {
+            markdown: 'Doctor of Credit reports a new airline transfer bonus for loyalty points.',
+            metadata: {
+              title: 'Doctor of Credit transfer bonus',
+              url: 'https://www.doctorofcredit.com/new-transfer-bonus/',
+            },
+          },
+        });
+      }
       return jsonResponse({
         success: true,
         data: {
           markdown: '# Listing',
-          links:
-            body.url === 'https://awardwallet.com/blog/'
-              ? ['https://awardwallet.com/blog/test-transfer-bonus']
+          links: body.url === 'https://awardwallet.com/blog/'
+            ? ['https://awardwallet.com/blog/test-transfer-bonus']
+            : body.url === 'https://www.doctorofcredit.com/'
+              ? ['https://doctorofcredit.com/new-transfer-bonus']
               : [],
           ...(body.url === 'https://awardwallet.com/blog/'
             ? { markdown: '[Test transfer bonus](https://awardwallet.com/blog/test-transfer-bonus)' }
+            : body.url === 'https://www.doctorofcredit.com/'
+              ? { markdown: '[Doctor transfer bonus](https://doctorofcredit.com/new-transfer-bonus)' }
             : {}),
           metadata: { title: 'Listing' },
         },
@@ -65,14 +116,27 @@ test('collection stores new content once and respects the recheck window', async
   const first = await runCollectionStage({
     root,
     client,
-    now: new Date('2026-08-19T12:00:00Z'),
+    now: new Date('2026-08-21T12:00:00Z'),
+    redditFetchImpl: async () => new Response('', { status: 429 }),
+    youtubeFetchImpl: async () => new Response('', { status: 429 }),
     onProgress: (event) => progressPhases.push(event.phase),
   });
-  assert.equal(first.outputCount, 1);
-  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 1);
+  assert.equal(first.outputCount, 2);
+  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 2);
   const discoveryFiles = await listJsonFiles(safeDataPath(root, '00-discovery'));
-  const discovery = await readJson<{ candidates: Array<{ discoveredTitle?: string }> }>(discoveryFiles[0]);
+  const discovery = await readJson<{
+    candidates: Array<{
+      url: string;
+      sourceId: string;
+      disposition: string;
+      rawRecordId?: string;
+      discoveredTitle?: string;
+    }>;
+  }>(discoveryFiles[0]);
   assert.equal(discovery.candidates[0].discoveredTitle, 'Test transfer bonus');
+  const redirectedDiscovery = discovery.candidates.find((item) => item.url.includes('opaque-doctor-of-credit'));
+  assert.equal(redirectedDiscovery?.sourceId, 'doctor-of-credit');
+  assert.equal(redirectedDiscovery?.disposition, 'unchanged');
   assert.ok(progressPhases.includes('run_started'));
   assert.ok(progressPhases.includes('source_started'));
   assert.ok(progressPhases.includes('search_completed'));
@@ -88,16 +152,35 @@ test('collection stores new content once and respects the recheck window', async
     safeDataPath(root, 'reports', 'runs', first.runId, '01-raw-article-index.md'),
     'utf8',
   );
-  assert.match(immutableReport, /stored: 1/);
+  assert.match(immutableReport, /stored: 2/);
+  assert.match(immutableReport, /Selection: selected=3 \(core=3, adjacent=0\)/);
+  assert.doesNotMatch(immutableReport, /\| doctorofcredit\.com \|/);
   assert.match(immutableRawIndex, /New Transfer Bonus/);
+
+  const rawRecords = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '01-raw'))).map((path) => readJson<RawArticleRecord>(path)),
+  );
+  const resolvedSearch = rawRecords.find((record) =>
+    record.canonicalUrl === 'https://doctorofcredit.com/new-transfer-bonus');
+  assert.equal(resolvedSearch?.sourceId, 'doctor-of-credit');
+  assert.equal(resolvedSearch?.sourceTier, 'B');
+  assert.equal(resolvedSearch?.factualUse, 'discovery_and_confirmation');
+  assert.equal(redirectedDiscovery?.rawRecordId, resolvedSearch?.id);
+  const urlIndex = await readJson<Record<string, { lastRecordId: string }>>(
+    safeDataPath(root, 'indexes', 'url-index.json'),
+  );
+  assert.equal(urlIndex['https://google.com/goto?url=opaque-doctor-of-credit']?.lastRecordId, resolvedSearch?.id);
+  assert.equal(urlIndex['https://doctorofcredit.com/new-transfer-bonus']?.lastRecordId, resolvedSearch?.id);
 
   const second = await runCollectionStage({
     root,
     client,
-    now: new Date('2026-08-19T13:00:00Z'),
+    now: new Date('2026-08-21T13:00:00Z'),
+    redditFetchImpl: async () => new Response('', { status: 429 }),
+    youtubeFetchImpl: async () => new Response('', { status: 429 }),
   });
   assert.equal(second.outputCount, 0);
-  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 1);
+  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 2);
 });
 
 test('filter applies OR keywords and dedupe attaches duplicate evidence', async () => {
@@ -224,6 +307,15 @@ test('filter rejects navigation pages before the keyword gate', async () => {
   assert.equal(rejection.reason, 'non_article');
 });
 
+test('data quality rejects browse-all guide indexes even when their footer has relevant phrases', () => {
+  const raw = {
+    title: 'Browse Credit Card Guides from Example.com',
+    markdown: 'Compare the complete catalog of guides. Airport lounge access and statement credit links appear in the navigation footer.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw)?.reason, 'non_article');
+});
+
 test('qualification ignores keywords found only in related-post and footer boilerplate', () => {
   const raw = {
     title: 'VPN cashback deal',
@@ -238,4 +330,30 @@ test('qualification ignores keywords found only in related-post and footer boile
     qualifyCreddyText(articleTextForQualification(raw)).qualifies,
     false,
   );
+});
+
+test('qualification ignores status tokens found only inside social link destinations', () => {
+  const raw = {
+    title: 'Airline improves meals but cabin cleaning still lags',
+    markdown: '[View on X](https://x.com/example/status/123?ref_url=https://airline.example/story)\nThe cabin food and cleaning experience changed.',
+  } as RawArticleRecord;
+  assert.equal(qualifyCreddyText(articleTextForQualification(raw)).qualifies, false);
+});
+
+test('filter rejects articles explicitly limited to a non-US card market', () => {
+  const raw = {
+    title: 'Status matching for Indian frequent flyers',
+    markdown: 'Indian residents can use this airline status match. Eligible cards issued in India provide hotel status to Indian residents.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw)?.reason, 'wrong_market');
+});
+
+test('market guard keeps globally relevant India content actionable to US travelers', () => {
+  const raw = {
+    title: 'How US travelers can use points in India',
+    markdown: 'US travelers can redeem airline points in India. Cardholders receive lounge access in India when flying through Delhi with US-issued credit cards.',
+    providerMetadata: {},
+  } as RawArticleRecord;
+  assert.equal(dataQualityRejection(raw), undefined);
 });

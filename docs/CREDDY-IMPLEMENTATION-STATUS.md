@@ -6,7 +6,7 @@
 
 ## Implemented flow
 
-1. Firecrawl collects all 13 approved US-market sources and four topic searches.
+1. Agent 01 collects the 13 original US-market sources, Geobreeze Travel via YouTube RSS, and four focused topic searches. Reddit and creator feeds bypass Firecrawl when a direct feed is available.
 2. Immutable raw files are partitioned by date/run in the dedicated data project.
 3. OR-keyword filtering, context checks, cleaning, exact duplicate detection, and
    supporting-evidence grouping produce canonical news records.

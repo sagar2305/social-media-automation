@@ -12,13 +12,13 @@ function unique(values: readonly string[], label: string): void {
 }
 
 export function validateCreddyConfig(): void {
-  if (CREDDY_SOURCES.length !== 13) {
-    throw new Error(`Expected 13 registered sources, found ${CREDDY_SOURCES.length}`);
+  if (CREDDY_SOURCES.length !== 14) {
+    throw new Error(`Expected 14 registered sources, found ${CREDDY_SOURCES.length}`);
   }
 
   const enabled = getEnabledCreddySources();
-  if (enabled.length !== 13) {
-    throw new Error(`Expected all 13 sources to be enabled, found ${enabled.length}`);
+  if (enabled.length !== 14) {
+    throw new Error(`Expected all 14 sources to be enabled, found ${enabled.length}`);
   }
   if (enabled.some((source) => source.cadence !== 'twice_daily')) {
     throw new Error('Every boss-approved source must run twice daily');
@@ -32,8 +32,8 @@ export function validateCreddyConfig(): void {
   if (CREDDY_TOPIC_SEARCHES.length !== 4) {
     throw new Error(`Expected 4 topic searches, found ${CREDDY_TOPIC_SEARCHES.length}`);
   }
-  if (CREDDY_FILTER_KEYWORDS.length !== 8) {
-    throw new Error(`Expected 8 OR keywords, found ${CREDDY_FILTER_KEYWORDS.length}`);
+  if (CREDDY_FILTER_KEYWORDS.length !== 20) {
+    throw new Error(`Expected 20 OR keywords, found ${CREDDY_FILTER_KEYWORDS.length}`);
   }
 }
 

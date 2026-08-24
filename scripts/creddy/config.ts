@@ -7,7 +7,8 @@ export const CREDDY_LANGUAGE = 'en-US' as const;
 export type CreddySourceClass =
   | 'specialist_publication'
   | 'community'
-  | 'product_reference';
+  | 'product_reference'
+  | 'creator_signal';
 
 export type CreddySourceTier = 'B' | 'C' | 'D';
 export type CreddyCrawlCadence = 'twice_daily' | 'daily' | 'disabled';
@@ -24,7 +25,8 @@ export interface CreddySourceConfig {
 }
 
 /**
- * All thirteen boss-approved sources participate in shadow ingestion. Source
+ * The thirteen original boss-approved sources plus the approved Geobreeze
+ * creator signal participate in shadow ingestion. Source
  * tier and factualUse still control how evidence is trusted: community sources
  * are signals only and can never serve as sole factual confirmation.
  */
@@ -159,23 +161,54 @@ export const CREDDY_SOURCES: readonly CreddySourceConfig[] = [
     enabledByDefault: true,
     factualUse: 'signal_only',
   },
+  {
+    id: 'geobreeze-travel',
+    name: 'Geobreeze Travel',
+    url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCBjIhqPw-K4yeZU8YfO_gbA',
+    sourceClass: 'creator_signal',
+    tier: 'D',
+    cadence: 'twice_daily',
+    enabledByDefault: true,
+    factualUse: 'signal_only',
+  },
 ] as const;
 
 export const CREDDY_TOPIC_SEARCHES = [
-  'airline status',
-  'hotel status',
-  'points devaluation',
-  'points sweet spot',
+  '"transfer bonus" points miles airline hotel loyalty',
+  '("award chart" OR devaluation OR "program change") points miles airline hotel',
+  '("status match" OR "status challenge" OR "elite status") airline hotel loyalty',
+  '("sweet spot" OR redemption) points miles airline hotel',
 ] as const;
+
+export const CREDDY_DISCOVERY_PROFILE = {
+  freshnessHours: 24,
+  calibrationScrapeLimit: 20,
+  coreShare: 0.8,
+  adjacentShare: 0.2,
+  promisingSourceMinimumRetained: 3,
+  promisingSourceMinimumRuns: 2,
+} as const;
 
 /** Any one keyword may pass the keyword gate. */
 export const CREDDY_FILTER_KEYWORDS = [
   'transfer bonus',
+  'transfer partner',
   'award chart',
+  'award space',
   'devaluation',
   'redemption',
   'program change',
   'sweet spot',
+  'status match',
+  'status challenge',
+  'points sale',
+  'miles sale',
+  'welcome offer',
+  'card benefit',
+  'credit card perk',
+  'statement credit',
+  'lounge access',
+  'cardholder benefit',
   'status',
   'tools',
 ] as const;
@@ -186,6 +219,12 @@ export const CREDDY_TRAVEL_REWARDS_CONTEXT = [
   'airline',
   'airport',
   'award',
+  'amex',
+  'american express',
+  'cardholder',
+  'cardmember',
+  'chase',
+  'credit card',
   'elite',
   'flight',
   'hotel',

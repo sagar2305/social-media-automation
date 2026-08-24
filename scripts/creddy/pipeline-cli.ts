@@ -1,12 +1,15 @@
 import dotenv from 'dotenv';
 
+import { recordAgent1Feedback } from './agent1-feedback.js';
 import {
   acceptAnalysisDecision,
   auditAnalysisDecisionBatch,
   runAnalysisQueueStage,
 } from './analysis-stage.js';
 import { BlotatoClient } from './blotato-client.js';
+import { assertFreshCalibrationRoot } from './calibration-safety.js';
 import { runCollectionStage } from './collection-stage.js';
+import { CREDDY_DISCOVERY_PROFILE } from './config.js';
 import { acceptContentDraft, listPendingCopyTasks } from './copy-stage.js';
 import {
   acceptContentPackage,
@@ -57,6 +60,18 @@ function argument(index: number, label: string): string {
   const value = process.argv[index]?.trim();
   if (!value) throw new Error(`${label} is required`);
   return value;
+}
+
+function positiveInteger(value: string | undefined, fallback: number, label: string): number {
+  const parsed = Number(value?.trim() || fallback);
+  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${label} must be a positive integer`);
+  return parsed;
+}
+
+function positiveNumber(value: string | undefined, fallback: number, label: string): number {
+  const parsed = Number(value?.trim() || fallback);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${label} must be a positive number`);
+  return parsed;
 }
 
 async function status(root: string): Promise<Record<string, number>> {
@@ -131,6 +146,58 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ reports: await writeObservablePipelineReports(root) }, null, 2));
     return;
   }
+  if (command === 'agent-1-feedback') {
+    await initializeCreddyDataRoot(root);
+    const decision = argument(3, 'Feedback decision');
+    if (decision !== 'retain' && decision !== 'reject') throw new Error('Feedback decision must be retain or reject');
+    const result = await recordAgent1Feedback(root, {
+      decision,
+      canonicalUrl: argument(4, 'Canonical URL'),
+      sourceId: argument(5, 'Source ID'),
+      sourceName: argument(6, 'Source name'),
+      runId: argument(7, 'Run ID'),
+      reason: argument(8, 'Feedback reason'),
+      note: process.argv.slice(9).join(' ').trim() || undefined,
+    });
+    console.log(JSON.stringify({ created: result.created, recordId: result.record.id, snapshot: result.snapshot }, null, 2));
+    return;
+  }
+  if (command === 'agent-1-calibrate') {
+    if (process.env.CREDDY_PIPELINE_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true') {
+      throw new Error('Agent 01 calibration requires CREDDY_PIPELINE_ENABLED=false');
+    }
+    if (process.env.CREDDY_AGENT01_CALIBRATION?.trim().toLocaleLowerCase('en-US') !== 'true') {
+      throw new Error('Set CREDDY_AGENT01_CALIBRATION=true for an explicit no-delivery calibration run');
+    }
+    await assertFreshCalibrationRoot(process.env.CREDDY_DATA_ROOT?.trim() ?? '');
+    const key = process.env.FIRECRAWL_API_KEY?.trim();
+    if (!key) throw new Error('FIRECRAWL_API_KEY is required for calibration');
+    await initializeCreddyDataRoot(root);
+    const collection = await runCollectionStage({
+      root,
+      client: new FirecrawlClient({ apiKey: key }),
+      maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, 10, 'CREDDY_MAX_LINKS_PER_SOURCE'),
+      maxArticleScrapes: CREDDY_DISCOVERY_PROFILE.calibrationScrapeLimit,
+      recheckAfterHours: CREDDY_DISCOVERY_PROFILE.freshnessHours,
+      onProgress: (event) => console.log(`[Agent 01 calibration][${event.phase}] ${event.message}`),
+    });
+    const filtering = await runFilterStage(root, new Date(), (event) => {
+      console.log(`[Agent 02 calibration][filtering][${event.phase}] ${event.message}`);
+    });
+    const deduplication = await runDedupeStage(root, new Date(), (event) => {
+      console.log(`[Agent 02 calibration][deduplication][${event.phase}] ${event.message}`);
+    });
+    const reports = await writeObservablePipelineReports(root);
+    console.log(JSON.stringify({
+      mode: 'agent-01-and-02-calibration',
+      deliveryEnabled: false,
+      collection,
+      filtering,
+      deduplication,
+      reports: reports.filter((path) => path.includes('01-') || path.includes('02-')),
+    }, null, 2));
+    return;
+  }
 
   requireEnabled();
   await initializeCreddyDataRoot(root);
@@ -141,9 +208,9 @@ async function main(): Promise<void> {
     const result = await runCollectionStage({
       root,
       client: new FirecrawlClient({ apiKey: key }),
-      maxLinksPerSource: Number(process.env.CREDDY_MAX_LINKS_PER_SOURCE || 10),
-      maxArticleScrapes: Number(process.env.CREDDY_MAX_ARTICLE_SCRAPES || 40),
-      recheckAfterHours: Number(process.env.CREDDY_RECHECK_HOURS || 24),
+      maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, 10, 'CREDDY_MAX_LINKS_PER_SOURCE'),
+      maxArticleScrapes: positiveInteger(process.env.CREDDY_MAX_ARTICLE_SCRAPES, 40, 'CREDDY_MAX_ARTICLE_SCRAPES'),
+      recheckAfterHours: positiveNumber(process.env.CREDDY_RECHECK_HOURS, CREDDY_DISCOVERY_PROFILE.freshnessHours, 'CREDDY_RECHECK_HOURS'),
       ...(command === 'agent-1'
         ? {
             onProgress: (event: { phase: string; message: string }) => {

@@ -12,11 +12,11 @@ import { qualifyCreddyText } from './qualification.js';
 import { getCreddyRuntimeConfig } from './runtime.js';
 import { validateCreddyConfig } from './validate-config.js';
 
-test('all thirteen boss-approved sources are enabled', () => {
+test('all approved sources and the Geobreeze creator signal are enabled', () => {
   validateCreddyConfig();
   assert.equal(CREDDY_CAMPAIGN_SLUG, 'credit-card-rewards');
-  assert.equal(CREDDY_SOURCES.length, 13);
-  assert.equal(getEnabledCreddySources().length, 13);
+  assert.equal(CREDDY_SOURCES.length, 14);
+  assert.equal(getEnabledCreddySources().length, 14);
   assert.equal(
     getEnabledCreddySources().every((source) => source.cadence === 'twice_daily'),
     true,
@@ -25,12 +25,12 @@ test('all thirteen boss-approved sources are enabled', () => {
 
 test('topic and keyword configuration matches the approved plan', () => {
   assert.deepEqual(CREDDY_TOPIC_SEARCHES, [
-    'airline status',
-    'hotel status',
-    'points devaluation',
-    'points sweet spot',
+    '"transfer bonus" points miles airline hotel loyalty',
+    '("award chart" OR devaluation OR "program change") points miles airline hotel',
+    '("status match" OR "status challenge" OR "elite status") airline hotel loyalty',
+    '("sweet spot" OR redemption) points miles airline hotel',
   ]);
-  assert.equal(CREDDY_FILTER_KEYWORDS.length, 8);
+  assert.equal(CREDDY_FILTER_KEYWORDS.length, 20);
 });
 
 test('specific filter keywords use OR logic', () => {
@@ -71,6 +71,13 @@ test('generic gas redemption and gaming sweet spots do not pass the relevance ga
     qualifyCreddyText('GTA 6 map sweet spot and racing game status update.').qualifies,
     false,
   );
+});
+
+test('expanded editorial scope retains points sales, award space, and meaningful card changes', () => {
+  assert.equal(qualifyCreddyText('Airline points sale offers US travelers a 40% discount.').qualifies, true);
+  assert.equal(qualifyCreddyText('New airline award space opens for loyalty redemptions.').qualifies, true);
+  assert.equal(qualifyCreddyText('Major travel card benefit changes next month.').qualifies, true);
+  assert.equal(qualifyCreddyText('Chase adds a new StubHub statement credit for cardholders.').qualifies, true);
 });
 
 test('new Creddy pipeline is disabled by default', () => {

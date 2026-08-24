@@ -126,6 +126,7 @@ export async function runDedupeStage(
           sourceRecordId: record.id,
           canonicalUrl: record.canonicalUrl,
           rejectedAt: now.toISOString(),
+          dedupeRunId: runId,
           reason: qualityRejection?.reason ?? 'irrelevant',
           details: qualityRejection?.details ??
             'Legacy canonical record failed the strengthened travel/loyalty relevance gate.',
@@ -197,6 +198,7 @@ export async function runDedupeStage(
             sourceRecordId: article.id,
             canonicalUrl: article.canonicalUrl,
             rejectedAt: now.toISOString(),
+            dedupeRunId: runId,
             reason,
             details: `Attached as evidence to canonical record ${match.canonicalId}.`,
           };
