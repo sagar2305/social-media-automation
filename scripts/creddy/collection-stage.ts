@@ -447,12 +447,20 @@ export async function runCollectionStage(
         const title = String(page.metadata?.title ?? candidate.discoveredTitle ?? '').trim();
         const resolvedUrl = resolvedArticleUrl(candidate.url, page.metadata);
         const identity = buildArticleIdentity({ url: resolvedUrl, content: markdown, title });
+        const source = candidate.source ?? sourceForUrl(identity.canonicalUrl);
         const previous = index[identity.canonicalUrl];
         if (previous?.lastContentHash === identity.contentHash) {
           previous.lastFetchedAt = now.toISOString();
           index[candidate.url] = previous;
           const discovered = discoveryByUrl.get(candidate.url);
-          if (discovered) discovered.disposition = 'unchanged';
+          if (discovered) {
+            if (source) {
+              discovered.sourceId = source.id;
+              discovered.sourceName = source.name;
+            }
+            discovered.rawRecordId = previous.lastRecordId;
+            discovered.disposition = 'unchanged';
+          }
           manifest.skippedCount += 1;
           progress({
             phase: 'article_skipped',
@@ -464,7 +472,6 @@ export async function runCollectionStage(
         }
 
         const id = recordId(identity.canonicalUrl, identity.contentHash);
-        const source = candidate.source ?? sourceForUrl(identity.canonicalUrl);
         const record: RawArticleRecord = {
           version: CREDDY_PIPELINE_VERSION,
           id,

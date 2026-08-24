@@ -81,16 +81,31 @@ test('collection stores new content once and respects the recheck window', async
           },
         });
       }
+      if (body.url === 'https://doctorofcredit.com/new-transfer-bonus') {
+        return jsonResponse({
+          success: true,
+          data: {
+            markdown: 'Doctor of Credit reports a new airline transfer bonus for loyalty points.',
+            metadata: {
+              title: 'Doctor of Credit transfer bonus',
+              url: 'https://www.doctorofcredit.com/new-transfer-bonus/',
+            },
+          },
+        });
+      }
       return jsonResponse({
         success: true,
         data: {
           markdown: '# Listing',
-          links:
-            body.url === 'https://awardwallet.com/blog/'
-              ? ['https://awardwallet.com/blog/test-transfer-bonus']
+          links: body.url === 'https://awardwallet.com/blog/'
+            ? ['https://awardwallet.com/blog/test-transfer-bonus']
+            : body.url === 'https://www.doctorofcredit.com/'
+              ? ['https://doctorofcredit.com/new-transfer-bonus']
               : [],
           ...(body.url === 'https://awardwallet.com/blog/'
             ? { markdown: '[Test transfer bonus](https://awardwallet.com/blog/test-transfer-bonus)' }
+            : body.url === 'https://www.doctorofcredit.com/'
+              ? { markdown: '[Doctor transfer bonus](https://doctorofcredit.com/new-transfer-bonus)' }
             : {}),
           metadata: { title: 'Listing' },
         },
@@ -101,7 +116,7 @@ test('collection stores new content once and respects the recheck window', async
   const first = await runCollectionStage({
     root,
     client,
-    now: new Date('2026-08-19T12:00:00Z'),
+    now: new Date('2026-08-21T12:00:00Z'),
     redditFetchImpl: async () => new Response('', { status: 429 }),
     youtubeFetchImpl: async () => new Response('', { status: 429 }),
     onProgress: (event) => progressPhases.push(event.phase),
@@ -110,13 +125,18 @@ test('collection stores new content once and respects the recheck window', async
   assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 2);
   const discoveryFiles = await listJsonFiles(safeDataPath(root, '00-discovery'));
   const discovery = await readJson<{
-    candidates: Array<{ url: string; sourceId: string; discoveredTitle?: string }>;
+    candidates: Array<{
+      url: string;
+      sourceId: string;
+      disposition: string;
+      rawRecordId?: string;
+      discoveredTitle?: string;
+    }>;
   }>(discoveryFiles[0]);
   assert.equal(discovery.candidates[0].discoveredTitle, 'Test transfer bonus');
-  assert.equal(
-    discovery.candidates.find((item) => item.url.includes('opaque-doctor-of-credit'))?.sourceId,
-    'doctor-of-credit',
-  );
+  const redirectedDiscovery = discovery.candidates.find((item) => item.url.includes('opaque-doctor-of-credit'));
+  assert.equal(redirectedDiscovery?.sourceId, 'doctor-of-credit');
+  assert.equal(redirectedDiscovery?.disposition, 'unchanged');
   assert.ok(progressPhases.includes('run_started'));
   assert.ok(progressPhases.includes('source_started'));
   assert.ok(progressPhases.includes('search_completed'));
@@ -133,7 +153,7 @@ test('collection stores new content once and respects the recheck window', async
     'utf8',
   );
   assert.match(immutableReport, /stored: 2/);
-  assert.match(immutableReport, /Selection: selected=2 \(core=2, adjacent=0\)/);
+  assert.match(immutableReport, /Selection: selected=3 \(core=3, adjacent=0\)/);
   assert.doesNotMatch(immutableReport, /\| doctorofcredit\.com \|/);
   assert.match(immutableRawIndex, /New Transfer Bonus/);
 
@@ -145,6 +165,7 @@ test('collection stores new content once and respects the recheck window', async
   assert.equal(resolvedSearch?.sourceId, 'doctor-of-credit');
   assert.equal(resolvedSearch?.sourceTier, 'B');
   assert.equal(resolvedSearch?.factualUse, 'discovery_and_confirmation');
+  assert.equal(redirectedDiscovery?.rawRecordId, resolvedSearch?.id);
   const urlIndex = await readJson<Record<string, { lastRecordId: string }>>(
     safeDataPath(root, 'indexes', 'url-index.json'),
   );
@@ -154,7 +175,7 @@ test('collection stores new content once and respects the recheck window', async
   const second = await runCollectionStage({
     root,
     client,
-    now: new Date('2026-08-19T13:00:00Z'),
+    now: new Date('2026-08-21T13:00:00Z'),
     redditFetchImpl: async () => new Response('', { status: 429 }),
     youtubeFetchImpl: async () => new Response('', { status: 429 }),
   });
