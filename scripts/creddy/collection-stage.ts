@@ -122,6 +122,21 @@ export function sourceForUrl(url: string): CreddySourceConfig | null {
   );
 }
 
+export function resolvedArticleUrl(
+  requestedUrl: string,
+  metadata: Record<string, unknown> | undefined,
+): string {
+  for (const value of [metadata?.url, metadata?.ogUrl, metadata?.['og:url'], requestedUrl]) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    try {
+      return normalizeArticleUrl(value);
+    } catch {
+      // Provider metadata is untrusted; fall back to the next safe candidate.
+    }
+  }
+  return normalizeArticleUrl(requestedUrl);
+}
+
 function shouldRecheck(entry: UrlIndexEntry | undefined, now: Date, hours: number): boolean {
   if (!entry) return true;
   const fetchedAt = Date.parse(entry.lastFetchedAt);
@@ -430,10 +445,12 @@ export async function runCollectionStage(
         const markdown = page.markdown?.trim() ?? '';
         if (!markdown) throw new Error('Firecrawl returned empty Markdown');
         const title = String(page.metadata?.title ?? candidate.discoveredTitle ?? '').trim();
-        const identity = buildArticleIdentity({ url: candidate.url, content: markdown, title });
+        const resolvedUrl = resolvedArticleUrl(candidate.url, page.metadata);
+        const identity = buildArticleIdentity({ url: resolvedUrl, content: markdown, title });
         const previous = index[identity.canonicalUrl];
         if (previous?.lastContentHash === identity.contentHash) {
           previous.lastFetchedAt = now.toISOString();
+          index[candidate.url] = previous;
           const discovered = discoveryByUrl.get(candidate.url);
           if (discovered) discovered.disposition = 'unchanged';
           manifest.skippedCount += 1;
@@ -480,6 +497,7 @@ export async function runCollectionStage(
           lastContentHash: identity.contentHash,
           lastRecordId: id,
         };
+        index[candidate.url] = index[identity.canonicalUrl];
         manifest.outputCount += 1;
         progress({
           phase: 'article_stored',

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runCollectionStage, sourceForUrl } from './collection-stage.js';
+import { resolvedArticleUrl, runCollectionStage, sourceForUrl } from './collection-stage.js';
 import { runDedupeStage } from './dedupe-stage.js';
 import { articleTextForQualification, dataQualityRejection, runFilterStage } from './filter-stage.js';
 import { FirecrawlClient } from './firecrawl-client.js';
@@ -28,6 +28,15 @@ function jsonResponse(body: unknown): Response {
 
 test('multi-tenant YouTube results are not attributed to Geobreeze by hostname', () => {
   assert.equal(sourceForUrl('https://www.youtube.com/watch?v=another-channel'), null);
+});
+
+test('search redirects use the publisher URL reported by the completed scrape', () => {
+  assert.equal(
+    resolvedArticleUrl('https://google.com/goto?url=opaque', {
+      url: 'https://Publisher.Example/story/?utm_source=google#details',
+    }),
+    'https://publisher.example/story',
+  );
 });
 
 test('collection stores new content once and respects the recheck window', async () => {

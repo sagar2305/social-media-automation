@@ -82,7 +82,9 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     .filter((item) => item.sourceId.startsWith('topic-search:'))
     .reduce<Record<string, number>>((counts, item) => {
       try {
-        const domain = new URL(item.url).hostname.replace(/^www\./, '');
+        const domain = new URL(
+          (item.rawRecordId ? rawById.get(item.rawRecordId)?.canonicalUrl : undefined) ?? item.url,
+        ).hostname.replace(/^www\./, '');
         counts[domain] = (counts[domain] ?? 0) + 1;
       } catch {
         // Malformed URLs are already excluded by collection; keep reports resilient.
