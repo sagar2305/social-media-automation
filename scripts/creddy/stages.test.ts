@@ -45,9 +45,20 @@ test('collection stores new content once and respects the recheck window', async
   const client = new FirecrawlClient({
     apiKey: 'test',
     fetchImpl: async (url, init) => {
-      const body = JSON.parse(String(init?.body)) as { url?: string };
+      const body = JSON.parse(String(init?.body)) as { url?: string; query?: string };
       if (String(url).endsWith('/search')) {
-        return jsonResponse({ success: true, data: { news: [] }, creditsUsed: 1 });
+        return jsonResponse({
+          success: true,
+          data: {
+            news: body.query?.includes('"transfer bonus"')
+              ? [{
+                  title: 'Doctor of Credit transfer bonus',
+                  url: 'https://google.com/goto?url=opaque-doctor-of-credit',
+                }]
+              : [],
+          },
+          creditsUsed: 1,
+        });
       }
       if (body.url === 'https://awardwallet.com/blog/test-transfer-bonus') {
         return jsonResponse({
@@ -55,6 +66,18 @@ test('collection stores new content once and respects the recheck window', async
           data: {
             markdown: 'A new transfer bonus offers 20% more airline miles.',
             metadata: { title: 'New Transfer Bonus' },
+          },
+        });
+      }
+      if (body.url === 'https://google.com/goto?url=opaque-doctor-of-credit') {
+        return jsonResponse({
+          success: true,
+          data: {
+            markdown: 'Doctor of Credit reports a new airline transfer bonus for loyalty points.',
+            metadata: {
+              title: 'Doctor of Credit transfer bonus',
+              url: 'https://www.doctorofcredit.com/new-transfer-bonus/',
+            },
           },
         });
       }
@@ -83,11 +106,17 @@ test('collection stores new content once and respects the recheck window', async
     youtubeFetchImpl: async () => new Response('', { status: 429 }),
     onProgress: (event) => progressPhases.push(event.phase),
   });
-  assert.equal(first.outputCount, 1);
-  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 1);
+  assert.equal(first.outputCount, 2);
+  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 2);
   const discoveryFiles = await listJsonFiles(safeDataPath(root, '00-discovery'));
-  const discovery = await readJson<{ candidates: Array<{ discoveredTitle?: string }> }>(discoveryFiles[0]);
+  const discovery = await readJson<{
+    candidates: Array<{ url: string; sourceId: string; discoveredTitle?: string }>;
+  }>(discoveryFiles[0]);
   assert.equal(discovery.candidates[0].discoveredTitle, 'Test transfer bonus');
+  assert.equal(
+    discovery.candidates.find((item) => item.url.includes('opaque-doctor-of-credit'))?.sourceId,
+    'doctor-of-credit',
+  );
   assert.ok(progressPhases.includes('run_started'));
   assert.ok(progressPhases.includes('source_started'));
   assert.ok(progressPhases.includes('search_completed'));
@@ -103,9 +132,24 @@ test('collection stores new content once and respects the recheck window', async
     safeDataPath(root, 'reports', 'runs', first.runId, '01-raw-article-index.md'),
     'utf8',
   );
-  assert.match(immutableReport, /stored: 1/);
-  assert.match(immutableReport, /Selection: selected=1 \(core=1, adjacent=0\)/);
+  assert.match(immutableReport, /stored: 2/);
+  assert.match(immutableReport, /Selection: selected=2 \(core=2, adjacent=0\)/);
+  assert.doesNotMatch(immutableReport, /\| doctorofcredit\.com \|/);
   assert.match(immutableRawIndex, /New Transfer Bonus/);
+
+  const rawRecords = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '01-raw'))).map((path) => readJson<RawArticleRecord>(path)),
+  );
+  const resolvedSearch = rawRecords.find((record) =>
+    record.canonicalUrl === 'https://doctorofcredit.com/new-transfer-bonus');
+  assert.equal(resolvedSearch?.sourceId, 'doctor-of-credit');
+  assert.equal(resolvedSearch?.sourceTier, 'B');
+  assert.equal(resolvedSearch?.factualUse, 'discovery_and_confirmation');
+  const urlIndex = await readJson<Record<string, { lastRecordId: string }>>(
+    safeDataPath(root, 'indexes', 'url-index.json'),
+  );
+  assert.equal(urlIndex['https://google.com/goto?url=opaque-doctor-of-credit']?.lastRecordId, resolvedSearch?.id);
+  assert.equal(urlIndex['https://doctorofcredit.com/new-transfer-bonus']?.lastRecordId, resolvedSearch?.id);
 
   const second = await runCollectionStage({
     root,
@@ -115,7 +159,7 @@ test('collection stores new content once and respects the recheck window', async
     youtubeFetchImpl: async () => new Response('', { status: 429 }),
   });
   assert.equal(second.outputCount, 0);
-  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 1);
+  assert.equal((await listJsonFiles(safeDataPath(root, '01-raw'))).length, 2);
 });
 
 test('filter applies OR keywords and dedupe attaches duplicate evidence', async () => {

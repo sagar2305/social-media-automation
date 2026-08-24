@@ -464,7 +464,7 @@ export async function runCollectionStage(
         }
 
         const id = recordId(identity.canonicalUrl, identity.contentHash);
-        const source = candidate.source;
+        const source = candidate.source ?? sourceForUrl(identity.canonicalUrl);
         const record: RawArticleRecord = {
           version: CREDDY_PIPELINE_VERSION,
           id,
@@ -489,6 +489,10 @@ export async function runCollectionStage(
         );
         const discovered = discoveryByUrl.get(candidate.url);
         if (discovered) {
+          if (source) {
+            discovered.sourceId = source.id;
+            discovered.sourceName = source.name;
+          }
           discovered.disposition = 'stored_raw';
           discovered.rawRecordId = id;
         }
