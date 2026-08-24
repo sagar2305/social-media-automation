@@ -18,9 +18,12 @@
 5. Slack is allowed only for an important, material, message-changing conflict
    after verification is exhausted. Signed Process/Skip/Hold actions are audited
    and idempotent.
-6. Codex scheduled content generation creates scripts, captions, app deep links,
-   briefs, visual prompts, optional generated-image paths, and two versioned video
-   jobs without requiring `OPENAI_API_KEY`.
+6. Agent 04 generates four distinct, claim-traceable concepts and selects one
+   qualified-attention promise before writing. It adapts that promise into blog,
+   newsletter, YouTube, Instagram, and TikTok headline packs, then creates the
+   six-slide copy, narration, captions, app deep link, and production brief.
+   Unsupported numbers, superlatives, fabricated experience, and clickbait fail
+   validation; full long-form bodies and media remain later work.
 7. The isolated Creddy Video Factory runtime at
    `/Users/mohitkourav/Code/video-factory-creddy` uses the official
    `thebrewapps/video-factory` cream/gold templates, supplied mascot pose pack,
@@ -64,7 +67,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 125 automated unit/integration tests pass.
+- 131 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.

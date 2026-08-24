@@ -66,7 +66,7 @@ export function selectCreddyExpression(
 
 function contentDraftFiles(root: string): Promise<string[]> {
   return listJsonFiles(safeDataPath(root, '06-content-drafts')).then((files) =>
-    files.filter((path) => !/\/(scripts|captions|briefs)\//.test(path)),
+    files.filter((path) => !/\/(scripts|captions|briefs|legacy)\//.test(path)),
   );
 }
 
@@ -150,6 +150,9 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
   if (plan.id !== `visual-${plan.contentDraftId}`) throw new Error('Visual-plan stable ID mismatch');
   if (plan.analysisId !== task.draft.analysisId || plan.canonicalId !== task.draft.canonicalId) {
     throw new Error('Visual-plan identity mismatch');
+  }
+  if (plan.cover.headline !== task.draft.hook) {
+    throw new Error('Visual plan must preserve the selected Agent 4 hook exactly');
   }
   if (plan.scenes.length !== task.draft.textScenes.length) {
     throw new Error('Visual plan must contain exactly one scene per Agent 4 text scene');

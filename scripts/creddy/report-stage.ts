@@ -528,23 +528,60 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   );
   const drafts = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '06-content-drafts')))
-      .filter((path) => !/\/(scripts|captions|briefs)\//.test(path))
+      .filter((path) => !/\/(scripts|captions|briefs|legacy)\//.test(path))
       .map((path) => readJson<ContentDraftRecord>(path)),
   );
   const packages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path));
+  const opportunityIds = new Set(opportunities.map((opportunity) => opportunity.id));
+  const conceptDrafts = drafts.filter((draft) =>
+    opportunityIds.has(draft.analysisId) && draft.copyVersion === 'creddy-copy-v2' && draft.conceptPack);
   const contentLines = [
     '# Agent 04 — Scripts, captions, CTA, and production briefs', '',
     `Generated: ${new Date().toISOString()}`,
     `Content opportunities: ${opportunities.length}`,
-    `Completed copy drafts: ${drafts.length}`,
-    `Pending copy drafts: ${Math.max(0, opportunities.length - drafts.length)}`,
+    `Completed copy drafts: ${conceptDrafts.length}`,
+    `Pending copy drafts: ${Math.max(0, opportunities.length - conceptDrafts.length)}`,
     '',
     '> Agent 04 writes copy only. It does not generate images, choose mascot expressions, create Video Factory jobs, render, approve, schedule, or publish.',
     '',
-    '| Hook | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
-    '|---|---|---:|---:|---|---|---|---:|',
-    ...drafts.map((draft) => `| ${cell(draft.hook)} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`),
+    '| Hook | Selected style | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
+    '|---|---|---|---:|---:|---|---|---|---:|',
+    ...drafts.map((draft) => {
+      const selected = draft.conceptPack?.candidates.find((candidate) =>
+        candidate.id === draft.conceptPack?.selectedCandidateId);
+      return `| ${cell(draft.hook)} | ${cell(selected?.style ?? 'legacy')} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`;
+    }),
+    '',
+    '## Concept candidates and selection',
+    '',
+    '> Accepted copy-v2 records passed structural claim references, numeric-token checks, guarded superlatives, display limits, fulfillment excerpts, and banned-phrase validation. Factual entailment remains an Agent 04 authoring and human-review responsibility.',
+    '',
+    ...conceptDrafts.flatMap((draft) => {
+      const pack = draft.conceptPack!;
+      return [
+        `### ${cell(draft.hook)}`,
+        '',
+        `Selected: ${cell(pack.selectedCandidateId)} — ${cell(pack.selectionRationale)}`,
+        `Promise resolved by slide ${pack.resolution.slideNumber}: ${cell(pack.resolution.explanation)}`,
+        '',
+        '| Candidate | Style | Concept | Promise | Claim fields | Decision |',
+        '|---|---|---|---|---|---|',
+        ...pack.candidates.map((candidate) => {
+          const rejection = pack.rejectionReasons.find((item) => item.candidateId === candidate.id);
+          return `| ${cell(candidate.id)} | ${cell(candidate.style)} | ${cell(candidate.concept)} | ${cell(candidate.promise)} | ${cell(candidate.supportingClaimFields.join(', '))} | ${rejection ? `Rejected: ${cell(rejection.reason)}` : 'Selected'} |`;
+        }),
+        '',
+      ];
+    }),
+    '## Platform headline packs',
+    '',
+    '| Selected hook | Blog | Newsletter | YouTube | Thumbnail | YouTube Short | Instagram | TikTok |',
+    '|---|---|---|---|---|---|---|---|',
+    ...conceptDrafts.map((draft) => {
+      const platforms = draft.conceptPack!.platforms;
+      return `| ${cell(draft.hook)} | ${cell(platforms.blog.headline)} | ${cell(`${platforms.newsletter.subject} — ${platforms.newsletter.preheader}`)} | ${cell(platforms.youtubeLong.title)} | ${cell(platforms.youtubeLong.thumbnailPhrase)} | ${cell(platforms.youtubeShort.title)} | ${cell(platforms.instagram.coverHook)} | ${cell(platforms.tiktok.coverHook)} |`;
+    }),
     '',
     '## Downstream legacy/output status',
     '',

@@ -33,7 +33,7 @@ function topLevelJson(paths: string[], nested: RegExp): string[] {
 export async function listProductionTasks(root: string): Promise<ProductionTaskRecord[]> {
   const draftPaths = topLevelJson(
     await listJsonFiles(safeDataPath(root, '06-content-drafts')),
-    /\/(scripts|captions|briefs)\//,
+    /\/(scripts|captions|briefs|legacy)\//,
   );
   const drafts = await Promise.all(draftPaths.map((path) => readJson<ContentDraftRecord>(path)));
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));

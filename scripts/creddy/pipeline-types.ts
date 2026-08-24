@@ -305,6 +305,9 @@ export interface ContentPackageRecord {
 
 export interface ContentDraftRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  /** New Agent 04 drafts use the claim-traceable concept contract. Omitted only
+   * on legacy drafts that remain readable by downstream stages. */
+  copyVersion?: 'creddy-copy-v2';
   id: string;
   analysisId: string;
   canonicalId: string;
@@ -312,6 +315,7 @@ export interface ContentDraftRecord {
   audience: string;
   slot: 'act_now' | 'understand' | 'decide_or_discuss';
   hook: string;
+  conceptPack?: ContentConceptPack;
   textScenes: string[];
   narrationScript: string;
   instagramCaption: string;
@@ -325,6 +329,49 @@ export interface ContentDraftRecord {
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+}
+
+export type ContentConceptStyle =
+  | 'specific_payoff'
+  | 'loss_avoidance'
+  | 'surprising_result'
+  | 'contrast'
+  | 'decision_question'
+  | 'timely_change'
+  | 'myth_correction';
+
+export interface ContentConceptCandidate {
+  id: string;
+  style: ContentConceptStyle;
+  concept: string;
+  promise: string;
+  supportingClaimFields: string[];
+}
+
+export interface ClaimTracedCopy {
+  claimFields: string[];
+}
+
+export interface ContentConceptPack {
+  candidates: ContentConceptCandidate[];
+  selectedCandidateId: string;
+  selectionRationale: string;
+  rejectionReasons: Array<{ candidateId: string; reason: string }>;
+  resolution: { slideNumber: 2 | 3; slideExcerpt: string; explanation: string };
+  fulfillment: {
+    slideNumbers: number[];
+    narrationExcerpt: string;
+    instagramCaptionExcerpt: string;
+    tiktokCaptionExcerpt: string;
+  };
+  platforms: {
+    blog: ClaimTracedCopy & { headline: string; lede: string };
+    newsletter: ClaimTracedCopy & { subject: string; preheader: string };
+    youtubeLong: ClaimTracedCopy & { title: string; thumbnailPhrase: string; openingLine: string };
+    youtubeShort: ClaimTracedCopy & { title: string; openingLine: string };
+    instagram: ClaimTracedCopy & { coverHook: string; captionOpener: string };
+    tiktok: ClaimTracedCopy & { coverHook: string; captionOpener: string };
+  };
 }
 
 export interface ContentOpportunityTaskRecord {

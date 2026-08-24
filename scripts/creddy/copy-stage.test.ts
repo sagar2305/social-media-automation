@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { acceptContentDraft, listPendingCopyTasks, validateContentDraft } from './copy-stage.js';
+import {
+  acceptContentDraft,
+  listPendingCopyTasks,
+  validateContentConceptPack,
+  validateContentDraft,
+} from './copy-stage.js';
 import { initializeCreddyDataRoot, listJsonFiles, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import {
   CREDDY_PIPELINE_VERSION,
@@ -44,7 +49,8 @@ function decision(): AnalysisDecisionRecord {
 
 function draft(): ContentDraftRecord {
   return {
-    version: CREDDY_PIPELINE_VERSION, id: 'copy-analysis-1', analysisId: 'analysis-1',
+    version: CREDDY_PIPELINE_VERSION, copyVersion: 'creddy-copy-v2',
+    id: 'copy-analysis-1', analysisId: 'analysis-1',
     canonicalId: 'canonical-1', createdAt: '2026-08-19T12:30:00.000Z',
     audience: 'US rewards optimizers', slot: 'understand', hook: 'A transfer bonus can change the math',
     textScenes: [
@@ -62,6 +68,40 @@ function draft(): ContentDraftRecord {
     cta: { label: 'Open Creddy', deepLink: 'creddy://benefits' },
     brief: 'Educational US rewards post with a clear transfer caution.',
     sourceUrls: ['https://awardwallet.com/blog/bonus'], factualClaims: decision().claims,
+    conceptPack: {
+      candidates: [
+        { id: 'payoff', style: 'specific_payoff', concept: 'A transfer bonus can stretch your points', promise: 'Show when a transfer bonus improves the redemption math.', supportingClaimFields: ['bonus_amount'] },
+        { id: 'loss', style: 'loss_avoidance', concept: 'Moving points too early can backfire', promise: 'Show why checking award space before a transfer matters.', supportingClaimFields: ['bonus_amount'] },
+        { id: 'contrast', style: 'contrast', concept: 'More miles does not always mean more value', promise: 'Contrast a larger balance with the award someone can actually book.', supportingClaimFields: ['bonus_amount'] },
+        { id: 'decision', style: 'decision_question', concept: 'Should you use a transfer bonus?', promise: 'Give the audience a practical decision rule before transferring.', supportingClaimFields: ['bonus_amount'] },
+      ],
+      selectedCandidateId: 'payoff',
+      selectionRationale: 'The payoff is immediately clear and supports a useful caution.',
+      rejectionReasons: [
+        { candidateId: 'loss', reason: 'More negative than this educational item needs.' },
+        { candidateId: 'contrast', reason: 'Less direct for a short social cover.' },
+        { candidateId: 'decision', reason: 'The question is less specific than the payoff.' },
+      ],
+      resolution: {
+        slideNumber: 2,
+        slideExcerpt: 'Eligible transfers receive 20% more program miles',
+        explanation: 'Slide 2 states the accepted bonus and deadline.',
+      },
+      fulfillment: {
+        slideNumbers: [1, 2, 3],
+        narrationExcerpt: 'A 20 percent transfer bonus can stretch your points',
+        instagramCaptionExcerpt: 'A transfer bonus can help',
+        tiktokCaptionExcerpt: 'award space first',
+      },
+      platforms: {
+        blog: { headline: 'When a Transfer Bonus Actually Helps', lede: 'A larger mileage balance matters when the award you want is available.', claimFields: ['bonus_amount'] },
+        newsletter: { subject: 'Check the award before transferring', preheader: 'A transfer bonus can improve the math, but availability comes first.', claimFields: ['bonus_amount'] },
+        youtubeLong: { title: 'When a Transfer Bonus Is Actually Worth It', thumbnailPhrase: 'Check Award Space', openingLine: 'A transfer bonus helps when the award you want is bookable.', claimFields: ['bonus_amount'] },
+        youtubeShort: { title: 'Check This Before a Points Transfer', openingLine: 'A transfer bonus can help—but check the seat before moving points.', claimFields: ['bonus_amount'] },
+        instagram: { coverHook: 'A transfer bonus can change the math', captionOpener: 'A transfer bonus can help, but availability comes first.', claimFields: ['bonus_amount'] },
+        tiktok: { coverHook: 'Check the seat before transferring', captionOpener: 'A bigger bonus is useless when the award is gone.', claimFields: ['bonus_amount'] },
+      },
+    },
   };
 }
 
@@ -80,6 +120,18 @@ test('Agent 4 accepts copy-only output without creating video jobs', async () =>
   assert.equal((await listPendingCopyTasks(root)).length, 0);
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts'))).length, 4);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+});
+
+test('Agent 4 requeues legacy drafts for a claim-traceable concept pack', async () => {
+  const root = await fixture();
+  const legacy = draft();
+  delete legacy.copyVersion;
+  delete legacy.conceptPack;
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${legacy.id}.json`), legacy);
+  assert.equal((await listPendingCopyTasks(root)).length, 1);
+  await acceptContentDraft(root, draft());
+  assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts', 'legacy'))).length, 1);
+  assert.equal((await listPendingCopyTasks(root)).length, 0);
 });
 
 test('Agent 4 rejects changed accepted claims', async () => {
@@ -113,4 +165,44 @@ test('Agent 4 rejects publisher names in on-slide copy but permits caption attri
     () => acceptContentDraft(root, invalid),
     /independent of the publisher/,
   );
+});
+
+test('Agent 4 rejects unsupported numbers in concept copy', () => {
+  const invalid = draft();
+  invalid.conceptPack!.platforms.blog.headline = 'The 30% Transfer Bonus Decision';
+  assert.throws(() => validateContentConceptPack(invalid), /unsupported number/);
+});
+
+test('Agent 4 requires exactly four distinct concept styles and accepted claim references', () => {
+  const duplicate = draft();
+  duplicate.conceptPack!.candidates[1]!.style = 'specific_payoff';
+  assert.throws(() => validateContentConceptPack(duplicate), /unique IDs, styles/);
+  const untraced = draft();
+  untraced.conceptPack!.platforms.youtubeLong.claimFields = ['invented'];
+  assert.throws(() => validateContentConceptPack(untraced), /accepted factual claim fields/);
+});
+
+test('Agent 4 rejects clickbait and requires exact fulfillment excerpts', () => {
+  const bait = draft();
+  bait.conceptPack!.platforms.tiktok.coverHook = 'A SECRET transfer hack';
+  assert.throws(() => validateContentConceptPack(bait), /prohibited clickbait/);
+  const missing = draft();
+  missing.conceptPack!.fulfillment.narrationExcerpt = 'This does not appear';
+  assert.throws(() => validateContentConceptPack(missing), /must appear exactly/);
+  const personal = draft();
+  personal.conceptPack!.platforms.blog.headline = 'What I Wish I Knew About Transfers';
+  assert.throws(() => validateContentConceptPack(personal), /prohibited clickbait/);
+  const urgency = draft();
+  urgency.conceptPack!.platforms.newsletter.subject = 'Last chance: transfer your points';
+  assert.throws(() => validateContentConceptPack(urgency), /prohibited clickbait/);
+});
+
+test('Agent 4 requires the declared resolution excerpt and selected claim fields', () => {
+  const missingPayoff = draft();
+  missingPayoff.conceptPack!.resolution.slideExcerpt = 'Not on the selected slide';
+  assert.throws(() => validateContentConceptPack(missingPayoff), /resolution excerpt/);
+  const changedAngle = draft();
+  changedAngle.factualClaims.push({ field: 'other', value: 'Other fact', sourceRecordIds: ['raw-1'], confidence: 90 });
+  changedAngle.conceptPack!.candidates[0]!.supportingClaimFields.push('other');
+  assert.throws(() => validateContentConceptPack(changedAngle), /preserve every selected-concept claim field/);
 });
