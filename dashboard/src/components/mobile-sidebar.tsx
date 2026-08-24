@@ -20,22 +20,16 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
 export function MobileSidebar({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [openPathname, setOpenPathname] = useState<string | null>(null);
   const pathname = usePathname();
-
-  // Auto-close on route change. The drawer's nav links are <Link>s, so
-  // tapping one navigates without unmounting this component; we close
-  // explicitly so the user lands on the new page with the drawer gone.
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  const open = openPathname === pathname;
 
   // Escape key closes. Keep listener active only while open to avoid
   // adding handlers to every page in the app.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setOpenPathname(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -58,7 +52,7 @@ export function MobileSidebar({ children }: { children: React.ReactNode }) {
         type="button"
         aria-label="Open navigation"
         aria-expanded={open}
-        onClick={() => setOpen(true)}
+        onClick={() => setOpenPathname(pathname)}
         className="md:hidden p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
       >
         <Menu className="h-5 w-5" />
@@ -67,7 +61,7 @@ export function MobileSidebar({ children }: { children: React.ReactNode }) {
       {/* Backdrop */}
       <div
         aria-hidden
-        onClick={() => setOpen(false)}
+        onClick={() => setOpenPathname(null)}
         className={`fixed inset-0 z-40 bg-background/60 backdrop-blur-sm transition-opacity md:hidden ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
@@ -96,7 +90,7 @@ export function MobileSidebar({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             aria-label="Close navigation"
-            onClick={() => setOpen(false)}
+            onClick={() => setOpenPathname(null)}
             className="p-2 -mr-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <X className="h-5 w-5" />
