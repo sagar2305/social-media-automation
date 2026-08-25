@@ -156,7 +156,7 @@ test('Agent 5 rejects a 3:4 slideshow that does not contain exactly six scenes',
 
 test('Agent 5 cannot invent an expression outside the Creddy manifest', () => {
   const invalid = plan();
-  invalid.scenes[0]!.expression = 'excited';
+  invalid.scenes[0]!.expression = '999-invented' as VisualPlanRecord['scenes'][number]['expression'];
   assert.throws(() => validateVisualPlan(invalid), /not present in the Creddy manifest/);
 });
 
@@ -167,9 +167,9 @@ test('Agent 5 requires expression variety and maps scene meaning to approved pos
     () => validateVisualPlan(repetitive),
     /at least two script-appropriate expressions|Adjacent Creddy slideshow scenes cannot repeat/,
   );
-  assert.equal(selectCreddyExpression({ role: 'context', text: 'Which card should you use?' }), 'thinking');
-  assert.equal(selectCreddyExpression({ role: 'caution', text: 'This benefit is ending soon.' }), 'worried');
-  assert.equal(selectCreddyExpression({ role: 'fact', text: 'Earn more rewards and points.' }), 'rewards');
+  assert.match(selectCreddyExpression({ role: 'context', text: 'Which card should you use?' }), /^(011|012|013|014|016|017|073|074|075)-/);
+  assert.match(selectCreddyExpression({ role: 'caution', text: 'This benefit is ending soon.' }), /^(018|023|025|026|065|096)-/);
+  assert.match(selectCreddyExpression({ role: 'fact', text: 'Earn more rewards and points.' }), /^(003|004|006|007|082|090|091|100)-/);
 });
 
 test('Agent 5 rejects repetitive six-slide slideshows permanently', () => {

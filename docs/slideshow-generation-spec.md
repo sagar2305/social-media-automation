@@ -87,7 +87,7 @@ These are release gates, not optional art direction:
   `curious`, `skeptical`, `pointing`, `happy`, and `urgent`.
 - Slides 1–5 must contain five distinct, script-appropriate character
   expressions. Adjacent slides may never repeat the same expression.
-- Batch selection must balance usage across all 20 expressions. Reusing one
+- Batch selection must balance usage across all 100 v4 expressions. Reusing one
   generic pose throughout different posts is a failed render.
 - Slide 6 must use one approved real Creddy phone-screen template. Select among
   `wallet_vouchers`, `spend_goals`, `app_store_dark`, and `app_store_light`

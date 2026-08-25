@@ -618,7 +618,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Archived/legacy visual plans: ${Math.max(0, visualPlans.length - currentVisualPlans.length)}`,
     '',
     '> Agent 05 plans visuals only. It does not generate/download images, create Video Factory jobs, render, approve, schedule, or publish.',
-    '> Allowed character expressions use the complete approved Creddy library: neutral, waving, thinking, confused, idea, worried, surprised, sleepy, sad, wink, card, thumbs-up, guide, rewards, celebrate, curious, skeptical, pointing, happy, urgent.',
+    '> Allowed character expressions use the complete approved 100-expression Creddy v4 manifest; Agent 5 returns the exact three-digit emotion ID and chooses the closest face and gesture for the scene meaning.',
     '> Six-slide posts require at least five distinct visible expressions, forbid adjacent expression repeats, and end with one approved real Creddy phone-screen template.',
     '',
     '| Cover | Theme | Scenes | Expressions | Generated illustration scenes | Safety overlays |',

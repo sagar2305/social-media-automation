@@ -17,13 +17,10 @@ import {
 } from './pipeline-types.js';
 import { phoneTemplateForDraft } from './product-capabilities.js';
 import { validateCreddyArticleVisuals } from './article-content.js';
+import { CREDDY_APPROVED_EXPRESSIONS } from './expression-library.js';
 import { isVerifiedSocialDecision, listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
-export const CREDDY_MANIFEST_EXPRESSIONS = new Set<CreddyCharacterExpression>([
-  'neutral', 'waving', 'thinking', 'confused', 'celebrate', 'guide', 'surprised',
-  'sleepy', 'wink', 'thumbs-up', 'sad', 'worried', 'card', 'rewards', 'curious',
-  'skeptical', 'idea', 'pointing', 'happy', 'urgent',
-]);
+export const CREDDY_MANIFEST_EXPRESSIONS = CREDDY_APPROVED_EXPRESSIONS;
 
 export const CREDDY_VIDEO_THEMES = new Set<CreddyVisualTheme>([
   'editorial', 'midnight', 'ledger', 'poster', 'aurora',
@@ -41,36 +38,42 @@ export function selectCreddyExpression(
   previous?: CreddyCharacterExpression,
 ): CreddyCharacterExpression {
   const text = scene.text.toLowerCase();
-  const choose = (...options: CreddyCharacterExpression[]): CreddyCharacterExpression =>
-    options.find((option) => option !== previous) ?? options[0]!;
+  const choose = (...options: CreddyCharacterExpression[]): CreddyCharacterExpression => {
+    const hash = [...`${scene.role}:${text}`].reduce((sum, character) => ((sum * 31) + character.charCodeAt(0)) >>> 0, 0);
+    for (let offset = 0; offset < options.length; offset += 1) {
+      const option = options[(hash + offset) % options.length]!;
+      if (option !== previous) return option;
+    }
+    return options[0]!;
+  };
 
   if (/expired|missed|lost|denied|devalu|bad news|removed|ending/.test(text)) {
-    return choose('worried', 'sad', 'skeptical', 'urgent');
+    return choose('018-worried', '023-sad', '025-disappointed', '026-discouraged', '065-concerned', '096-concerned-frown');
   }
   if (/urgent|deadline|last chance|today only|act now|immediately/.test(text)) {
-    return choose('urgent', 'surprised', 'worried');
+    return choose('068-urgent', '067-alert', '069-startled', '070-overwhelmed', '071-stressed', '072-panicked');
   }
   if (/\?|which|should|why|how|compare|worth it/.test(text)) {
-    return choose('thinking', 'confused', 'curious', 'skeptical', 'idea');
+    return choose('011-curious', '012-confused', '013-puzzled', '014-skeptical', '016-doubtful', '017-uncertain', '073-confused-side-eye', '074-thinking-left', '075-thinking-right');
   }
   if (/new|did you know|sweet spot|discovered|strategy|tip/.test(text)) {
-    return choose('idea', 'curious', 'wink', 'pointing');
+    return choose('008-amazed', '011-curious', '049-confident-wink', '060-hopeful', '061-inspired', '076-looking-up-hopeful', '093-surprised-smile');
   }
   if (/points|miles|cashback|cash back|rewards|bonus|value/.test(text)) {
-    return choose('rewards', 'happy', 'celebrate', 'thumbs-up');
+    return choose('003-happy-smile', '004-joyful-open-smile', '006-delighted', '007-excited', '082-rewards-excited', '090-big-grin', '091-toothy-grin', '100-celebratory-face');
   }
   if (/credit card|card benefit|annual fee|statement credit/.test(text)) {
-    return choose('card', 'guide', 'pointing');
+    return choose('048-confident', '052-cheeky', '063-focused', '064-serious', '065-concerned', '066-cautious');
   }
   if (/approved|eligible|confirmed|works|success/.test(text)) {
-    return choose('thumbs-up', 'celebrate', 'happy', 'wink');
+    return choose('045-relieved', '046-grateful', '047-proud', '048-confident', '086-relieved-smile', '087-proud-smile', '089-warm-smile', '100-celebratory-face');
   }
-  if (scene.role === 'caution') return choose('worried', 'urgent', 'skeptical', 'surprised');
-  if (scene.role === 'cta') return choose('pointing', 'waving', 'thumbs-up', 'wink');
-  if (scene.role === 'hook') return choose('surprised', 'idea', 'curious');
-  if (scene.role === 'fact') return choose('guide', 'card', 'rewards', 'thumbs-up');
-  if (scene.role === 'context') return choose('thinking', 'curious', 'guide');
-  return choose('neutral', 'waving');
+  if (scene.role === 'caution') return choose('018-worried', '065-concerned', '066-cautious', '067-alert', '068-urgent', '096-concerned-frown');
+  if (scene.role === 'cta') return choose('002-happy-waving', '003-happy-smile', '007-excited', '089-warm-smile', '092-silly-tongue', '100-celebratory-face');
+  if (scene.role === 'hook') return choose('008-amazed', '009-surprised', '010-shocked', '069-startled', '093-surprised-smile');
+  if (scene.role === 'fact') return choose('047-proud', '048-confident', '063-focused', '064-serious', '082-rewards-excited');
+  if (scene.role === 'context') return choose('011-curious', '042-calm', '043-peaceful', '074-thinking-left', '075-thinking-right');
+  return choose('001-neutral-friendly', '003-happy-smile', '088-gentle-smile', '089-warm-smile');
 }
 
 function contentDraftFiles(root: string): Promise<string[]> {

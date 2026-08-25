@@ -9,7 +9,8 @@ import { CREDDY_PIPELINE_VERSION, type ContentBankRecord, type ContentDraftRecor
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
 
 const expressions = ['neutral', 'waving', 'thinking', 'confused', 'celebrate', 'pointing'] as const;
-const files = ['01-neutral-friendly.png', '02-waving-hello.png', '03-thinking.png', '04-confused.png', '05-celebrating.png'];
+const files = ['001-neutral-friendly.png', '002-happy-waving.png', '074-thinking-left.png', '012-confused.png', '100-celebratory-face.png'];
+const legacyFiles = ['01-neutral-friendly.png', '02-waving-hello.png', '03-thinking.png', '04-confused.png', '05-celebrating.png'];
 
 async function fixture(): Promise<{ root: string; manifest: Record<string, unknown> }> {
   const root = await mkdtemp(join(tmpdir(), 'creddy-slideshow-bank-'));
@@ -45,7 +46,7 @@ async function fixture(): Promise<{ root: string; manifest: Record<string, unkno
     slides: expressions.map((expression, index) => ({
       number: index + 1, file: `slide-${String(index + 1).padStart(2, '0')}.png`, sourceText: `Scene ${index + 1}`,
       expression, templateFamily: index === 5 ? 'phone-screen' : 'expression',
-      template: index === 5 ? 'assets/creddy/slideshow-templates/phone-screens/creddy-phone-app-store-dark-1080x1440.png' : `assets/creddy/slideshow-expressions-1080x1440/${files[index]}`,
+      template: index === 5 ? 'assets/creddy/slideshow-templates/phone-screens/creddy-phone-app-store-dark-1080x1440.png' : `assets/creddy/slideshow-emotion-gestures-v4-1080x1440/${files[index]}`,
       phoneTemplateId: index === 5 ? 'app_store_dark' : null, headlineLayout: layout,
       supportCopy: index === 5 ? '' : 'Support', supportLayout: index === 5 ? null : support,
     })),
@@ -70,6 +71,18 @@ test('Agent 7 accepts only a varied six-slide locked-template slideshow', async 
   const rerun = await runSlideshowContentBankHandoff(root, new Date(), notifier);
   assert.equal(rerun.slackNotificationsSkipped, 1);
   assert.equal(notifications, 1, 'a persisted receipt prevents duplicate Slack messages');
+});
+
+test('Agent 7 keeps already-rendered legacy expression manifests readable', async () => {
+  const { root, manifest } = await fixture();
+  const slides = manifest.slides as Array<Record<string, unknown>>;
+  slides.slice(0, 5).forEach((slide, index) => {
+    slide.template = `assets/creddy/slideshow-expressions-1080x1440/${legacyFiles[index]}`;
+  });
+  await writeJsonAtomic(safeDataPath(root, '07-slideshow-renders', 'plan-1', 'manifest.json'), manifest);
+  const result = await runSlideshowContentBankHandoff(root);
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.created, 1);
 });
 
 test('Agent 7 accepts the role-driven renderer with semantic emphasis and optional compact support', async () => {

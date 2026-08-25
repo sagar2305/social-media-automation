@@ -16,6 +16,7 @@ import {
   type VideoJobRecord,
 } from './pipeline-types.js';
 import { validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
+import { CREDDY_APPROVED_EXPRESSIONS } from './expression-library.js';
 
 export function validateContentPackage(content: ContentPackageRecord): ContentPackageRecord {
   if (content.version !== CREDDY_PIPELINE_VERSION) throw new Error('Invalid content version');
@@ -50,15 +51,9 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
     if (!content.articleReadiness) throw new Error('Website article requires an asset-readiness state');
   }
   if (content.characterExpressions !== undefined) {
-    const supported = new Set([
-      'neutral', 'waving', 'thinking', 'confused', 'idea', 'worried', 'surprised',
-      'sleepy', 'starstruck', 'sad', 'wink', 'card', 'thumbs-up',
-      'guide', 'rewards', 'celebrate', 'curious', 'skeptical', 'happy',
-      'excited', 'concerned', 'celebrating', 'pointing', 'explaining', 'urgent',
-    ]);
     if (!Array.isArray(content.characterExpressions)
       || content.characterExpressions.length !== content.scriptLines.length
-      || content.characterExpressions.some((expression) => !supported.has(expression))) {
+      || content.characterExpressions.some((expression) => !CREDDY_APPROVED_EXPRESSIONS.has(expression))) {
       throw new Error('characterExpressions must contain one supported expression per script line');
     }
   }

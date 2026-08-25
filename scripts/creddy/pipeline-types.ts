@@ -1,3 +1,5 @@
+import type { CreddyLegacyExpression, CreddyV4Expression } from './expression-library.js';
+
 export const CREDDY_PIPELINE_VERSION = 1 as const;
 
 export type CreddyPipelineStage =
@@ -535,34 +537,7 @@ export interface VisualPlanningTaskRecord {
   draft: ContentDraftRecord;
 }
 
-export type CreddyCharacterExpression =
-  | 'neutral'
-  | 'waving'
-  | 'thinking'
-  | 'confused'
-  | 'idea'
-  | 'worried'
-  | 'surprised'
-  | 'sleepy'
-  | 'sad'
-  | 'wink'
-  | 'card'
-  | 'thumbs-up'
-  | 'guide'
-  | 'rewards'
-  | 'celebrate'
-  | 'curious'
-  | 'skeptical'
-  | 'pointing'
-  | 'happy'
-  | 'urgent'
-  // Legacy names remain readable; the Video Factory adapter maps them to
-  // the exact Creddy asset pack pose names before rendering.
-  | 'excited'
-  | 'concerned'
-  | 'celebrating'
-  | 'explaining'
-  | 'starstruck';
+export type CreddyCharacterExpression = CreddyV4Expression | CreddyLegacyExpression;
 
 export interface VideoJobRecord {
   version: typeof CREDDY_PIPELINE_VERSION;

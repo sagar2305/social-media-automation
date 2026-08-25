@@ -29,7 +29,7 @@ Current reusable phone-screen scenes:
 - App Store listing (light)
 
 Reusable expression scenes are stored in
-`../slideshow-expressions-1080x1440/`. All 20 are native 1080 x 1440 bases,
+`../slideshow-emotion-gestures-v4-1080x1440/`. All 100 are native 1080 x 1440 bases,
 created from the approved expression artwork with proportional cropping only.
 Do not stretch or directly use the older 941 x 1672 source renders in a 3:4
 slideshow.

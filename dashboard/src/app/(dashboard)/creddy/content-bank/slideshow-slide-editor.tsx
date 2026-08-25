@@ -16,13 +16,9 @@ import {
 } from "@/lib/creddy-slide-options";
 import { updateCreddySlideshowDesignAction } from "./actions";
 
-const expressionLabels: Record<(typeof CREDDY_EXPRESSIONS)[number], string> = {
-  neutral: "Neutral", waving: "Waving", thinking: "Thinking", confused: "Confused", idea: "Aha idea",
-  worried: "Worried", surprised: "Surprised", sleepy: "Sleepy", starstruck: "Starstruck", sad: "Sad",
-  wink: "Confident wink", card: "Holding card", "thumbs-up": "Thumbs up", guide: "Presenting",
-  rewards: "Rewards excited", celebrate: "Celebrating", curious: "Curious", skeptical: "Skeptical",
-  pointing: "Pointing", happy: "Happy", urgent: "Urgent stop",
-};
+function expressionLabel(expression: (typeof CREDDY_EXPRESSIONS)[number]) {
+  return expression.replace(/^\d{3}-/, "").split("-").map((word) => `${word[0]?.toUpperCase()}${word.slice(1)}`).join(" ");
+}
 
 const phoneLabels: Record<(typeof CREDDY_PHONE_TEMPLATES)[number], string> = {
   wallet_vouchers: "Wallet & vouchers",
@@ -171,7 +167,7 @@ export function SlideshowSlideEditor({
                         : <label className="block space-y-1.5 text-sm font-medium">
                           <span className="flex items-center gap-2"><Smile className="size-4" />Creddy expression</span>
                           <select className="h-10 w-full rounded-md border bg-background px-3 font-normal" name={`slide_${slide}_expression`} onInput={(event) => updateScene(index, { expression: event.currentTarget.value as CreddySlideEditorScene["expression"] })} value={scene.expression}>
-                            {CREDDY_EXPRESSIONS.map((expression) => <option key={expression} value={expression}>{expressionLabels[expression]}</option>)}
+                            {CREDDY_EXPRESSIONS.map((expression) => <option key={expression} value={expression}>{expressionLabel(expression)}</option>)}
                           </select>
                         </label>}
                       <input name={`slide_${slide}_background`} type="hidden" value={scene.backgroundStyle} />

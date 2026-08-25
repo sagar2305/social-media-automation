@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import {
   CREDDY_BACKGROUND_STYLES,
   CREDDY_EXPRESSIONS,
+  CREDDY_LEGACY_EXPRESSION_ALIASES,
   CREDDY_PHONE_TEMPLATES,
   type CreddySlideEditor,
 } from "@/lib/creddy-slide-options";
@@ -317,7 +318,7 @@ async function readSlideEditor(record: ContentBankFile): Promise<CreddySlideEdit
       supportText: planSupportText(plan, index),
       expression: CREDDY_EXPRESSIONS.includes(scene.expression as (typeof CREDDY_EXPRESSIONS)[number])
         ? scene.expression as (typeof CREDDY_EXPRESSIONS)[number]
-        : fallbackExpression,
+        : CREDDY_LEGACY_EXPRESSION_ALIASES[scene.expression] ?? fallbackExpression,
       backgroundStyle: CREDDY_BACKGROUND_STYLES.includes(scene.background?.style as (typeof CREDDY_BACKGROUND_STYLES)[number])
         ? scene.background!.style as (typeof CREDDY_BACKGROUND_STYLES)[number]
         : "spotlight",

@@ -39,6 +39,29 @@ const CREDDY_POSE_ALIASES: Record<string, string> = {
 
 function creddyPose(value: string | undefined, index: number): string {
   const fallbacks = ['surprised', 'thinking', 'guide', 'celebrate'];
+  const v4Number = value?.match(/^(\d{3})-/)?.[1];
+  if (v4Number) {
+    const number = Number(v4Number);
+    if (number === 1) return 'neutral';
+    if (number === 2) return 'waving';
+    if (number <= 8) return 'celebrate';
+    if (number <= 10) return 'surprised';
+    if (number === 11) return 'curious';
+    if (number <= 17) return 'thinking';
+    if (number <= 22) return 'worried';
+    if (number <= 30) return 'sad';
+    if (number <= 38) return 'concerned';
+    if (number <= 41) return 'sleepy';
+    if (number <= 46) return 'neutral';
+    if (number <= 50) return 'celebrate';
+    if (number <= 59) return 'neutral';
+    if (number <= 64) return 'guide';
+    if (number <= 72) return 'worried';
+    if (number <= 78) return 'thinking';
+    if (number <= 82) return 'starstruck';
+    if (number <= 85) return 'sleepy';
+    return 'celebrate';
+  }
   return CREDDY_POSE_ALIASES[value ?? ''] ?? value ?? fallbacks[index % fallbacks.length];
 }
 

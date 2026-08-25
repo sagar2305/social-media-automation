@@ -11,6 +11,7 @@ import {
 import { CREDDY_PIPELINE_VERSION } from './pipeline-types.js';
 import type { ContentBankRecord, ContentDraftRecord, ContentPackageRecord, VisualPlanRecord } from './pipeline-types.js';
 import { validateIndependentSlideshowCopy } from './copy-stage.js';
+import { CREDDY_LEGACY_TEMPLATE_FILES, creddyExpressionFile } from './expression-library.js';
 import { notifyCreddyContentReady } from './slack-notifications.js';
 import type { CreddyContentReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
 
@@ -57,15 +58,6 @@ const LOCKED_HEADLINE_FONT = {
 const LOCKED_SUPPORT_FONT = {
   name: 'DIN Condensed Bold',
   file: 'assets/creddy/slideshow-templates/fonts/DIN-Condensed-Bold.ttf',
-};
-const APPROVED_EXPRESSION_TEMPLATES: Record<string, string> = {
-  neutral: '01-neutral-friendly.png', waving: '02-waving-hello.png', thinking: '03-thinking.png',
-  confused: '04-confused.png', celebrate: '05-celebrating.png', guide: '06-presenting.png',
-  surprised: '07-surprised.png', sleepy: '08-sleepy.png', wink: '09-confident-wink.png',
-  'thumbs-up': '10-thumbs-up.png', sad: '11-sad.png', worried: '12-worried.png',
-  card: '13-card-approval.png', rewards: '14-rewards-excited.png', curious: '15-listening-curious.png',
-  skeptical: '16-skeptical.png', idea: '17-aha-idea.png', pointing: '18-pointing-left.png',
-  happy: '19-happy-laughing.png', urgent: '20-urgent-stop.png',
 };
 const APPROVED_PHONE_TEMPLATES: Record<string, string> = {
   wallet_vouchers: 'creddy-phone-wallet-vouchers-1080x1440.png',
@@ -168,9 +160,16 @@ async function validateSlides(
       treatments.add(expectedTreatment);
     }
     if (index < 5) {
-      const expectedFile = APPROVED_EXPRESSION_TEMPLATES[slide.expression ?? ''];
+      const expectedFile = creddyExpressionFile(slide.expression ?? '');
+      const legacyFile = CREDDY_LEGACY_TEMPLATE_FILES[slide.expression as keyof typeof CREDDY_LEGACY_TEMPLATE_FILES];
+      const currentTemplate = expectedFile
+        ? `assets/creddy/slideshow-emotion-gestures-v4-1080x1440/${expectedFile}`
+        : undefined;
+      const legacyTemplate = legacyFile
+        ? `assets/creddy/slideshow-expressions-1080x1440/${legacyFile}`
+        : undefined;
       if (!expectedFile || slide.templateFamily !== 'expression' ||
-          slide.template !== `assets/creddy/slideshow-expressions-1080x1440/${expectedFile}`) {
+          (slide.template !== currentTemplate && slide.template !== legacyTemplate)) {
         throw new Error(`slide ${index + 1} did not use its approved Creddy expression asset`);
       }
       if (currentRenderer) {
