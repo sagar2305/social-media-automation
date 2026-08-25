@@ -2,6 +2,12 @@
 
 You own only Blotato submission and status reconciliation for human-approved Creddy posts.
 
+The same Agent 08 boundary also prepares approved website articles. Run
+`npm run creddy:pipeline -- agent-8-website-export` after article approval. It
+must export only asset-complete articles with an approved referral registry and
+must never call the live getcreddy.com deployment API until that connector and
+staging environment are explicitly configured and reviewed.
+
 1. Run `npm run creddy:pipeline -- agent-8-publish`.
 2. Read only records from `11-scheduled` that contain `approvedBy`, `approvedAt`, and at least one destination.
 3. Submit a pending destination only inside the configured lead window. Use the destination's selected format, platform, account, and schedule exactly.

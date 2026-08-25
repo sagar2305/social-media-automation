@@ -15,6 +15,7 @@ import {
   type ContentPackageRecord,
   type VideoJobRecord,
 } from './pipeline-types.js';
+import { validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
 
 export function validateContentPackage(content: ContentPackageRecord): ContentPackageRecord {
   if (content.version !== CREDDY_PIPELINE_VERSION) throw new Error('Invalid content version');
@@ -40,6 +41,12 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid source URL');
   }
   if (!Array.isArray(content.factualClaims)) throw new Error('factualClaims must be an array');
+  if (content.article) {
+    validateCreddyArticle(content.article, content.factualClaims, content.sourceUrls);
+    if (!content.articleVisuals) throw new Error('Website article requires its Agent 05 visual plan');
+    validateCreddyArticleVisuals(content.articleVisuals, content.article, content.factualClaims);
+    if (!content.articleReadiness) throw new Error('Website article requires an asset-readiness state');
+  }
   if (content.characterExpressions !== undefined) {
     const supported = new Set([
       'neutral', 'waving', 'thinking', 'idea', 'worried', 'surprised',
@@ -89,6 +96,16 @@ export async function writeContentAndJobs(
     { id: content.id, revision, brief: content.brief, sourceUrls: content.sourceUrls });
   await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'images', `${content.id}.json`),
     { id: content.id, revision, prompts: content.imagePrompts, paths: content.imagePaths ?? [] });
+  if (content.article) {
+    await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'articles', `${content.id}.json`), {
+      id: content.id,
+      revision,
+      readiness: content.articleReadiness,
+      previewPath: content.articlePreviewPath,
+      article: content.article,
+      visuals: content.articleVisuals,
+    });
+  }
 
   const now = new Date().toISOString();
   const jobs: VideoJobRecord[] = (['text_music', 'narrated'] as const).map((format) => ({

@@ -1,9 +1,13 @@
 import { validateContentPackage, writeContentAndJobs } from './content-stage.js';
+import { renderCreddyArticlePreview, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import {
   listJsonFiles,
   pathExists,
   readJson,
   safeDataPath,
+  writeJsonAtomic,
 } from './pipeline-store.js';
 import {
   CREDDY_PIPELINE_VERSION,
@@ -21,6 +25,7 @@ export interface ProductionTaskRecord {
 export interface ProductionPreparationResult {
   inputCount: number;
   createdPackages: number;
+  updatedArticlePackages: number;
   createdVideoJobs: number;
   skippedCount: number;
   packageIds: string[];
@@ -33,7 +38,7 @@ function topLevelJson(paths: string[], nested: RegExp): string[] {
 export async function listProductionTasks(root: string): Promise<ProductionTaskRecord[]> {
   const draftPaths = topLevelJson(
     await listJsonFiles(safeDataPath(root, '06-content-drafts')),
-    /\/(scripts|captions|briefs|legacy)\//,
+    /\/(scripts|captions|briefs|articles|legacy)\//,
   );
   const drafts = await Promise.all(draftPaths.map((path) => readJson<ContentDraftRecord>(path)));
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
@@ -99,9 +104,21 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
     brief: `${draft.brief}\n\nVisual direction: ${visualPlan.visualBrief}\nSafety overlays: ${visualPlan.safetyOverlays.join('; ')}`,
     sourceUrls: draft.sourceUrls,
     factualClaims: draft.factualClaims,
+    article: draft.article,
+    articleVisuals: visualPlan.articleVisuals,
+    articleReadiness: draft.article && visualPlan.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))
+      ? 'ready_for_review'
+      : draft.article
+        ? 'needs_assets'
+        : undefined,
   };
   if (content.narrationLines!.join(' ') !== draft.narrationScript.trim().replace(/\s+/g, ' ')) {
     throw new Error('Production package did not preserve Agent 4 narration');
+  }
+  if (content.article) {
+    validateCreddyArticle(content.article, content.factualClaims, content.sourceUrls);
+    if (!content.articleVisuals) throw new Error('Production package is missing Agent 05 article visuals');
+    validateCreddyArticleVisuals(content.articleVisuals, content.article, content.factualClaims);
   }
   return validateContentPackage(content);
 }
@@ -111,6 +128,7 @@ export async function prepareProductionPackages(root: string, now = new Date()):
   const result: ProductionPreparationResult = {
     inputCount: tasks.length,
     createdPackages: 0,
+    updatedArticlePackages: 0,
     createdVideoJobs: 0,
     skippedCount: 0,
     packageIds: [],
@@ -119,10 +137,53 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     const content = buildProductionPackage(task, now);
     const destination = safeDataPath(root, '06-content-packages', `${content.id}.json`);
     if (await pathExists(destination)) {
-      result.skippedCount += 1;
+      const existing = await readJson<ContentPackageRecord>(destination);
+      const articleChanged = Boolean(content.article) &&
+        (JSON.stringify(existing.article) !== JSON.stringify(content.article) ||
+         JSON.stringify(existing.articleVisuals) !== JSON.stringify(content.articleVisuals) ||
+         existing.articleReadiness !== content.articleReadiness);
+      if (articleChanged && content.article) {
+        const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
+        await mkdir(dirname(previewPath), { recursive: true });
+        await writeFile(previewPath, renderCreddyArticlePreview(content.article));
+        const updated: ContentPackageRecord = {
+          ...existing,
+          article: content.article,
+          articleVisuals: content.articleVisuals,
+          articleReadiness: content.articleReadiness,
+          articlePreviewPath: previewPath,
+        };
+        await writeJsonAtomic(destination, updated);
+        await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'articles', `${content.id}.json`), {
+          id: content.id,
+          revision: 1,
+          readiness: content.articleReadiness,
+          previewPath,
+          article: content.article,
+          visuals: content.articleVisuals,
+        });
+        result.updatedArticlePackages += 1;
+      } else {
+        result.skippedCount += 1;
+      }
       continue;
     }
     const jobs: VideoJobRecord[] = await writeContentAndJobs(root, content, 1);
+    if (content.article) {
+      const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
+      await mkdir(dirname(previewPath), { recursive: true });
+      await writeFile(previewPath, renderCreddyArticlePreview(content.article));
+      content.articlePreviewPath = previewPath;
+      await writeJsonAtomic(destination, content);
+      await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'articles', `${content.id}.json`), {
+        id: content.id,
+        revision: 1,
+        readiness: content.articleReadiness,
+        previewPath,
+        article: content.article,
+        visuals: content.articleVisuals,
+      });
+    }
     result.createdPackages += 1;
     result.createdVideoJobs += jobs.length;
     result.packageIds.push(content.id);

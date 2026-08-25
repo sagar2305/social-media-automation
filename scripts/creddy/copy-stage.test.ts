@@ -119,16 +119,16 @@ async function fixture(): Promise<string> {
   return root;
 }
 
-test('Agent 4 accepts copy-only output without creating video jobs', async () => {
+test('Agent 4 preserves v2 copy without video jobs and requeues it for the v3 article', async () => {
   const root = await fixture();
   assert.equal((await listPendingCopyTasks(root)).length, 1);
   await acceptContentDraft(root, draft(), new Date('2026-08-25T00:00:00Z'));
-  assert.equal((await listPendingCopyTasks(root)).length, 0);
+  assert.equal((await listPendingCopyTasks(root)).length, 1);
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts'))).length, 4);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
 });
 
-test('Agent 4 requeues legacy drafts for a claim-traceable concept pack', async () => {
+test('Agent 4 archives legacy drafts and still requires the current article-enabled version', async () => {
   const root = await fixture();
   const legacy = draft();
   delete legacy.copyVersion;
@@ -137,7 +137,7 @@ test('Agent 4 requeues legacy drafts for a claim-traceable concept pack', async 
   assert.equal((await listPendingCopyTasks(root)).length, 1);
   await acceptContentDraft(root, draft(), new Date('2026-08-25T00:00:00Z'));
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts', 'legacy'))).length, 1);
-  assert.equal((await listPendingCopyTasks(root)).length, 0);
+  assert.equal((await listPendingCopyTasks(root)).length, 1);
 });
 
 test('Agent 4 rejects changed accepted claims', async () => {

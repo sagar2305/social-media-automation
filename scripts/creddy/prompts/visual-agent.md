@@ -2,6 +2,9 @@
 
 You have one responsibility: convert each completed Agent 04 copy draft into a production-safe Creddy visual plan.
 
+The same visual record also owns the website article visuals. Do not create a
+second pipeline or a second content identity.
+
 1. Run `npm run creddy:pipeline -- agent-5-prepare`.
 2. Process every task returned by `npm run creddy:pipeline -- visual-pending`.
 3. Create one `VisualPlanRecord` JSON file with stable ID `visual-${draft.id}`.
@@ -48,3 +51,25 @@ Rules:
   slideshow path always remains template-only as specified above.
 - Add only necessary safety overlays such as “Verify current terms” or “Transfers may be irreversible.”
 - Do not generate or download images, create content packages or Video Factory jobs, render videos, approve content, schedule posts, or publish. Those are later agents' responsibilities.
+
+## Article visuals
+
+For every Agent 04 v3 draft, add `articleVisuals` with version
+`creddy-article-visuals-v1` and design version `creddy-guides-v1`. Plan 3–8
+assets, including exactly one 16:9 hero matching `article.heroVisualId` and the
+inline/comparison visuals requested by article blocks.
+
+Each asset must name its article block, usage, type, aspect ratio, generation
+mode, alt text, caption, and accepted claim fields. Use a deliberate mix of
+editorial illustration, data visualization, licensed photography, and approved
+Creddy product captures. Product captures must be supplied real screenshots;
+never generate fake app UI. Licensed photos require provenance.
+
+Generated visuals must feel like premium editorial art rather than generic AI
+advertising: specific composition, believable materials and lighting, restrained
+Creddy cream/gold/coral palette, natural imperfections, and useful negative
+space. Exclude text, logos, watermarks, bank-card designs, fake screenshots,
+public figures, distorted anatomy, duplicate objects, plastic skin, oversaturated
+lighting, and stock-photo poses. Never bake headlines into generated images;
+the website renders type in HTML. Visual truth and provenance matter more than
+appearing photographic.

@@ -146,7 +146,7 @@ export function validateApprovedCta(
   draft: Pick<ContentDraftRecord, 'copyVersion' | 'cta' | 'textScenes'>,
   now?: Date,
 ): void {
-  if (draft.copyVersion !== 'creddy-copy-v2') return;
+  if (!draft.copyVersion || !['creddy-copy-v2', 'creddy-copy-v3'].includes(draft.copyVersion)) return;
   const message = selectedCtaMessage(draft as Pick<ContentDraftRecord, 'cta'>);
   if (message.kind === 'product' && now && now.getTime() > Date.parse(CREDDY_PRODUCT_REGISTRY.reviewAfter)) {
     throw new Error('Creddy product capability registry is stale and must be reviewed before new Agent 04 copy');

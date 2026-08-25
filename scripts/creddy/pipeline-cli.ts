@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 
 import { recordAgent1Feedback } from './agent1-feedback.js';
+import { GeminiArticleImageClient, generatePendingArticleImages } from './article-image-stage.js';
 import { recordAnalysisPerformanceFeedback } from './analysis-feedback.js';
 import {
   acceptAnalysisDecision,
@@ -52,6 +53,7 @@ import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
 import { VideoFactoryClient } from './video-factory-client.js';
 import { approveContentBankItem, rejectContentBankItem, runContentBankHandoff, runVideoStage } from './video-stage.js';
 import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
+import { exportApprovedWebsiteArticles } from './website-stage.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -99,6 +101,7 @@ async function status(root: string): Promise<Record<string, number>> {
     scheduled: ['11-scheduled'],
     published: ['12-published'],
     rejectedContent: ['13-rejected-content'],
+    websiteReady: ['14-website-ready'],
   } as const;
   const result: Record<string, number> = {};
   for (const [name, segments] of Object.entries(locations)) {
@@ -111,7 +114,7 @@ async function status(root: string): Promise<Record<string, number>> {
     } else {
       result[name] =
         name === 'contentPackages' || name === 'contentDrafts'
-          ? files.filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path)).length
+          ? files.filter((path) => !/\/(scripts|captions|images|briefs|articles)\//.test(path)).length
           : files.length;
     }
   }
@@ -407,6 +410,15 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ agent: 6, preparation, pendingCount: pending.length, reports }, null, 2));
     return;
   }
+  if (command === 'agent-6-article-images') {
+    const key = process.env.GEMINI_API_KEY?.trim();
+    if (!key) throw new Error('GEMINI_API_KEY is required for generated article visuals');
+    const images = await generatePendingArticleImages(root, new GeminiArticleImageClient(key));
+    const preparation = await prepareProductionPackages(root);
+    const reports = await writeObservablePipelineReports(root);
+    console.log(JSON.stringify({ agent: 6, images, preparation, reports }, null, 2));
+    return;
+  }
   if (command === 'agent-6-render') {
     const preparation = await prepareProductionPackages(root);
     const musicPath = process.env.CREDDY_BACKGROUND_MUSIC_PATH?.trim();
@@ -527,6 +539,19 @@ async function main(): Promise<void> {
       agent: 8,
       publishing,
       policy: 'Publishes only human-approved scheduled destinations; never approves content.',
+      reports,
+    }, null, 2));
+    return;
+  }
+  if (command === 'agent-8-website-export') {
+    const website = await exportApprovedWebsiteArticles(root, {
+      referralRegistryPath: process.env.CREDDY_REFERRAL_REGISTRY_PATH,
+    });
+    const reports = await writeObservablePipelineReports(root);
+    console.log(JSON.stringify({
+      agent: 8,
+      website,
+      policy: 'Exports only a human-approved, asset-complete article. It does not call the live getcreddy.com deployment API.',
       reports,
     }, null, 2));
     return;

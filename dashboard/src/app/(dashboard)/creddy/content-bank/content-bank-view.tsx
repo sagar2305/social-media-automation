@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { requireRole } from "@/lib/auth";
@@ -7,7 +7,7 @@ import { listCreddyBankItems } from "@/lib/creddy-file-store";
 import { listBlotatoAccounts, type BlotatoAccount } from "@/lib/blotato";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
-import { approveCreddyAction, refreshCreddyDeliveryStatusesAction, rejectCreddyAction } from "./actions";
+import { approveCreddyAction, approveCreddyWebsiteArticleAction, refreshCreddyDeliveryStatusesAction, rejectCreddyAction } from "./actions";
 import { CreddyCalendar } from "./creddy-calendar";
 import { SlideGallery } from "./slide-gallery";
 import { SlideshowPublishingPanel } from "./slideshow-publishing-panel";
@@ -83,6 +83,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
   return (
     <div className="space-y-6">
       {updated === "slides-regenerated" && <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" /><div><strong>Slide revision saved.</strong><p className="mt-1 text-muted-foreground">All six images were regenerated and validated. The previous revision remains preserved locally.</p></div></div>}
+      {updated === "article-approved" && <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" /><div><strong>Website article approved.</strong><p className="mt-1 text-muted-foreground">Agent 08 may now export this exact article version for the getcreddy.com publishing integration.</p></div></div>}
       <div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">Creddy · US market</Badge>
@@ -175,6 +176,28 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {item.article && (
+              <div className="space-y-3 rounded-xl border border-[#d2992e]/30 bg-[#fbf2dd]/45 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-[#8b6723]">Creddy website article</div>
+                    <h3 className="mt-1 font-serif text-2xl font-semibold text-[#1e1a16]">{item.article.title}</h3>
+                    <p className="mt-1 max-w-3xl text-sm text-[#6f6963]">{item.article.dek}</p>
+                    <div className="mt-2 text-xs text-[#7e7976]">/guides/{item.article.slug} · {item.article.readingMinutes} min read · {item.article.blocks.length} structured blocks</div>
+                  </div>
+                  <Badge variant={item.articleReview?.status === "needs_assets" ? "secondary" : "outline"}>
+                    {item.articleReview?.status === "needs_assets" ? "Needs article assets" : "Article ready for review"}
+                  </Badge>
+                </div>
+                {item.articleReview?.blockers?.map((blocker) => <p className="text-sm text-amber-800" key={blocker}>{blocker}</p>)}
+                <div className="flex flex-wrap gap-2">
+                  {item.articlePreviewAvailable && <a className={buttonVariants({ variant: "outline" })} href={`/api/creddy/article/${encodeURIComponent(item.id)}`} rel="noreferrer" target="_blank">Open themed article preview</a>}
+                  {item.articleReview?.status === "pending_review" && !item.cloudBacked && <form action={approveCreddyWebsiteArticleAction}><input name="id" type="hidden" value={item.id} /><Button type="submit">Approve website article</Button></form>}
+                  {item.articleReview?.status === "approved" && <Badge>Website article approved</Badge>}
+                  <Badge variant="outline">Same content ID · separate format approval</Badge>
+                </div>
+              </div>
+            )}
             {item.mediaType === "slideshow" ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">

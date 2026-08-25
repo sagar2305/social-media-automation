@@ -217,6 +217,12 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
     const textMusic = group.find((job) => job.revision === targetRevision && job.format === 'text_music' && job.status === 'done');
     if (!narrated || !textMusic) continue;
     if (existing && !['changes_requested', 'rendering_revision'].includes(existing.status)) continue;
+    const content = await readJson<ContentPackageRecord>(
+      safeDataPath(root, '06-content-packages', `${contentPackageId}.json`),
+    );
+    const articleBlockers = content.article && content.articleReadiness !== 'ready_for_review'
+      ? ['One or more Agent 05 article visuals do not have approved asset files yet.']
+      : [];
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
@@ -226,6 +232,11 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
       status: 'pending_review',
       textMusicVideoPath: textMusic.outputPath,
       narratedVideoPath: narrated.outputPath,
+      articlePreviewPath: content.articlePreviewPath,
+      articleReview: content.article ? {
+        status: articleBlockers.length ? 'needs_assets' : 'pending_review',
+        blockers: articleBlockers,
+      } : undefined,
       revision: targetRevision,
       changeRequest: undefined,
       approvedBy: undefined,

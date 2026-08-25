@@ -76,6 +76,14 @@ type ContentBankFile = {
   slideshowManifestPath?: string;
   slideImagePaths?: string[];
   slideCount?: number;
+  articlePreviewPath?: string;
+  articleReview?: {
+    status: "needs_assets" | "pending_review" | "changes_requested" | "approved" | "published";
+    approvedBy?: string;
+    approvedAt?: string;
+    publishedUrl?: string;
+    blockers?: string[];
+  };
   createdAt: string;
   updatedAt?: string;
   status: "pending_review" | "changes_requested" | "rendering_revision" | "approved" | "scheduled" | "published" | "rejected";
@@ -98,6 +106,18 @@ type ContentBankFile = {
   blotatoMediaUrls?: string[];
 };
 
+type ArticleFile = {
+  id: string;
+  slug: string;
+  category: string;
+  title: string;
+  dek: string;
+  excerpt: string;
+  readingMinutes: number;
+  blocks: unknown[];
+  referralDisclosure: string;
+};
+
 type ContentPackageFile = {
   id: string;
   hook: string;
@@ -108,6 +128,7 @@ type ContentPackageFile = {
   cta?: { label: string; deepLink: string; fallbackUrl?: string };
   brief: string;
   sourceUrls: string[];
+  article?: ArticleFile;
   factualClaims?: Array<{
     field: string;
     value: string | number | boolean | null;
@@ -127,6 +148,7 @@ type ContentDraftFile = {
   cta?: ContentPackageFile["cta"];
   brief: string;
   sourceUrls: string[];
+  article?: ArticleFile;
   factualClaims?: ContentPackageFile["factualClaims"];
 };
 
@@ -178,6 +200,9 @@ export type CreddyBankItemDto = {
   rejectedAt?: string;
   rejectionReason?: string;
   slideEditor?: CreddySlideEditor;
+  article?: ArticleFile;
+  articlePreviewAvailable: boolean;
+  articleReview?: ContentBankFile["articleReview"];
   /** True when this DTO came from the deployed, read-only Supabase mirror. */
   cloudBacked?: boolean;
 };
@@ -343,6 +368,9 @@ async function toDto(record: ContentBankFile): Promise<CreddyBankItemDto> {
     rejectedAt: record.rejectedAt,
     rejectionReason: record.rejectionReason,
     slideEditor: await readSlideEditor(record),
+    article: content.article,
+    articlePreviewAvailable: Boolean(record.articlePreviewPath),
+    articleReview: record.articleReview,
   };
 }
 
@@ -706,6 +734,33 @@ export async function listCreddyBankItems(): Promise<CreddyBankItemDto[]> {
   return listCreddyCloudBankItems();
 }
 
+export async function approveCreddyWebsiteArticle(input: {
+  id: string;
+  approvedBy: string;
+}, now = new Date()): Promise<void> {
+  const { path, record } = await findBankFile(input.id);
+  if (!record.articlePreviewPath || !record.articleReview) throw new Error("This item has no website article preview");
+  if (record.articleReview.status === "needs_assets" || record.articleReview.blockers?.length) {
+    throw new Error("Article assets must be completed before website approval");
+  }
+  if (["rejected", "published"].includes(record.status)) {
+    throw new Error(`Cannot approve an article from overall ${record.status} state`);
+  }
+  const updated: ContentBankFile = {
+    ...record,
+    updatedAt: now.toISOString(),
+    articleReview: {
+      ...record.articleReview,
+      status: "approved",
+      approvedBy: input.approvedBy.trim() || "human-reviewer",
+      approvedAt: now.toISOString(),
+      blockers: [],
+    },
+  };
+  await writeJsonAtomic(path, updated);
+  await writeJsonAtomic(safePath("09-pending-approval", `${record.id}.json`), updated);
+}
+
 export async function writeCreddyLiveSyncReport(report: unknown): Promise<void> {
   await writeJsonAtomic(safePath("reports", "latest", "blotato-live-sync.json"), report);
 }
@@ -866,6 +921,18 @@ export async function getCreddyMediaPath(id: string, format: Format): Promise<{ 
   const extension = extname(path).toLowerCase();
   const mime = extension === ".webm" ? "video/webm" : extension === ".mov" ? "video/quicktime" : "video/mp4";
   return { path, mime };
+}
+
+export async function getCreddyArticlePreviewPath(id: string): Promise<string> {
+  const { record } = await findBankFile(id);
+  const path = record.articlePreviewPath;
+  if (!path || !isAbsolute(path)) throw new Error("Article preview is not available");
+  const allowed = safePath("06-content-packages", "articles");
+  const rel = relative(allowed, resolve(path));
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("Article preview path is outside production packages");
+  const info = await stat(path);
+  if (!info.isFile() || extname(path).toLowerCase() !== ".html") throw new Error("Article preview is invalid");
+  return path;
 }
 
 export async function getCreddySlidePath(id: string, slide: number): Promise<{ path: string; mime: string }> {

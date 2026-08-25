@@ -9,7 +9,7 @@ import {
   writeJsonAtomic,
 } from './pipeline-store.js';
 import { CREDDY_PIPELINE_VERSION } from './pipeline-types.js';
-import type { ContentBankRecord, ContentDraftRecord, VisualPlanRecord } from './pipeline-types.js';
+import type { ContentBankRecord, ContentDraftRecord, ContentPackageRecord, VisualPlanRecord } from './pipeline-types.js';
 import { validateIndependentSlideshowCopy } from './copy-stage.js';
 import { notifyCreddyContentReady } from './slack-notifications.js';
 import type { CreddyContentReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
@@ -253,6 +253,15 @@ export async function runSlideshowContentBankHandoff(
         result.skipped += 1;
         continue;
       }
+      const productionPath = safeDataPath(root, '06-content-packages', `production-${draft.analysisId}.json`);
+      const production = await pathExists(productionPath)
+        ? await readJson<ContentPackageRecord>(productionPath)
+        : undefined;
+      const articleBlockers = production?.article
+        ? production.articleReadiness === 'ready_for_review'
+          ? []
+          : ['One or more Agent 05 article visuals do not have approved asset files yet.']
+        : [];
       const record: ContentBankRecord = {
         ...existing,
         version: CREDDY_PIPELINE_VERSION,
@@ -264,6 +273,11 @@ export async function runSlideshowContentBankHandoff(
         slideshowManifestPath: manifestPath,
         slideImagePaths,
         slideCount: 6,
+        articlePreviewPath: production?.articlePreviewPath,
+        articleReview: production?.article ? {
+          status: articleBlockers.length ? 'needs_assets' : 'pending_review',
+          blockers: articleBlockers,
+        } : undefined,
         createdAt: existing?.createdAt ?? now.toISOString(),
         status: 'pending_review',
         revision: existing?.revision ?? 1,

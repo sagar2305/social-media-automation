@@ -528,22 +528,22 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   );
   const drafts = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '06-content-drafts')))
-      .filter((path) => !/\/(scripts|captions|briefs|legacy)\//.test(path))
+      .filter((path) => !/\/(scripts|captions|briefs|articles|legacy)\//.test(path))
       .map((path) => readJson<ContentDraftRecord>(path)),
   );
   const packages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path));
   const opportunityIds = new Set(opportunities.map((opportunity) => opportunity.id));
   const conceptDrafts = drafts.filter((draft) =>
-    opportunityIds.has(draft.analysisId) && draft.copyVersion === 'creddy-copy-v2' && draft.conceptPack);
+    opportunityIds.has(draft.analysisId) && draft.copyVersion === 'creddy-copy-v3' && draft.conceptPack && draft.article);
   const contentLines = [
-    '# Agent 04 — Scripts, captions, CTA, and production briefs', '',
+    '# Agent 04 — Articles, scripts, captions, CTA, and production briefs', '',
     `Generated: ${new Date().toISOString()}`,
     `Content opportunities: ${opportunities.length}`,
     `Completed copy drafts: ${conceptDrafts.length}`,
     `Pending copy drafts: ${Math.max(0, opportunities.length - conceptDrafts.length)}`,
     '',
-    '> Agent 04 writes copy only. It does not generate images, choose mascot expressions, create Video Factory jobs, render, approve, schedule, or publish.',
+    '> Agent 04 writes the full website article and social copy in one record. It does not generate images, create Video Factory jobs, approve, schedule, or publish.',
     '',
     '| Hook | Selected style | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
     '|---|---|---|---:|---:|---|---|---|---:|',

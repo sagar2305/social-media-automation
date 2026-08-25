@@ -14,6 +14,7 @@ import {
   type VisualPlanningTaskRecord,
 } from './pipeline-types.js';
 import { phoneTemplateForDraft } from './product-capabilities.js';
+import { validateCreddyArticleVisuals } from './article-content.js';
 
 export const CREDDY_MANIFEST_EXPRESSIONS = new Set<CreddyCharacterExpression>([
   'neutral', 'waving', 'thinking', 'confused', 'celebrate', 'guide', 'surprised',
@@ -71,7 +72,7 @@ export function selectCreddyExpression(
 
 function contentDraftFiles(root: string): Promise<string[]> {
   return listJsonFiles(safeDataPath(root, '06-content-drafts')).then((files) =>
-    files.filter((path) => !/\/(scripts|captions|briefs|legacy)\//.test(path)),
+    files.filter((path) => !/\/(scripts|captions|briefs|articles|legacy)\//.test(path)),
   );
 }
 
@@ -218,6 +219,18 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
   }
   if (JSON.stringify(plan.factualClaims) !== JSON.stringify(task.draft.factualClaims)) {
     throw new Error('Visual plan must preserve accepted factual claims exactly');
+  }
+  if (task.draft.copyVersion === 'creddy-copy-v3') {
+    if (!task.draft.article || !plan.articleVisuals) {
+      throw new Error('Agent 05 must plan article and social visuals in the same visual record');
+    }
+    validateCreddyArticleVisuals(plan.articleVisuals, task.draft.article, task.draft.factualClaims);
+    const articleVisualIds = new Set(
+      task.draft.article.blocks.filter((block) => block.type === 'visual').map((block) => block.visualId),
+    );
+    if ([...articleVisualIds].some((id) => !plan.articleVisuals!.assets.some((asset) => asset.id === id))) {
+      throw new Error('Agent 05 article plan is missing a visual requested by Agent 04');
+    }
   }
   if (plan.format === '3:4' && plan.phoneTemplateId !== phoneTemplateForDraft(task.draft)) {
     throw new Error('Visual plan phone template must match the approved Agent 4 CTA');

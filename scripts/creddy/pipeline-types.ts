@@ -304,13 +304,82 @@ export interface ContentPackageRecord {
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+  /** The website article travels with the same production package as social
+   * assets. It is optional only for legacy packages. */
+  article?: CreddyArticleDraft;
+  articleVisuals?: CreddyArticleVisualPlan;
+  articlePreviewPath?: string;
+  articleReadiness?: 'needs_assets' | 'ready_for_review';
+}
+
+export type CreddyArticleCategory =
+  | 'card_offers'
+  | 'benefits'
+  | 'points_and_miles'
+  | 'loyalty_news'
+  | 'award_travel'
+  | 'guides';
+
+export type CreddyArticleBlock =
+  | { id: string; type: 'paragraph'; text: string; claimFields: string[] }
+  | { id: string; type: 'heading'; level: 2 | 3; text: string }
+  | { id: string; type: 'key_takeaways'; title: string; items: string[]; claimFields: string[] }
+  | { id: string; type: 'callout'; tone: 'tip' | 'warning' | 'decision'; title: string; body: string; claimFields: string[] }
+  | { id: string; type: 'comparison_table'; caption: string; columns: string[]; rows: string[][]; claimFields: string[] }
+  | { id: string; type: 'visual'; visualId: string; caption: string }
+  | { id: string; type: 'referral_card'; referralId: string; title: string; body: string; ctaLabel: string; claimFields: string[] }
+  | { id: string; type: 'faq'; items: Array<{ question: string; answer: string; claimFields: string[] }> }
+  | { id: string; type: 'subscribe'; title: string; body: string; consentLabel: string }
+  | { id: string; type: 'download'; title: string; body: string; iosUrl: string; androidUrl: string };
+
+export interface CreddyArticleDraft {
+  version: 'creddy-article-v1';
+  designVersion: 'creddy-guides-v1';
+  id: string;
+  slug: string;
+  category: CreddyArticleCategory;
+  title: string;
+  dek: string;
+  excerpt: string;
+  seoTitle: string;
+  seoDescription: string;
+  authorName: 'Creddy Editorial';
+  createdAt: string;
+  updatedAt: string;
+  readingMinutes: number;
+  heroVisualId: string;
+  blocks: CreddyArticleBlock[];
+  sourceUrls: string[];
+  referralDisclosure: string;
+}
+
+export type CreddyArticleVisualAsset = {
+  id: string;
+  usage: 'hero' | 'inline' | 'comparison';
+  articleBlockId: string;
+  assetType: 'editorial_illustration' | 'data_visualization' | 'licensed_photo' | 'creddy_product_capture';
+  aspectRatio: '16:9' | '4:3' | '1:1';
+  generationMode: 'generate' | 'compose' | 'supply';
+  prompt?: string;
+  negativePrompt?: string;
+  altText: string;
+  caption: string;
+  claimFields: string[];
+  assetPath?: string;
+  provenance?: string;
+};
+
+export interface CreddyArticleVisualPlan {
+  version: 'creddy-article-visuals-v1';
+  designVersion: 'creddy-guides-v1';
+  assets: CreddyArticleVisualAsset[];
 }
 
 export interface ContentDraftRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
   /** New Agent 04 drafts use the claim-traceable concept contract. Omitted only
    * on legacy drafts that remain readable by downstream stages. */
-  copyVersion?: 'creddy-copy-v2';
+  copyVersion?: 'creddy-copy-v2' | 'creddy-copy-v3';
   id: string;
   analysisId: string;
   canonicalId: string;
@@ -337,6 +406,9 @@ export interface ContentDraftRecord {
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+  /** Agent 04 writes the complete Creddy guide in the same record as social
+   * copy. Omitted only on legacy drafts retained for audit. */
+  article?: CreddyArticleDraft;
 }
 
 export type CreddyCapabilityId =
@@ -448,6 +520,8 @@ export interface VisualPlanRecord {
   safetyOverlays: string[];
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+  /** Agent 05 plans website and social visuals together. */
+  articleVisuals?: CreddyArticleVisualPlan;
 }
 
 export interface VisualPlanningTaskRecord {
@@ -507,6 +581,14 @@ export interface ContentBankRecord {
   slideshowManifestPath?: string;
   slideImagePaths?: string[];
   slideCount?: number;
+  articlePreviewPath?: string;
+  articleReview?: {
+    status: 'needs_assets' | 'pending_review' | 'changes_requested' | 'approved' | 'published';
+    approvedBy?: string;
+    approvedAt?: string;
+    publishedUrl?: string;
+    blockers?: string[];
+  };
   createdAt: string;
   status: 'pending_review' | 'changes_requested' | 'rendering_revision' | 'approved' | 'scheduled' | 'published' | 'rejected';
   textMusicVideoPath?: string;
@@ -523,8 +605,8 @@ export interface ContentBankRecord {
   rejectedAt?: string;
   rejectionReason?: string;
   destinations?: Array<{
-    format: 'text_music' | 'narrated';
-    platform: 'instagram' | 'tiktok';
+    format: 'text_music' | 'narrated' | 'article';
+    platform: 'instagram' | 'tiktok' | 'creddy_website';
     account: string;
     scheduledFor: string;
     mode?: 'tiktok_draft' | 'schedule' | 'publish_now';

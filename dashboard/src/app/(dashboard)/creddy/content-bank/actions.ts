@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/auth";
 import {
   approveCreddyItem,
+  approveCreddyWebsiteArticle,
   cacheCreddyBlotatoMedia,
   getCreddySlideshowSubmission,
   recordCreddyBlotatoDestination,
@@ -49,6 +50,16 @@ function slideshowEditorValues(formData: FormData) {
     },
     scheduledFor: value(formData, "scheduled_for") || undefined,
   };
+}
+
+export async function approveCreddyWebsiteArticleAction(formData: FormData): Promise<void> {
+  const auth = await assertRole("editor");
+  if (!auth.ok) throw new Error(auth.error);
+  const id = value(formData, "id");
+  await approveCreddyWebsiteArticle({ id, approvedBy: auth.user.email || auth.user.id });
+  revalidatePath("/creddy/content-bank");
+  revalidatePath("/creddy/all-content");
+  redirect(`/creddy/content-bank/slideshows?item=${encodeURIComponent(id)}&updated=article-approved#${encodeURIComponent(id)}`);
 }
 
 export async function saveCreddyDraftAction(formData: FormData): Promise<void> {

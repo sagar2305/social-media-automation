@@ -8,11 +8,11 @@ external APIs and use their own keys.
 1. **Agent 01 — Collect** — twice daily for 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Run it with `npm run creddy:pipeline -- agent-1`; the command collects and writes both latest and immutable run-scoped reports before returning.
 2. **Agent 02 — Clean, verify, and deduplicate** — applies US/travel-rewards safeguards, removes boilerplate and duplicates, and preserves evidence.
 3. **Agent 03 — Rank and route** — applies the `creddy-ranking-v3` viral rubric, predicts channel fit, and calculates editorial priority independently of verification readiness. It emits a diversified five-story slate, an ordered verification queue, and a deterministic operational route; unverified stories never enter production.
-4. **Agent 04 — Select the concept and write copy** — generates four claim-traceable angles, selects one consumer-advocate promise, adapts it into compact blog, newsletter, YouTube, Instagram, and TikTok headline packs, then writes the six-slide copy, narration, captions, CTA, sources, and production brief. It does not generate full long-form bodies or media.
-5. **Agent 05 — Plan visuals** — chooses the supported Creddy theme, scenes, and mascot expressions without changing accepted copy or claims.
-6. **Agent 06 — Produce videos** — Video Factory renders exactly one text+music and one narrated video per package, then stops.
-7. **Agent 07 — Fill the Content Bank** — pairs matching completed revisions, creates `pending_review` records, and sends each new six-slide review to Slack exactly once. It never approves, rejects, schedules, or publishes.
-8. **Agent 08 — Publish** — polls only human-approved schedule entries and submits them to Blotato inside the configured lead window.
+4. **Agent 04 — Select the concept and write content** — generates four claim-traceable angles, selects one consumer-advocate promise, and writes one unified package: complete structured website article, headline adaptations, six-slide copy, narration, captions, CTA, sources, and production brief.
+5. **Agent 05 — Plan visuals** — chooses the supported social theme, scenes, and mascot expressions plus 3–8 claim-traced website article assets without changing accepted copy or claims.
+6. **Agent 06 — Assemble production** — builds the themed private article preview and renders exactly one text+music and one narrated video per package. Article asset gaps remain explicit without duplicating valid social jobs.
+7. **Agent 07 — Fill the Content Bank** — keeps article and social formats on the same stable content identity, creates human-review records, and sends each new six-slide review to Slack exactly once. Website and social approvals are independent human actions.
+8. **Agent 08 — Publish/export** — polls only human-approved social schedule entries for Blotato and separately exports asset-complete, human-approved website articles for the disabled getcreddy.com integration boundary.
 
 Agent 7's routine review notification uses the configured Slack Socket Mode app.
 Every new review includes all six slides and human decision controls. A separate

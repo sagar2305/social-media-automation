@@ -54,6 +54,12 @@ export async function runPublishStage(
         const publishedNotifications: CreddyPublishedSlackEvent[] = [];
         for (const destination of bank.destinations) {
           if (destination.status === 'published' || destination.status === 'failed') continue;
+          if (destination.platform === 'creddy_website' || destination.format === 'article') {
+            // Website articles use the separate human-approved export boundary.
+            // Blotato must never receive an article destination.
+            manifest.skippedCount += 1;
+            continue;
+          }
           if (destination.submissionId) {
             const remote = await client.getPostStatus(destination.submissionId);
             destination.lastCheckedAt = now.toISOString();
