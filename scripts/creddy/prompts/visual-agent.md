@@ -78,3 +78,14 @@ public figures, distorted anatomy, duplicate objects, plastic skin, oversaturate
 lighting, and stock-photo poses. Never bake headlines into generated images;
 the website renders type in HTML. Visual truth and provenance matter more than
 appearing photographic.
+
+Before writing individual prompts, define one 60–500 character `seriesStyle` for
+the article. Copy that exact same `seriesStyle` into every generated asset. It
+must lock the shared medium, palette, lighting direction, camera/lens or
+illustration perspective, material treatment, texture, contrast, and visual
+density. Individual `prompt` values then change only the section-specific
+subject and composition. The hero establishes the visual language; inline and
+comparison images must unmistakably belong to that same editorial series.
+Do not mix photography, 3D rendering, collage, flat illustration, or unrelated
+color treatments within one article unless the plan explicitly uses supplied
+licensed/product assets rather than generated images.

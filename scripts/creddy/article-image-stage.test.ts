@@ -25,6 +25,7 @@ test('Agent 6 generates each missing approved article image once and records pro
       version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1',
       assets: [{
         id: 'hero-benefit', usage: 'hero', articleBlockId: 'hero', assetType: 'editorial_illustration', aspectRatio: '16:9', generationMode: 'generate',
+        seriesStyle: 'Premium tactile editorial still-life series with warm cream surfaces, restrained brushed gold accents, soft left-side window light, natural 50mm perspective, subtle grain, and realistic imperfections.',
         prompt: 'Premium editorial still life with warm cream paper, restrained gold accents, believable window light, tactile details, subtle depth, and generous negative space.',
         negativePrompt: 'No text, no logos, no watermarks, no people.', altText: 'Warm editorial planning surface', caption: 'Benefit planning visual.', claimFields: [],
       }],

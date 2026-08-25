@@ -38,5 +38,8 @@ Rules:
   article preview uses the live-site reference theme: warm off-white background,
   Fraunces editorial headings, Geist body copy, gold/coral accents, rounded
   cards, visible disclosure, email subscription, and App Store/Play Store CTA.
+- Preserve the exact shared `seriesStyle` across every generated article image;
+  only the section-specific subject/composition may change. Never silently
+  substitute an unrelated style for an inline image.
 - Missing article assets may block website readiness but must not duplicate or
   corrupt completed social video jobs.

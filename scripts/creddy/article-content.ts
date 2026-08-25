@@ -168,6 +168,7 @@ export function validateCreddyArticleVisuals(
   }
   const blockIds = new Set(article.blocks.map((block) => block.id));
   const accepted = new Set(claims.map((claim) => claim.field));
+  const pendingGeneratedStyles = new Set<string>();
   for (const asset of plan.assets) {
     if (!blockIds.has(asset.articleBlockId)) throw new Error(`Visual ${asset.id} references an unknown article block`);
     assertClaimFields(asset.claimFields, accepted, `Visual ${asset.id}`);
@@ -176,6 +177,13 @@ export function validateCreddyArticleVisuals(
     }
     if (!asset.caption.trim() || asset.caption.length > 220) throw new Error(`Visual ${asset.id} requires a caption`);
     if (asset.generationMode === 'generate') {
+      if (!asset.assetPath) {
+        const seriesStyle = asset.seriesStyle?.replace(/\s+/g, ' ').trim();
+        if (!seriesStyle || seriesStyle.length < 60 || seriesStyle.length > 500) {
+          throw new Error(`Generated visual ${asset.id} requires a 60–500 character shared seriesStyle`);
+        }
+        pendingGeneratedStyles.add(seriesStyle);
+      }
       if (!asset.prompt || asset.prompt.length < 60 || asset.prompt.length > 1_200) {
         throw new Error(`Generated visual ${asset.id} requires a detailed 60–1200 character prompt`);
       }
@@ -194,6 +202,9 @@ export function validateCreddyArticleVisuals(
     if (asset.generationMode !== 'generate' && !asset.provenance?.trim()) {
       throw new Error(`Supplied or composed visual ${asset.id} requires provenance`);
     }
+  }
+  if (pendingGeneratedStyles.size > 1) {
+    throw new Error('Every pending generated image in an article must use the same seriesStyle');
   }
   if (plan.assets.filter((asset) => asset.usage === 'hero' && asset.id === article.heroVisualId).length !== 1) {
     throw new Error('Article requires exactly one matching hero asset');

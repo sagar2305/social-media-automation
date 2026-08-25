@@ -56,7 +56,13 @@ cards to one column.
 
 Use 3–8 article visuals: one 16:9 hero and useful inline/comparison assets. Prefer
 a deliberate mix of real licensed photography, deterministic data graphics,
-approved Creddy product captures, and restrained editorial illustration.
+approved Creddy product captures, and restrained editorial illustration. Use
+one coordinated generated-image series per article. Every pending generated
+asset carries the exact same `seriesStyle`, locking medium, palette, lighting,
+perspective, materials, texture, contrast, and density; its individual prompt
+changes only the section-specific subject and composition. This makes the hero
+and inline images feel intentionally art-directed rather than independently
+generated.
 
 Generated art must avoid generic AI advertising cues: no fake card designs,
 logos, invented app screens, baked-in text, distorted anatomy, duplicated

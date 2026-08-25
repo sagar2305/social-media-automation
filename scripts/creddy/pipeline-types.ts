@@ -364,6 +364,8 @@ export type CreddyArticleVisualAsset = {
   assetType: 'editorial_illustration' | 'data_visualization' | 'licensed_photo' | 'creddy_product_capture';
   aspectRatio: '16:9' | '4:3' | '1:1';
   generationMode: 'generate' | 'compose' | 'supply';
+  /** Identical art direction shared by every generated image in one article. */
+  seriesStyle?: string;
   prompt?: string;
   negativePrompt?: string;
   altText: string;

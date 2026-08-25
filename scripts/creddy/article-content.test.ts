@@ -61,6 +61,7 @@ function visuals(): CreddyArticleVisualPlan {
   const generated = (id: string, usage: 'hero' | 'inline' | 'comparison', articleBlockId: string, aspectRatio: '16:9' | '4:3') => ({
     id, usage, articleBlockId, assetType: 'editorial_illustration' as const, aspectRatio,
     generationMode: 'generate' as const,
+    seriesStyle: 'Premium tactile editorial still-life series using warm cream paper, restrained brushed gold accents, soft left-side window light, a natural 50mm perspective, subtle grain, realistic imperfections, and calm medium contrast.',
     prompt: 'Premium editorial still life using warm cream paper, a restrained gold circular calendar motif, natural window light, tactile materials, subtle depth, realistic imperfections, and generous negative space for HTML copy.',
     negativePrompt: 'No text, no logos, no watermarks, no fake credit cards, no app screens, no people, no distorted objects.',
     altText: 'Gold calendar markers arranged around a warm cream planning surface',
@@ -98,6 +99,15 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /Advertiser disclosure/);
   assert.match(html, /<img src="assets\/hero-reset-clock\.png" alt="Calendar markers on a planning desk"/);
   assert.match(html, /Visual · inline-reset-clock/);
+});
+
+test('requires one identical art direction across pending generated article images', () => {
+  const inconsistent = visuals();
+  inconsistent.assets[1]!.seriesStyle = 'A completely different glossy neon 3D render series with saturated purple lighting, plastic materials, extreme contrast, and an ultra-wide synthetic camera perspective.';
+  assert.throws(
+    () => validateCreddyArticleVisuals(inconsistent, article(), claims),
+    /same seriesStyle/,
+  );
 });
 
 test('rejects missing subscription and unsafe generated visual requests', () => {
