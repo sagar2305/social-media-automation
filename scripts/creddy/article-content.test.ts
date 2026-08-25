@@ -83,7 +83,9 @@ test('validates and renders the unified Creddy website article', () => {
   assert.ok(articleWordCount(value) >= 650);
   assert.equal(validateCreddyArticle(value, claims, [source]), value);
   assert.equal(validateCreddyArticleVisuals(visuals(), value, claims).assets.length, 3);
-  const html = renderCreddyArticlePreview(value);
+  const html = renderCreddyArticlePreview(value, {
+    'hero-reset-clock': { src: 'assets/hero-reset-clock.png', altText: 'Calendar markers on a planning desk' },
+  });
   assert.match(html, /#FBFAF7/i);
   assert.match(html, /Get practical Creddy guides/);
   assert.match(html, /Download on the/);
@@ -94,6 +96,8 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /data-download-article/);
   assert.match(html, /how-a-card-benefit-reset-works\.html/);
   assert.match(html, /Advertiser disclosure/);
+  assert.match(html, /<img src="assets\/hero-reset-clock\.png" alt="Calendar markers on a planning desk"/);
+  assert.match(html, /Visual · inline-reset-clock/);
 });
 
 test('rejects missing subscription and unsafe generated visual requests', () => {

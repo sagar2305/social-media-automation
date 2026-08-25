@@ -1,7 +1,7 @@
 import { validateContentPackage, writeContentAndJobs } from './content-stage.js';
 import { renderCreddyArticlePreview, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { dirname, extname } from 'node:path';
 import {
   listJsonFiles,
   pathExists,
@@ -93,6 +93,25 @@ function partitionNarration(narration: string, count: number): string[] {
   });
 }
 
+async function writeArticlePreview(root: string, content: ContentPackageRecord): Promise<string> {
+  if (!content.article) throw new Error('Article preview requires article content');
+  const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
+  const visualAssets: Record<string, { src: string; altText: string }> = {};
+  for (const asset of content.articleVisuals?.assets ?? []) {
+    if (!asset.assetPath || !(await pathExists(asset.assetPath))) continue;
+    const sourceExtension = extname(asset.assetPath).toLowerCase();
+    const extension = ['.png', '.jpg', '.jpeg', '.webp'].includes(sourceExtension) ? sourceExtension : '.png';
+    const filename = `${asset.id}${extension}`;
+    const destination = safeDataPath(root, '06-content-packages', 'articles', content.id, 'assets', filename);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(asset.assetPath, destination);
+    visualAssets[asset.id] = { src: `assets/${filename}`, altText: asset.altText };
+  }
+  await mkdir(dirname(previewPath), { recursive: true });
+  await writeFile(previewPath, renderCreddyArticlePreview(content.article, visualAssets));
+  return previewPath;
+}
+
 export function buildProductionPackage(task: ProductionTaskRecord, now = new Date()): ContentPackageRecord {
   const { draft, visualPlan } = task;
   const articleOnly = draft.distributionMode === 'article_only';
@@ -175,9 +194,7 @@ export async function prepareProductionPackages(root: string, now = new Date()):
          JSON.stringify(existing.articleVisuals) !== JSON.stringify(content.articleVisuals) ||
          existing.articleReadiness !== content.articleReadiness);
       if (articleChanged && content.article) {
-        const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
-        await mkdir(dirname(previewPath), { recursive: true });
-        await writeFile(previewPath, renderCreddyArticlePreview(content.article));
+        const previewPath = await writeArticlePreview(root, content);
         const updated: ContentPackageRecord = {
           ...existing,
           article: content.article,
@@ -203,9 +220,7 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     }
     const jobs: VideoJobRecord[] = await writeContentAndJobs(root, content, 1, content.distributionMode !== 'article_only');
     if (content.article) {
-      const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
-      await mkdir(dirname(previewPath), { recursive: true });
-      await writeFile(previewPath, renderCreddyArticlePreview(content.article));
+      const previewPath = await writeArticlePreview(root, content);
       content.articlePreviewPath = previewPath;
       await writeJsonAtomic(destination, content);
       await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'articles', `${content.id}.json`), {

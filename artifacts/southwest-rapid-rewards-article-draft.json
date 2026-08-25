@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "distributionMode": "article_only",
+  "copyVersion": "creddy-copy-v3",
+  "id": "copy-ranking-17297b0bc4c1ff3210886899",
+  "analysisId": "ranking-17297b0bc4c1ff3210886899",
+  "canonicalId": "17297b0bc4c1ff3210886899",
+  "createdAt": "2026-08-25T10:00:00.000Z",
+  "audience": "US credit-card rewards users and Southwest travelers",
+  "slot": "understand",
+  "hook": "How to Make Southwest Rapid Rewards Work for Your Travel",
+  "textScenes": [],
+  "narrationScript": "",
+  "instagramCaption": "",
+  "tiktokCaption": "",
+  "hashtags": [],
+  "cta": {
+    "label": "Organize your rewards in Creddy",
+    "deepLink": "creddy://home"
+  },
+  "brief": "An evergreen, verification-aware guide that helps readers organize Southwest rewards decisions without creating any social post.",
+  "sourceUrls": [
+    "https://frequentmiler.com/southwest-airlines-rapid-rewards-complete-guide"
+  ],
+  "factualClaims": [
+    {
+      "field": "program_scope",
+      "value": "The guide covers earning, award redemption, elite status, credit cards, seating benefits, and flight credits",
+      "sourceRecordIds": ["89bf46db829e2b93691b6334"],
+      "confidence": 79
+    },
+    {
+      "field": "companion_pass_threshold",
+      "value": "The guide states that earning 135,000 qualifying Rapid Rewards points in a calendar year earns Companion Pass",
+      "sourceRecordIds": ["89bf46db829e2b93691b6334"],
+      "confidence": 77
+    },
+    {
+      "field": "points_expiration",
+      "value": "The guide states Rapid Rewards points do not expire",
+      "sourceRecordIds": ["89bf46db829e2b93691b6334"],
+      "confidence": 77
+    }
+  ],
+  "article": {
+    "version": "creddy-article-v1",
+    "designVersion": "creddy-guides-v1",
+    "id": "article-ranking-17297b0bc4c1ff3210886899",
+    "slug": "southwest-rapid-rewards-practical-guide",
+    "category": "points_and_miles",
+    "title": "How to Make Southwest Rapid Rewards Work for Your Travel",
+    "dek": "A practical framework for organizing points, Companion Pass progress, card benefits, and booking decisions without losing sight of the trip you actually want.",
+    "excerpt": "Learn how to separate your points balance, qualification progress, card benefits, and award-booking decisions into a simple Southwest rewards plan.",
+    "seoTitle": "Southwest Rapid Rewards: A Practical Guide — Creddy",
+    "seoDescription": "Learn how to organize Southwest Rapid Rewards points, evaluate Companion Pass progress, review card benefits, and make clearer award-booking decisions.",
+    "authorName": "Creddy Editorial",
+    "createdAt": "2026-08-25T10:00:00.000Z",
+    "updatedAt": "2026-08-25T10:00:00.000Z",
+    "readingMinutes": 7,
+    "heroVisualId": "southwest-rewards-map",
+    "sourceUrls": [
+      "https://frequentmiler.com/southwest-airlines-rapid-rewards-complete-guide"
+    ],
+    "referralDisclosure": "Advertiser disclosure: Creddy may earn a commission when you apply for a card through links on this site. This does not affect our recommendations, which are based on the published value of each card's benefits.",
+    "blocks": [
+      {
+        "id": "hero-rewards-map",
+        "type": "visual",
+        "visualId": "southwest-rewards-map",
+        "caption": "A practical map connecting points, qualification progress, card benefits, and the next trip."
+      },
+      {
+        "id": "key-takeaways",
+        "type": "key_takeaways",
+        "title": "The useful way to think about Rapid Rewards",
+        "items": [
+          "Treat your redeemable points and qualification progress as two separate planning numbers.",
+          "The accepted source reports a 135,000 qualifying-point calendar-year threshold for Companion Pass; verify the current official terms before relying on that figure.",
+          "The accepted source reports that Rapid Rewards points do not expire, but a balance still has value only when it supports a trip you would realistically book."
+        ],
+        "claimFields": ["program_scope", "companion_pass_threshold", "points_expiration"]
+      },
+      {
+        "id": "start-with-the-trip",
+        "type": "heading",
+        "level": 2,
+        "text": "Start with the trip, not the points balance"
+      },
+      {
+        "id": "trip-first-body",
+        "type": "paragraph",
+        "text": "A rewards balance can feel like a goal by itself, but the better starting point is a real travel need. Write down the routes you are likely to fly, the months you can travel, who normally travels with you, and which costs matter most. A solo traveler with flexible dates has a different decision from a family that needs four seats during a school break. That difference should shape how much attention you give to points, status, seating benefits, flight credits, or a companion benefit. The accepted source treats Rapid Rewards as a broad system that includes earning, award redemption, elite status, credit cards, seating benefits, and flight credits. Looking at those pieces together is useful, but you do not need to optimize every one. Choose the two or three parts that solve an actual travel problem, then ignore the rest until your needs change.",
+        "claimFields": ["program_scope"]
+      },
+      {
+        "id": "decision-tip",
+        "type": "callout",
+        "tone": "tip",
+        "title": "Use one trip as your test case",
+        "body": "Before changing cards or spending habits, price one realistic trip in both cash and points. Include every traveler and compare the full out-of-pocket cost, not just the number shown first.",
+        "claimFields": []
+      },
+      {
+        "id": "decision-map-visual",
+        "type": "visual",
+        "visualId": "rapid-rewards-decision-map",
+        "caption": "A four-step decision flow: define the trip, compare prices, review benefits, then decide."
+      },
+      {
+        "id": "separate-balances",
+        "type": "heading",
+        "level": 2,
+        "text": "Separate redeemable points from qualification progress"
+      },
+      {
+        "id": "separate-balances-body",
+        "type": "paragraph",
+        "text": "Two numbers can sit inside the same loyalty account while answering different questions. Redeemable points help answer, “What travel can I book?” Qualification progress helps answer, “Am I moving toward a program benefit?” Mixing the two can create poor decisions. Someone may have enough points for a useful flight but still be far from a qualification target. Another person may be close to a target but have no upcoming travel that would make the benefit valuable. Keep a simple note for each number: current amount, target, deadline if one applies, and the specific value you expect to receive. Review the notes monthly rather than reacting to every promotion. This keeps the plan connected to personal travel instead of turning progress into an abstract score.",
+        "claimFields": []
+      },
+      {
+        "id": "companion-pass-heading",
+        "type": "heading",
+        "level": 2,
+        "text": "Evaluate Companion Pass progress with a break-even question"
+      },
+      {
+        "id": "companion-pass-body",
+        "type": "paragraph",
+        "text": "The accepted source reports that earning 135,000 qualifying Rapid Rewards points in a calendar year earns Companion Pass. Because this is currently supported by one secondary source in the pipeline, confirm the current threshold, qualification rules, timing, and exclusions on Southwest's official terms before taking action. After verification, estimate the benefit using trips you are genuinely likely to take. Count the number of eligible trips where a companion would travel with you, estimate the cash or points cost that might be avoided, and subtract any extra spending, annual fees, or opportunity cost required to reach the target. If the expected benefit is smaller than the effort or cost, the target may not deserve priority. If it fits travel already planned, it may be more compelling. The important point is to measure the benefit against your calendar rather than its reputation.",
+        "claimFields": ["companion_pass_threshold"]
+      },
+      {
+        "id": "companion-warning",
+        "type": "callout",
+        "tone": "warning",
+        "title": "Verify before redirecting spending",
+        "body": "Qualification rules can change. Confirm the official threshold, eligible activity, calendar timing, and account-specific progress before moving purchases or opening a card for this goal.",
+        "claimFields": ["companion_pass_threshold"]
+      },
+      {
+        "id": "value-table",
+        "type": "comparison_table",
+        "caption": "A simple way to organize each rewards decision before acting.",
+        "columns": ["Decision", "Question to answer", "Evidence to check"],
+        "rows": [
+          ["Use points", "Does the points price beat the cash option for this trip?", "Live booking results and total trip cost"],
+          ["Pursue qualification", "Will the benefit improve trips already planned?", "Official rules, current progress, and expected usage"],
+          ["Keep a card", "Do benefits used naturally exceed the real annual cost?", "Current card terms and personal benefit history"],
+          ["Wait", "Would preserving flexibility create a better choice later?", "Upcoming travel needs and alternative rewards options"]
+        ],
+        "claimFields": []
+      },
+      {
+        "id": "expiration-heading",
+        "type": "heading",
+        "level": 2,
+        "text": "No expiration does not mean no planning"
+      },
+      {
+        "id": "expiration-body",
+        "type": "paragraph",
+        "text": "The accepted source reports that Rapid Rewards points do not expire. That can reduce pressure to redeem simply because time is passing, but it should not remove the need for a plan. Loyalty programs can change pricing, benefits, or rules, and personal travel needs can shift. A useful balance is one that stays visible and has a likely purpose. Record the balance, the trip it might support, and the date you last checked availability. Revisit the plan when a trip becomes real, not every time an advertisement creates urgency. When comparing cash and points, use the current booking screen and include the flexibility, cancellation conditions, taxes, and cash you would otherwise pay. A patient redemption can be sensible, but indefinite accumulation without a travel goal is not automatically valuable.",
+        "claimFields": ["points_expiration"]
+      },
+      {
+        "id": "tracking-visual",
+        "type": "visual",
+        "visualId": "rapid-rewards-tracking-checklist",
+        "caption": "A compact checklist for balances, targets, verification dates, and the next intended trip."
+      },
+      {
+        "id": "monthly-review",
+        "type": "heading",
+        "level": 2,
+        "text": "Use a five-minute monthly review"
+      },
+      {
+        "id": "monthly-review-body",
+        "type": "paragraph",
+        "text": "A useful review does not require a complicated spreadsheet. Check your current points balance, qualification progress, any card benefits you are actively tracking, and the next trip where Southwest is a realistic option. Remove goals that no longer match your plans. Add a reminder to verify official terms before a major decision. If you are considering a card, compare the annual fee and benefits against normal spending and travel rather than an idealized year. If you are considering a redemption, compare the live cash and points options before booking. This routine turns a loyalty account from a collection of numbers into a decision tool. It also makes it easier to notice when you are chasing a milestone for emotional satisfaction rather than practical travel value.",
+        "claimFields": []
+      },
+      {
+        "id": "frequently-asked-questions",
+        "type": "faq",
+        "items": [
+          {
+            "question": "Do Southwest Rapid Rewards points expire?",
+            "answer": "The accepted source reports that Rapid Rewards points do not expire. Confirm the current official program terms before relying on any program rule.",
+            "claimFields": ["points_expiration"]
+          },
+          {
+            "question": "What Companion Pass threshold does the accepted source report?",
+            "answer": "It reports 135,000 qualifying Rapid Rewards points in a calendar year. This pipeline currently has one secondary source for that figure, so verify the official threshold and qualification rules before acting.",
+            "claimFields": ["companion_pass_threshold"]
+          },
+          {
+            "question": "Should I pursue every available Southwest benefit?",
+            "answer": "No. Focus on benefits that solve a real travel need and compare their likely value with the cost, effort, and flexibility you would give up.",
+            "claimFields": []
+          },
+          {
+            "question": "What should I check before redeeming points?",
+            "answer": "Compare the live cash and points options for the same trip, review current booking conditions, and consider the value of keeping your points flexible for another trip.",
+            "claimFields": []
+          }
+        ]
+      },
+      {
+        "id": "subscribe-guides",
+        "type": "subscribe",
+        "title": "Get practical Creddy guides",
+        "body": "Receive clear credit-card, points, and benefits guidance built around decisions you can actually use.",
+        "consentLabel": "I agree to receive Creddy editorial emails and can unsubscribe at any time."
+      },
+      {
+        "id": "download-creddy",
+        "type": "download",
+        "title": "Keep your rewards plan visible",
+        "body": "Use Creddy to organize card benefits, points, and the goals connected to your next trip.",
+        "iosUrl": "https://apps.apple.com/app/id6768603911?ct=web_discovery",
+        "androidUrl": "https://play.google.com/store/apps/details?id=com.thebrewapps.creddy"
+      }
+    ]
+  }
+}
