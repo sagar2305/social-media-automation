@@ -60,13 +60,14 @@ test('Agent 5 accepts the locked 3:4 Creddy slideshow format', () => {
   const slideshow = {
     ...base,
     format: '3:4' as const,
+    phoneTemplateId: 'app_store_dark' as const,
     scenes: [
       base.scenes[0]!,
       base.scenes[1]!,
       base.scenes[2]!,
       { ...base.scenes[0]!, sceneIndex: 3, expression: 'curious' as const },
       { ...base.scenes[1]!, sceneIndex: 4, expression: 'pointing' as const },
-      { ...base.scenes[2]!, sceneIndex: 5, expression: 'urgent' as const },
+      { ...base.scenes[2]!, sceneIndex: 5, role: 'cta' as const, expression: 'urgent' as const },
     ],
   };
   assert.equal(validateVisualPlan(slideshow).format, '3:4');
@@ -102,16 +103,20 @@ test('Agent 5 rejects repetitive six-slide slideshows permanently', () => {
   const repetitive: VisualPlanRecord = {
     ...base,
     format: '3:4',
+    phoneTemplateId: 'app_store_dark',
     scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
-      ...base.scenes[sceneIndex % 3]!, sceneIndex, expression: sceneIndex % 2 ? 'thinking' : 'neutral',
+      ...base.scenes[sceneIndex % 3]!, sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: sceneIndex % 2 ? 'thinking' : 'neutral',
     })),
   };
   assert.throws(() => validateVisualPlan(repetitive), /at least five script-appropriate expressions/);
 
-  const adjacent = {
+  const adjacent: VisualPlanRecord = {
     ...repetitive,
     scenes: ['neutral', 'waving', 'thinking', 'thinking', 'curious', 'urgent'].map((expression, sceneIndex) => ({
       ...base.scenes[sceneIndex % 3]!, sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
       expression: expression as VisualPlanRecord['scenes'][number]['expression'],
     })),
   };
@@ -122,6 +127,7 @@ test('Agent 5 cannot change Agent 4 scene copy or factual claims', async () => {
   const root = await fixture();
   const changedCopy = plan();
   changedCopy.scenes[0]!.text = 'A 50% bonus is available.';
+  changedCopy.scenes[0]!.emphasis = ['50%'];
   await assert.rejects(() => acceptVisualPlan(root, changedCopy), /cannot change Agent 4 scene copy/);
   const changedClaim = plan();
   changedClaim.factualClaims[0]!.value = 50;
@@ -133,4 +139,23 @@ test('Agent 5 cannot replace the selected Agent 4 hook', async () => {
   const changed = plan();
   changed.cover.headline = 'A different angle';
   await assert.rejects(() => acceptVisualPlan(root, changed), /preserve the selected Agent 4 hook/);
+});
+
+test('Agent 5 requires explicit CTA-matched phone proof and real emphasis text', () => {
+  const base = plan();
+  const slideshow: VisualPlanRecord = {
+    ...base,
+    format: '3:4',
+    phoneTemplateId: 'app_store_dark',
+    scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
+      ...base.scenes[sceneIndex % 3]!,
+      sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: ['rewards', 'thinking', 'worried', 'curious', 'pointing', 'urgent'][sceneIndex] as VisualPlanRecord['scenes'][number]['expression'],
+    })),
+  };
+  const missingPhone = { ...slideshow, phoneTemplateId: undefined };
+  assert.throws(() => validateVisualPlan(missingPhone), /phoneTemplateId/);
+  slideshow.scenes[1]!.emphasis = ['not in the slide'];
+  assert.throws(() => validateVisualPlan(slideshow), /emphasis phrase/);
 });

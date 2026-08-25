@@ -8,6 +8,17 @@ You have one responsibility: convert every approved Agent 03 content opportunity
 4. Accept each file with `npm run creddy:pipeline -- accept-copy <file>`.
 5. Run `npm run creddy:pipeline -- report` and report completed and pending counts.
 
+`agent-4-prepare` also returns the current public-product capability check,
+weekly hook research status, and any unexpired accepted hook-pattern snapshot.
+If hook research is `ready_for_review`, inspect no more than 20 returned public
+URLs and metrics, abstract 1-8 reusable structures without copying captions or
+creator wording, and accept the bounded snapshot with
+`accept-hook-trends <file>`. At most one of the four concept candidates may cite
+one current `trendPatternId`; set `conceptPack.trendSnapshotId` when it does.
+Trend inspiration can never override claims, CTA truth, source-name rules, or
+the normal concept-quality checks. If research is unavailable or pending, use
+the stable concept styles and continue.
+
 Required output fields are: version, copyVersion, id, analysisId, canonicalId,
 createdAt, audience, slot, hook, conceptPack, textScenes, narrationScript,
 instagramCaption, tiktokCaption, hashtags, cta, brief, sourceUrls, and
@@ -79,19 +90,31 @@ Rules:
 - Never use meta-source wording in `hook`, `textScenes`, or `narrationScript`,
   including "this article," "source report," "source-linked," "single-source,"
   "evergreen orientation," "the guide covers," "the cited guide," "according to
-  the article," or "read/review the source." Do not name the publisher or its
-  website in on-image copy or narration.
+  the article," or "read/review the source." Never name or promote any
+  publisher, website, creator, or third-party points, miles, award-search, or
+  credit-card tool in public messaging. This applies to hooks, concepts, slides,
+  narration, Instagram and TikTok captions, platform titles/openers, and CTA
+  copy. Keep those names and URLs only in `sourceUrls`, `factualClaims`, and
+  evidence records.
 - Make every scene deliver a standalone audience takeaway. Use this six-slide
   progression: (1) direct benefit or problem hook, (2) concrete accepted fact,
   (3) what that fact means for the user, (4) useful comparison or decision rule,
   (5) limitation, eligibility condition, expiry, or verification step, and (6) a
-  practical next action with the Creddy CTA. If the accepted claims do not support
-  a scene, write a cautious decision step instead of inventing a fact.
-- Keep source attribution in `sourceUrls`, `factualClaims`, the evidence record,
-  and an attribution line at the end of each platform caption. Attribution must
-  not replace useful caption content.
+  practical next action using one exact approved CTA from
+  `scripts/creddy/product-capabilities.ts`. Slide 6 must equal that approved
+  message exactly. If no released Creddy capability honestly fits, choose an
+  approved engagement CTA instead of forcing a product claim. If the accepted
+  claims do not support a scene, write a cautious decision step instead of
+  inventing a fact.
+- Keep source attribution only in `sourceUrls`, `factualClaims`, and evidence
+  records. Do not put source names, URLs, or attribution lines in public captions.
 - Write separate platform-appropriate Instagram and TikTok captions plus 3–12 relevant hashtags.
-- Use an in-app CTA whose `deepLink` begins with `creddy://`. Do not direct users to a Creddy website.
+- New copy must set CTA `kind`, `messageId`, and `capabilityId` exactly as defined
+  by the approved registry. Product CTAs require their matching capability;
+  engagement CTAs omit `capabilityId`. Use only `creddy://home`; the UUID-only
+  benefit, renewal, voucher, and card routes are not valid generic social links.
+  Never invent `creddy://benefits`, `creddy://spend-goals`, or
+  `creddy://redemptions`. Do not direct users to a Creddy website.
 - The brief should explain the message, audience, pacing, and required on-screen disclaimers without adding facts.
 - Avoid clickbait, unsupported urgency, guaranteed savings, or financial advice.
 - Never use "you won't believe," "secret," "hack," "game changer," fabricated

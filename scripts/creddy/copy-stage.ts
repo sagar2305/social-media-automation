@@ -13,6 +13,10 @@ import {
   type ContentDraftRecord,
   type ContentOpportunityTaskRecord,
 } from './pipeline-types.js';
+import { CREDDY_SOURCES } from './config.js';
+import { validateDraftTrendReference } from './hook-trend-stage.js';
+import { validateApprovedCta } from './product-capabilities.js';
+import { assertReleasedCapabilityStatus } from './product-release-stage.js';
 
 function words(value: string): number {
   return value.trim().split(/\s+/).filter(Boolean).length;
@@ -30,6 +34,24 @@ const BANNED_HYPE = [
 const GUARDED_SUPERLATIVES = [
   'best', 'biggest', 'free', 'guaranteed', 'highest', 'record',
 ] as const;
+
+const KNOWN_EXTERNAL_TOOL_NAMES = [
+  'point.me', 'pointsyeah', 'roame', 'seats.aero', 'points path', 'pointspath',
+] as const;
+
+function normalizedExternalNames(): string[] {
+  const names = CREDDY_SOURCES.flatMap((source) => {
+    const host = new URL(source.url).hostname.replace(/^www\./, '');
+    const hostLabel = host.split('.')[0] ?? '';
+    return [source.name, source.id.replaceAll('-', ' '), host, hostLabel];
+  });
+  return [...new Set([...names, ...KNOWN_EXTERNAL_TOOL_NAMES])]
+    .map((name) => name.trim().toLocaleLowerCase())
+    .filter((name) => name.length >= 4)
+    .sort((left, right) => right.length - left.length);
+}
+
+const EXTERNAL_NAMES = normalizedExternalNames();
 
 function normalizedNumericTokens(value: string): Set<string> {
   const matches = value.match(/\$?\d[\d,.]*(?:\.\d+)?(?:k|m)?%?/gi) ?? [];
@@ -57,6 +79,31 @@ function conceptCopy(pack: ContentConceptPack): string[] {
     platforms.instagram.coverHook, platforms.instagram.captionOpener,
     platforms.tiktok.coverHook, platforms.tiktok.captionOpener,
   ];
+}
+
+function publicMessaging(draft: ContentDraftRecord): string[] {
+  return [
+    draft.hook,
+    ...draft.textScenes,
+    draft.narrationScript,
+    draft.instagramCaption,
+    draft.tiktokCaption,
+    draft.cta.label,
+    ...(draft.conceptPack ? conceptCopy(draft.conceptPack) : []),
+  ];
+}
+
+function assertNoExternalBrands(draft: ContentDraftRecord, extraNames: string[] = []): void {
+  const copy = publicMessaging(draft).join('\n').toLocaleLowerCase();
+  const candidates = [...EXTERNAL_NAMES, ...extraNames.map((name) => name.toLocaleLowerCase())]
+    .filter((name) => name.length >= 4)
+    .sort((left, right) => right.length - left.length);
+  const found = candidates.find((name) => copy.includes(name));
+  if (found) {
+    throw new Error(
+      'Public messaging cannot name publishers, websites, creators, or third-party tools; keep them only in sourceUrls and evidence',
+    );
+  }
 }
 
 function assertDisplayCopy(value: string, field: string, max: number, maxWords?: number): void {
@@ -260,6 +307,8 @@ export function validateContentDraft(draft: ContentDraftRecord): ContentDraftRec
     throw new Error('Content draft requires 3–12 hashtags');
   }
   if (!draft.cta?.deepLink.startsWith('creddy://')) throw new Error('CTA must use a creddy:// app deep link');
+  validateApprovedCta(draft);
+  assertNoExternalBrands(draft);
   if (!Array.isArray(draft.sourceUrls) || draft.sourceUrls.length === 0) throw new Error('At least one source URL is required');
   for (const value of draft.sourceUrls) {
     const url = new URL(value);
@@ -299,8 +348,13 @@ export async function listPendingCopyTasks(root: string): Promise<ContentOpportu
   return pending;
 }
 
-export async function acceptContentDraft(root: string, input: ContentDraftRecord): Promise<void> {
+export async function acceptContentDraft(
+  root: string,
+  input: ContentDraftRecord,
+  now = new Date(),
+): Promise<void> {
   const draft = validateContentDraft(input);
+  validateApprovedCta(draft, now);
   if (draft.copyVersion !== 'creddy-copy-v2') {
     throw new Error('New Agent 04 drafts must use creddy-copy-v2');
   }
@@ -315,7 +369,16 @@ export async function acceptContentDraft(root: string, input: ContentDraftRecord
   if (JSON.stringify(draft.factualClaims) !== JSON.stringify(task.decision.claims)) {
     throw new Error('Content draft must preserve the accepted factual claims exactly');
   }
+  await assertReleasedCapabilityStatus(root, draft.cta.kind!);
+  await validateDraftTrendReference(
+    root,
+    draft.conceptPack?.trendSnapshotId,
+    draft.conceptPack?.candidates.map((candidate) => candidate.trendPatternId) ?? [],
+    draft.slot,
+    now,
+  );
   assertSlidesDoNotNamePublisher(draft, task.article);
+  assertNoExternalBrands(draft, normalizedSourceIdentifiers(task.article));
 
   const outputPath = safeDataPath(root, '06-content-drafts', `${draft.id}.json`);
   if (await pathExists(outputPath)) {

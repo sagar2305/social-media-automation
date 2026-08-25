@@ -151,6 +151,11 @@ async function validateSlides(
           slide.template !== `assets/creddy/slideshow-templates/phone-screens/${expectedPhoneFile}`) {
         throw new Error('slide 6 must use one approved real-app phone-screen template');
       }
+      // Legacy accepted plans predate explicit phone-template selection. Agent 5
+      // now requires it for new plans while preserving the approved backlog.
+      if (plan.phoneTemplateId && slide.phoneTemplateId !== plan.phoneTemplateId) {
+        throw new Error('slide 6 phone screen must match the approved Agent 5 visual plan');
+      }
       if (slide.supportCopy || slide.supportLayout != null) {
         throw new Error('slide 6 product proof must not be covered by a support-card overlay');
       }

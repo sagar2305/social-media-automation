@@ -24,7 +24,7 @@ async function fixture(): Promise<{ root: string; manifest: Record<string, unkno
   const plan: VisualPlanRecord = {
     version: CREDDY_PIPELINE_VERSION, id: 'plan-1', contentDraftId: draft.id, analysisId: draft.analysisId,
     canonicalId: draft.canonicalId, createdAt: new Date().toISOString(), format: '3:4', theme: 'midnight',
-    characterPack: 'credit-card-rewards/creddy', cover: { headline: 'Hook', subheadline: 'Support' },
+    characterPack: 'credit-card-rewards/creddy', phoneTemplateId: 'app_store_dark', cover: { headline: 'Hook', subheadline: 'Support' },
     scenes: expressions.map((expression, sceneIndex) => ({ sceneIndex, text: `Scene ${sceneIndex + 1}`, role: sceneIndex === 5 ? 'cta' : 'fact', expression, emphasis: [], background: { mode: 'template' } })),
     visualBrief: 'Brief', safetyOverlays: ['Verify'], sourceUrls: draft.sourceUrls, factualClaims: [],
   };
