@@ -6,18 +6,24 @@
 
 ## Implemented flow
 
-1. Firecrawl collects all 13 approved US-market sources and four topic searches.
+1. Agent 01 collects 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Reddit and creator feeds bypass Firecrawl when a direct feed is available.
 2. Immutable raw files are partitioned by date/run in the dedicated data project.
-3. OR-keyword filtering, context checks, cleaning, exact duplicate detection, and
-   supporting-evidence grouping produce canonical news records.
-4. Codex scheduled analysis assigns importance/confidence and routes each record
-   to auto-process, reject/archive/defer, or rare Slack review.
+3. OR-keyword filtering, context checks, article-body cleaning, exact and conservative
+   near-title duplicate detection, and supporting-evidence grouping produce canonical news records.
+4. Codex scheduled analysis uses the `creddy-ranking-v3` viral rubric, channel-fit
+   predictions, freshness, product fit, importance, and confidence to calculate
+   editorial priority. Editorial upside stays independent of evidence readiness;
+   the stage emits a diversified five-story slate and verification queue before
+   routing any fully supported record onward.
 5. Slack is allowed only for an important, material, message-changing conflict
    after verification is exhausted. Signed Process/Skip/Hold actions are audited
    and idempotent.
-6. Codex scheduled content generation creates scripts, captions, app deep links,
-   briefs, visual prompts, optional generated-image paths, and two versioned video
-   jobs without requiring `OPENAI_API_KEY`.
+6. Agent 04 generates four distinct, claim-traceable concepts and selects one
+   qualified-attention promise before writing. It adapts that promise into blog,
+   newsletter, YouTube, Instagram, and TikTok headline packs, then creates the
+   six-slide copy, narration, captions, app deep link, and production brief.
+   Unsupported numbers, superlatives, fabricated experience, and clickbait fail
+   validation; full long-form bodies and media remain later work.
 7. The isolated Creddy Video Factory runtime at
    `/Users/mohitkourav/Code/video-factory-creddy` uses the official
    `thebrewapps/video-factory` cream/gold templates, supplied mascot pose pack,
@@ -61,7 +67,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 47 automated unit/integration tests pass.
+- 132 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.
@@ -69,8 +75,8 @@ their own provider keys and credits.
   production dependencies are installed under Python 3.12.
 - A cloned-voice Creddy production render completed successfully at 1080x1920,
   17.4 seconds, H.264/AAC, 3.5 MB.
-- Config validation confirms 13 enabled sources, four searches, and eight OR
-  keywords.
+- Config validation confirms 18 enabled sources, 12 rotating searches (six active
+  per editorial window), and 23 OR keywords.
 - Pipeline status resolves the dedicated data root and reports empty queues while
   disabled.
 

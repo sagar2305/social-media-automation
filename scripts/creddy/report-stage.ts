@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
+import { CREDDY_DISCOVERY_PROFILE } from './config.js';
+import { selectEditorialPortfolio } from './analysis-stage.js';
 import {
   listJsonFiles,
   pathExists,
@@ -9,6 +11,7 @@ import {
 } from './pipeline-store.js';
 import type {
   AnalysisDecisionRecord,
+  AnalysisPerformanceFeedbackRecord,
   AnalysisTaskRecord,
   CanonicalNewsRecord,
   ContentBankRecord,
@@ -65,12 +68,64 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const collection = await latestManifest(root, 'collection');
   const productiveCollection = await latestProductiveManifest(root, 'collection');
   const usage = collection?.providerUsage?.firecrawl;
+  const discoveryCandidates = discovery?.candidates ?? [];
+  const dispositionCount = (value: DiscoveryRunRecord['candidates'][number]['disposition']): number =>
+    discoveryCandidates.filter((item) => item.disposition === value).length;
+  const selectedDispositions = new Set<DiscoveryRunRecord['candidates'][number]['disposition']>([
+    'selected_for_scrape',
+    'stored_raw',
+    'unchanged',
+    'scrape_failed',
+  ]);
+  const selectedCandidates = discoveryCandidates.filter((item) => selectedDispositions.has(item.disposition));
+  const selectedCoreCount = selectedCandidates.filter((item) => item.discoveryClass === 'core').length;
+  const selectedAdjacentCount = selectedCandidates.filter((item) => item.discoveryClass === 'adjacent').length;
+  const selectedPublisherCounts = selectedCandidates.reduce<Record<string, number>>((counts, item) => {
+    const publisher = item.publisherKey ?? 'unknown';
+    counts[publisher] = (counts[publisher] ?? 0) + 1;
+    return counts;
+  }, {});
+  const selectedEventCounts = selectedCandidates.reduce<Record<string, number>>((counts, item) => {
+    const event = item.eventFingerprint?.trim();
+    if (!event) return counts;
+    counts[event] = (counts[event] ?? 0) + 1;
+    return counts;
+  }, {});
+  const selectedIntentCounts = selectedCandidates.reduce<Record<string, number>>((counts, item) => {
+    const intent = item.queryIntent ?? 'unclassified';
+    counts[intent] = (counts[intent] ?? 0) + 1;
+    return counts;
+  }, {});
+  const publisherEntries = Object.entries(selectedPublisherCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const eventEntries = Object.entries(selectedEventCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const maximumPublisherCount = Math.max(0, ...publisherEntries.map(([, count]) => count));
+  const maximumEventCount = Math.max(0, ...eventEntries.map(([, count]) => count));
+  const lowRelevanceCount = discoveryCandidates.filter((item) => item.discoveryClass === 'low_relevance').length;
+  const emergingDomains = [...(discovery?.candidates ?? [])]
+    .filter((item) => item.sourceId.startsWith('topic-search:'))
+    .reduce<Record<string, number>>((counts, item) => {
+      try {
+        const domain = new URL(
+          (item.rawRecordId ? rawById.get(item.rawRecordId)?.canonicalUrl : undefined) ?? item.url,
+        ).hostname.replace(/^www\./, '');
+        counts[domain] = (counts[domain] ?? 0) + 1;
+      } catch {
+        // Malformed URLs are already excluded by collection; keep reports resilient.
+      }
+      return counts;
+    }, {});
   const collectionLines = [
     '# 01 — Discovery and Firecrawl collection',
     '',
     `Generated: ${new Date().toISOString()}`,
     `Latest run: ${collection?.runId ?? 'none'}`,
     `Candidates: ${discovery?.candidateCount ?? 0}; scrape limit: ${discovery?.scrapeLimit ?? 0}; stored: ${collection?.outputCount ?? 0}; skipped: ${collection?.skippedCount ?? 0}; failed: ${collection?.failedCount ?? 0}`,
+    `Selection: selected=${selectedCandidates.length} (core=${selectedCoreCount}, adjacent=${selectedAdjacentCount}); low relevance=${lowRelevanceCount}; deferred capacity=${dispositionCount('deferred_capacity')}; deferred low relevance=${dispositionCount('deferred_low_relevance')}; recently checked=${dispositionCount('recently_checked')}`,
+    `Selection publisher diversity: ${publisherEntries.length} pre-scrape publisher lanes (best-effort target ${CREDDY_DISCOVERY_PROFILE.targetPublishers}); maximum selected per lane ${maximumPublisherCount} (hard limit ${CREDDY_DISCOVERY_PROFILE.maxPerPublisher}).`,
+    `Selection event diversity: ${eventEntries.length} classified pre-scrape event fingerprints; maximum selected per event ${maximumEventCount} (hard limit ${CREDDY_DISCOVERY_PROFILE.maxPerEvent}); blank/legacy fingerprints are excluded from this audit.`,
+    `Editorial intent proxy: timely=${selectedIntentCounts.timely ?? 0}, evergreen=${selectedIntentCounts.evergreen ?? 0}, experimental=${selectedIntentCounts.experimental ?? 0}, unclassified source-listing=${selectedIntentCounts.unclassified ?? 0}. The ${CREDDY_DISCOVERY_PROFILE.editorialTarget.timely * 100}/${CREDDY_DISCOVERY_PROFILE.editorialTarget.evergreen * 100}/${CREDDY_DISCOVERY_PROFILE.editorialTarget.experimental * 100} mix is a reporting target, not a hard selection rule; source-listing candidates are unclassified.`,
     `Total raw article records retained across runs: ${rawRecords.length}`,
     `Most recent productive collection: ${productiveCollection?.runId ?? 'none'} (${productiveCollection?.outputCount ?? 0} raw records stored)`,
     '',
@@ -83,10 +138,12 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '## Additional topic searches',
     '',
-    '| Query | Provider | Status | New candidates | Error |',
-    '|---|---|---|---:|---|',
+    `Inactive rotating query IDs this window: ${(discovery?.inactiveTopicSearchIds ?? []).join(', ') || 'none'}`,
+    '',
+    '| Query ID | Intent | Query | Provider | Status | New candidates | Error |',
+    '|---|---|---|---|---|---:|---|',
     ...(discovery?.topicSearchResults ?? []).map((item) =>
-      `| ${cell(item.query)} | ${cell(item.provider)} | ${cell(item.status)} | ${item.discoveredCount} | ${cell(item.error ?? '')} |`),
+      `| ${cell(item.id ?? 'legacy')} | ${cell(item.intent ?? 'unknown')} | ${cell(item.query)} | ${cell(item.provider)} | ${cell(item.status)} | ${item.discoveredCount} | ${cell(item.error ?? '')} |`),
     '',
     '## Provider usage',
     '',
@@ -101,13 +158,31 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '> Request counts are exact for this run. A credit total is labelled exact only when Firecrawl reports credits for every successful response.',
     '',
+    '## Selection diversity audit',
+    '',
+    '| Pre-scrape publisher lane | Selected |',
+    '|---|---:|',
+    ...publisherEntries.map(([publisher, count]) => `| ${cell(publisher)} | ${count} |`),
+    '',
+    '| Pre-scrape event fingerprint | Selected |',
+    '|---|---:|',
+    ...eventEntries.map(([event, count]) => `| ${cell(event)} | ${count} |`),
+    '',
+    '## Emerging source observations',
+    '',
+    '> These domains were found by focused searches. They are observations only and are never added to the trusted source registry automatically.',
+    '',
+    '| Domain | Candidates this run |',
+    '|---|---:|',
+    ...Object.entries(emergingDomains).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([domain, count]) => `| ${cell(domain)} | ${count} |`),
+    '',
     '## Discovered article ledger',
     '',
-    '| Source | Article/title | URL | Disposition |',
-    '|---|---|---|---|',
-    ...(discovery?.candidates ?? []).map((item) => {
+    '| Source | Article/title | Selection publisher lane | Resolved publisher | Query intent | Selection event | Resolved event | Discovery class | Selection reason | URL | Disposition |',
+    '|---|---|---|---|---|---|---|---|---|---|---|',
+    ...discoveryCandidates.map((item) => {
       const raw = item.rawRecordId ? rawById.get(item.rawRecordId) : undefined;
-      return `| ${cell(item.sourceName)} | ${cell(item.discoveredTitle || raw?.title || '(title available after article scrape)')} | ${cell(item.url)} | ${cell(item.disposition)} |`;
+      return `| ${cell(item.sourceName)} | ${cell(item.discoveredTitle || raw?.title || '(title available after article scrape)')} | ${cell(item.publisherKey ?? 'unknown')} | ${cell(item.resolvedPublisherKey ?? 'unresolved')} | ${cell(item.queryIntent ?? 'unclassified')} | ${cell(item.eventFingerprint ?? 'legacy-unclassified')} | ${cell(item.resolvedEventFingerprint ?? 'unresolved')} | ${cell(item.discoveryClass ?? 'legacy')} | ${cell(item.selectionReason ?? '')} | ${cell(item.url)} | ${cell(item.disposition)} |`;
     }),
   ];
   const collectionPath = safeDataPath(outputRoot, '01-discovery-and-collection.md');
@@ -185,6 +260,15 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     },
     {},
   );
+  const latestRetained = canonical.filter((item) =>
+    Boolean(filtering?.runId) && item.qualification.filterRunId === filtering?.runId,
+  );
+  const latestRejected = rejected.filter((item) =>
+    Boolean(filtering?.runId) && item.filterRunId === filtering?.runId,
+  );
+  const latestDuplicates = archivedDuplicates.filter((item) =>
+    Boolean(dedupe?.runId) && item.dedupeRunId === dedupe?.runId,
+  );
   const filterLines = [
     '# Agent 02 — Cleaning, verification, and deduplication', '',
     `Generated: ${new Date().toISOString()}`,
@@ -196,6 +280,25 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Verification status: ${Object.entries(verificationCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
     '',
     '> Agent 2 does not claim that a single-source article is true. It marks verification status and carries evidence forward for Agent 3.',
+    '',
+    '## Latest calibration batch — retained',
+    '',
+    `Retained: ${latestRetained.length}`,
+    '',
+    '| Source | Article | Why retained | URL | Record ID |',
+    '|---|---|---|---|---|',
+    ...latestRetained.map((item) => `| ${cell(item.sourceName)} | ${cell(item.title)} | ${cell(item.qualification.matchedKeywords.join(', '))} | ${cell(item.canonicalUrl)} | ${cell(item.id)} |`),
+    '',
+    '## Latest calibration batch — rejected',
+    '',
+    `Rejected: ${latestRejected.length}; duplicate evidence archived: ${latestDuplicates.length}`,
+    '',
+    '| Source | Article | Why rejected | URL | Record ID |',
+    '|---|---|---|---|---|',
+    ...[...latestRejected, ...latestDuplicates].map((item) => {
+      const raw = rawById.get(item.sourceRecordId);
+      return `| ${cell(raw?.sourceName ?? 'unknown')} | ${cell(raw?.title ?? '(title unavailable)')} | ${cell(`${item.reason}: ${item.details ?? ''}`)} | ${cell(item.canonicalUrl)} | ${cell(item.sourceRecordId)} |`;
+    }),
     '',
     '## Clean canonical article list',
     '', '| Source | Canonical article | Matched keywords | Evidence | Verification | Fact-check required | URL |', '|---|---|---|---|---:|---|---|',
@@ -293,9 +396,21 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const activeCanonicalIds = new Set(canonical.map((item) => item.canonicalId));
   const decisions = allDecisions.filter((item) => activeCanonicalIds.has(item.canonicalId));
   decisions.sort((a, b) =>
+    (b.editorialPriorityScore ?? -1) - (a.editorialPriorityScore ?? -1) ||
+    (b.viralPotential?.score ?? -1) - (a.viralPotential?.score ?? -1) ||
     (b.productFitScore ?? -1) - (a.productFitScore ?? -1) ||
     (b.popularityScore ?? -1) - (a.popularityScore ?? -1) ||
     b.importanceScore - a.importanceScore || b.confidenceScore - a.confidenceScore);
+  const portfolio = selectEditorialPortfolio(decisions, 5);
+  const verificationQueue = decisions.filter((item) =>
+    item.rubricVersion === 'creddy-ranking-v3' &&
+    item.verificationState !== 'ready' &&
+    (item.editorialDisposition === 'produce' || item.editorialDisposition === 'evergreen'));
+  const performanceFeedback = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, 'feedback', 'agent-03')))
+      .map((path) => readJson<AnalysisPerformanceFeedbackRecord>(path)),
+  );
+  const decisionByCanonicalId = new Map(decisions.map((item) => [item.canonicalId, item]));
   const pendingAnalysis = (await Promise.all(
     (await listJsonFiles(safeDataPath(root, '04-analysis-queue', 'pending')))
       .map((path) => readJson<AnalysisTaskRecord>(path)),
@@ -310,12 +425,48 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Active canonical inputs: ${canonical.length}; completed rankings: ${decisions.length}; pending rankings: ${pendingAnalysis.length}`,
     `Routes: ${Object.entries(routeCounts).map(([route, count]) => `${route}=${count}`).join(', ') || 'none'}`,
     '',
-    '> Popularity is an estimated editorial-interest score, not measured social views. Legacy rows show `n/a` until re-analysis.',
+    '> Viral potential and channel scores are editorial predictions, not measured views. Legacy rows show `n/a` until ranking v3 re-analysis.',
+    '> Editorial priority is independent of verification readiness. Nothing enters production until its operational route is ready.',
     '> Slack review is allowed only for a high-importance material conflict that changes the message after verification is exhausted.',
     '',
-    '| Rank | Headline | Product fit | Popularity | Importance | Confidence | Route | Reasons |',
-    '|---:|---|---:|---:|---:|---:|---|---|',
-    ...decisions.map((item, index) => `| ${index + 1} | ${cell(item.headline)} | ${item.productFitScore ?? 'n/a'} | ${item.popularityScore ?? 'n/a'} | ${item.importanceScore} | ${item.confidenceScore} | ${cell(item.route)} | ${cell([...item.importanceReasons, ...item.rejectionReasons].join('; '))} |`),
+    '| Rank | Headline | Priority | Viral | Product fit | Freshness | Confidence | Hook | Best channel | Verification | Route |',
+    '|---:|---|---:|---:|---:|---:|---:|---|---|---|---|',
+    ...decisions.map((item, index) => {
+      const channels = item.channelScores ? Object.entries(item.channelScores).sort((a, b) => b[1] - a[1])[0] : undefined;
+      return `| ${index + 1} | ${cell(item.headline)} | ${item.editorialPriorityScore ?? 'n/a'} | ${item.viralPotential?.score ?? item.popularityScore ?? 'n/a'} | ${item.productFitScore ?? 'n/a'} | ${item.freshnessScore ?? 'n/a'} | ${item.confidenceScore} | ${cell(item.hookType ?? 'legacy')} | ${cell(channels ? `${channels[0]} (${channels[1]})` : 'n/a')} | ${cell(item.verificationState ?? 'legacy')} | ${cell(item.route)} |`;
+    }),
+    '',
+    `## Recommended five-story slate (${portfolio.length})`,
+    '',
+    '> This is the highest-upside diversified editorial slate. Items that still require verification remain blocked from production.',
+    '',
+    '| Slate | Headline | Category | Priority | Viral | Hook | Verification | Operational route |',
+    '|---:|---|---|---:|---:|---|---|---|',
+    ...portfolio.map((item, index) => `| ${index + 1} | ${cell(item.headline)} | ${cell(item.portfolioCategory)} | ${item.editorialPriorityScore} | ${item.viralPotential?.score} | ${cell(item.hookType)} | ${cell(item.verificationState)} | ${cell(item.route)} |`),
+    '',
+    `## Verification queue (${verificationQueue.length})`,
+    '',
+    '| Priority | Headline | Verification needed |',
+    '|---:|---|---|',
+    ...verificationQueue.map((item) => `| ${item.editorialPriorityScore} | ${cell(item.headline)} | ${cell(item.verificationRequirements?.join('; '))} |`),
+    '',
+    `## Editorial and performance feedback (${performanceFeedback.length})`,
+    '',
+    '> Feedback is append-only local data. Predicted scores can be compared with observed channel results after content is published.',
+    '',
+    '| Recorded | Headline | Channel | Predicted channel score | Verdict | Views | Shares | Saves | Clicks | Conversions | Note |',
+    '|---|---|---|---:|---|---:|---:|---:|---:|---:|---|',
+    ...performanceFeedback.map((item) => {
+      const decision = decisionByCanonicalId.get(item.canonicalId);
+      const predicted = item.channel === 'instagram_tiktok'
+        ? decision?.channelScores?.instagramTikTok
+        : item.channel === 'blog_seo'
+          ? decision?.channelScores?.blogSeo
+          : item.channel === 'newsletter'
+            ? decision?.channelScores?.newsletter
+            : decision?.channelScores?.evergreen;
+      return `| ${cell(item.recordedAt)} | ${cell(decision?.headline ?? item.canonicalId)} | ${cell(item.channel)} | ${predicted ?? 'n/a'} | ${cell(item.editorialVerdict ?? '')} | ${item.views ?? ''} | ${item.shares ?? ''} | ${item.saves ?? ''} | ${item.clicks ?? ''} | ${item.conversions ?? ''} | ${cell(item.note ?? '')} |`;
+    }),
     '',
     `## Awaiting scheduled ranking (${pendingAnalysis.length})`,
     '',
@@ -352,10 +503,10 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
       '',
       '> Scores are cumulative for all currently active canonical articles. JSON decision records remain the source of truth.',
       '',
-      '| Rank | Headline | Product fit | Popularity | Importance | Confidence | Route | Importance / rejection reasons | Confidence reasons | Evidence IDs |',
-      '|---:|---|---:|---:|---:|---:|---|---|---|---|',
+      '| Rank | Headline | Priority | Viral | Product fit | Importance | Freshness | Confidence | Editorial disposition | Verification | Route | Hook | Channel scores | Evidence IDs |',
+      '|---:|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|---|',
       ...decisions.map((item, index) =>
-        `| ${index + 1} | ${cell(item.headline)} | ${item.productFitScore ?? 'n/a'} | ${item.popularityScore ?? 'n/a'} | ${item.importanceScore} | ${item.confidenceScore} | ${cell(item.route)} | ${cell([...item.importanceReasons, ...item.rejectionReasons].join('; '))} | ${cell(item.confidenceReasons.join('; '))} | ${cell(item.evidenceRecordIds.join(', '))} |`),
+        `| ${index + 1} | ${cell(item.headline)} | ${item.editorialPriorityScore ?? 'n/a'} | ${item.viralPotential?.score ?? item.popularityScore ?? 'n/a'} | ${item.productFitScore ?? 'n/a'} | ${item.importanceScore} | ${item.freshnessScore ?? 'n/a'} | ${item.confidenceScore} | ${cell(item.editorialDisposition ?? 'legacy')} | ${cell(item.verificationState ?? 'legacy')} | ${cell(item.route)} | ${cell(item.hookType ?? 'legacy')} | ${cell(item.channelScores ? JSON.stringify(item.channelScores) : 'n/a')} | ${cell(item.evidenceRecordIds.join(', '))} |`),
     ];
     const rankingLedgerPath = safeDataPath(
       root,
@@ -377,23 +528,60 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   );
   const drafts = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '06-content-drafts')))
-      .filter((path) => !/\/(scripts|captions|briefs)\//.test(path))
+      .filter((path) => !/\/(scripts|captions|briefs|legacy)\//.test(path))
       .map((path) => readJson<ContentDraftRecord>(path)),
   );
   const packages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path));
+  const opportunityIds = new Set(opportunities.map((opportunity) => opportunity.id));
+  const conceptDrafts = drafts.filter((draft) =>
+    opportunityIds.has(draft.analysisId) && draft.copyVersion === 'creddy-copy-v2' && draft.conceptPack);
   const contentLines = [
     '# Agent 04 — Scripts, captions, CTA, and production briefs', '',
     `Generated: ${new Date().toISOString()}`,
     `Content opportunities: ${opportunities.length}`,
-    `Completed copy drafts: ${drafts.length}`,
-    `Pending copy drafts: ${Math.max(0, opportunities.length - drafts.length)}`,
+    `Completed copy drafts: ${conceptDrafts.length}`,
+    `Pending copy drafts: ${Math.max(0, opportunities.length - conceptDrafts.length)}`,
     '',
     '> Agent 04 writes copy only. It does not generate images, choose mascot expressions, create Video Factory jobs, render, approve, schedule, or publish.',
     '',
-    '| Hook | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
-    '|---|---|---:|---:|---|---|---|---:|',
-    ...drafts.map((draft) => `| ${cell(draft.hook)} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`),
+    '| Hook | Selected style | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
+    '|---|---|---|---:|---:|---|---|---|---:|',
+    ...drafts.map((draft) => {
+      const selected = draft.conceptPack?.candidates.find((candidate) =>
+        candidate.id === draft.conceptPack?.selectedCandidateId);
+      return `| ${cell(draft.hook)} | ${cell(selected?.style ?? 'legacy')} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`;
+    }),
+    '',
+    '## Concept candidates and selection',
+    '',
+    '> Accepted copy-v2 records passed structural claim references, numeric-token checks, guarded superlatives, display limits, fulfillment excerpts, and banned-phrase validation. Factual entailment remains an Agent 04 authoring and human-review responsibility.',
+    '',
+    ...conceptDrafts.flatMap((draft) => {
+      const pack = draft.conceptPack!;
+      return [
+        `### ${cell(draft.hook)}`,
+        '',
+        `Selected: ${cell(pack.selectedCandidateId)} — ${cell(pack.selectionRationale)}`,
+        `Promise resolved by slide ${pack.resolution.slideNumber}: ${cell(pack.resolution.explanation)}`,
+        '',
+        '| Candidate | Style | Concept | Promise | Claim fields | Decision |',
+        '|---|---|---|---|---|---|',
+        ...pack.candidates.map((candidate) => {
+          const rejection = pack.rejectionReasons.find((item) => item.candidateId === candidate.id);
+          return `| ${cell(candidate.id)} | ${cell(candidate.style)} | ${cell(candidate.concept)} | ${cell(candidate.promise)} | ${cell(candidate.supportingClaimFields.join(', '))} | ${rejection ? `Rejected: ${cell(rejection.reason)}` : 'Selected'} |`;
+        }),
+        '',
+      ];
+    }),
+    '## Platform headline packs',
+    '',
+    '| Selected hook | Blog | Newsletter | YouTube | Thumbnail | YouTube Short | Instagram | TikTok |',
+    '|---|---|---|---|---|---|---|---|',
+    ...conceptDrafts.map((draft) => {
+      const platforms = draft.conceptPack!.platforms;
+      return `| ${cell(draft.hook)} | ${cell(platforms.blog.headline)} | ${cell(`${platforms.newsletter.subject} — ${platforms.newsletter.preheader}`)} | ${cell(platforms.youtubeLong.title)} | ${cell(platforms.youtubeLong.thumbnailPhrase)} | ${cell(platforms.youtubeShort.title)} | ${cell(platforms.instagram.coverHook)} | ${cell(platforms.tiktok.coverHook)} |`;
+    }),
     '',
     '## Downstream legacy/output status',
     '',

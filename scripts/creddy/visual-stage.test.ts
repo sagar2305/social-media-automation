@@ -28,7 +28,7 @@ function plan(): VisualPlanRecord {
     version: CREDDY_PIPELINE_VERSION, id: 'visual-copy-analysis-1', contentDraftId: copy.id,
     analysisId: copy.analysisId, canonicalId: copy.canonicalId, createdAt: '2026-08-19T12:40:00.000Z',
     format: '9:16', theme: 'editorial', characterPack: 'credit-card-rewards/creddy',
-    cover: { headline: 'Transfer bonus?', subheadline: 'Check the award first' },
+    cover: { headline: copy.hook, subheadline: 'Check the award first' },
     scenes: [
       { sceneIndex: 0, text: copy.textScenes[0]!, role: 'hook', expression: 'rewards', emphasis: ['20%'], background: { mode: 'template' } },
       { sceneIndex: 1, text: copy.textScenes[1]!, role: 'context', expression: 'thinking', emphasis: ['award space'], background: { mode: 'template' } },
@@ -60,13 +60,14 @@ test('Agent 5 accepts the locked 3:4 Creddy slideshow format', () => {
   const slideshow = {
     ...base,
     format: '3:4' as const,
+    phoneTemplateId: 'app_store_dark' as const,
     scenes: [
       base.scenes[0]!,
       base.scenes[1]!,
       base.scenes[2]!,
       { ...base.scenes[0]!, sceneIndex: 3, expression: 'curious' as const },
       { ...base.scenes[1]!, sceneIndex: 4, expression: 'pointing' as const },
-      { ...base.scenes[2]!, sceneIndex: 5, expression: 'urgent' as const },
+      { ...base.scenes[2]!, sceneIndex: 5, role: 'cta' as const, expression: 'urgent' as const },
     ],
   };
   assert.equal(validateVisualPlan(slideshow).format, '3:4');
@@ -102,16 +103,20 @@ test('Agent 5 rejects repetitive six-slide slideshows permanently', () => {
   const repetitive: VisualPlanRecord = {
     ...base,
     format: '3:4',
+    phoneTemplateId: 'app_store_dark',
     scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
-      ...base.scenes[sceneIndex % 3]!, sceneIndex, expression: sceneIndex % 2 ? 'thinking' : 'neutral',
+      ...base.scenes[sceneIndex % 3]!, sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: sceneIndex % 2 ? 'thinking' : 'neutral',
     })),
   };
   assert.throws(() => validateVisualPlan(repetitive), /at least five script-appropriate expressions/);
 
-  const adjacent = {
+  const adjacent: VisualPlanRecord = {
     ...repetitive,
     scenes: ['neutral', 'waving', 'thinking', 'thinking', 'curious', 'urgent'].map((expression, sceneIndex) => ({
       ...base.scenes[sceneIndex % 3]!, sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
       expression: expression as VisualPlanRecord['scenes'][number]['expression'],
     })),
   };
@@ -122,8 +127,82 @@ test('Agent 5 cannot change Agent 4 scene copy or factual claims', async () => {
   const root = await fixture();
   const changedCopy = plan();
   changedCopy.scenes[0]!.text = 'A 50% bonus is available.';
+  changedCopy.scenes[0]!.emphasis = ['50%'];
   await assert.rejects(() => acceptVisualPlan(root, changedCopy), /cannot change Agent 4 scene copy/);
   const changedClaim = plan();
   changedClaim.factualClaims[0]!.value = 50;
   await assert.rejects(() => acceptVisualPlan(root, changedClaim), /preserve accepted factual claims exactly/);
+});
+
+test('Agent 5 cannot replace the selected Agent 4 hook', async () => {
+  const root = await fixture();
+  const changed = plan();
+  changed.cover.headline = 'A different angle';
+  await assert.rejects(() => acceptVisualPlan(root, changed), /preserve the selected Agent 4 hook/);
+});
+
+test('Agent 5 requires explicit CTA-matched phone proof and real emphasis text', () => {
+  const base = plan();
+  const slideshow: VisualPlanRecord = {
+    ...base,
+    format: '3:4',
+    phoneTemplateId: 'app_store_dark',
+    scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
+      ...base.scenes[sceneIndex % 3]!,
+      sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: ['rewards', 'thinking', 'worried', 'curious', 'pointing', 'urgent'][sceneIndex] as VisualPlanRecord['scenes'][number]['expression'],
+    })),
+  };
+  const missingPhone = { ...slideshow, phoneTemplateId: undefined };
+  assert.throws(() => validateVisualPlan(missingPhone), /phoneTemplateId/);
+  slideshow.scenes[1]!.emphasis = ['not in the slide'];
+  assert.throws(() => validateVisualPlan(slideshow), /emphasis phrase/);
+});
+
+test('Agent 5 enforces premium-editorial role, color, and copy discipline', () => {
+  const base = plan();
+  const slideshow: VisualPlanRecord = {
+    ...base,
+    format: '3:4',
+    phoneTemplateId: 'app_store_dark',
+    scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
+      ...base.scenes[sceneIndex % 3]!,
+      sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 4 ? 'caution' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: ['rewards', 'thinking', 'worried', 'curious', 'pointing', 'urgent'][sceneIndex] as VisualPlanRecord['scenes'][number]['expression'],
+      background: {
+        mode: 'template',
+        style: sceneIndex === 4 ? 'burgundy' : sceneIndex > 0 && sceneIndex < 4 ? 'deep_navy' : 'spotlight',
+      },
+    })),
+  };
+  assert.doesNotThrow(() => validateVisualPlan(slideshow));
+
+  slideshow.scenes[2]!.background.style = 'forest';
+  assert.throws(() => validateVisualPlan(slideshow), /one deck accent family/);
+  slideshow.scenes[2]!.background.style = 'deep_navy';
+  slideshow.scenes[1]!.background.mode = 'generated_illustration';
+  slideshow.scenes[1]!.background.prompt = 'A branded illustration';
+  assert.throws(() => validateVisualPlan(slideshow), /mascot\/app-led/);
+});
+
+test('Agent 5 rejects visual overflow and arbitrary multi-phrase emphasis', () => {
+  const base = plan();
+  const slideshow: VisualPlanRecord = {
+    ...base,
+    format: '3:4',
+    phoneTemplateId: 'app_store_dark',
+    scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
+      ...base.scenes[sceneIndex % 3]!,
+      sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: ['rewards', 'thinking', 'worried', 'curious', 'pointing', 'urgent'][sceneIndex] as VisualPlanRecord['scenes'][number]['expression'],
+    })),
+  };
+  slideshow.scenes[1]!.emphasis = ['Check', 'award space'];
+  assert.throws(() => validateVisualPlan(slideshow), /linked numeric values/);
+  slideshow.scenes[1]!.text = 'This deliberately excessive scene contains far too many separate words for one premium editorial slide and must return upstream for a shorter validated revision.';
+  slideshow.scenes[1]!.emphasis = ['far too many'];
+  assert.throws(() => validateVisualPlan(slideshow), /word budget/);
 });

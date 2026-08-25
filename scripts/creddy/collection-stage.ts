@@ -3,12 +3,16 @@ import { createHash } from 'node:crypto';
 import { buildArticleIdentity, normalizeArticleUrl } from './article-identity.js';
 import {
   CREDDY_CAMPAIGN_SLUG,
+  CREDDY_DISCOVERY_PROFILE,
   CREDDY_SOURCES,
   CREDDY_TOPIC_SEARCHES,
   getEnabledCreddySources,
+  type CreddyQueryIntent,
   type CreddySourceConfig,
 } from './config.js';
+import { activeCreddyTopicSearches } from './discovery-cadence.js';
 import { filterSourceArticleLinks } from './discovery-planner.js';
+import { discoveryEventFingerprint, selectDiscoveryCandidates } from './discovery-selection.js';
 import { FirecrawlClient } from './firecrawl-client.js';
 import { fetchRedditRss } from './reddit-rss-client.js';
 import {
@@ -31,6 +35,7 @@ import {
   type SourceCollectionResult,
   type TopicSearchCollectionResult,
 } from './pipeline-types.js';
+import { fetchYouTubeFeed } from './youtube-feed-client.js';
 
 interface UrlIndexEntry {
   lastFetchedAt: string;
@@ -48,6 +53,7 @@ export interface CollectionStageOptions {
   maxArticleScrapes?: number;
   recheckAfterHours?: number;
   redditFetchImpl?: typeof fetch;
+  youtubeFetchImpl?: typeof fetch;
   onProgress?: (event: CollectionProgressEvent) => void;
 }
 
@@ -76,9 +82,24 @@ interface DiscoveredCandidate {
   source: CreddySourceConfig | null;
   searchQuery?: string;
   discoveredTitle?: string;
+  discoveredDescription?: string;
   prefetchedMarkdown?: string;
   publishedAt?: string;
   providerMetadata?: Record<string, unknown>;
+  laneId: string;
+  publisherKey: string;
+  queryId?: string;
+  queryIntent?: CreddyQueryIntent;
+}
+
+function publisherKeyForUrl(url: string, source: CreddySourceConfig | null, queryId?: string): string {
+  if (source) return source.id;
+  const parsed = new URL(url);
+  const host = parsed.hostname.replace(/^(?:www|m)\./, '').toLocaleLowerCase('en-US');
+  if (host === 'google.com' && parsed.pathname.startsWith('/goto')) {
+    return `unknown:${queryId ?? 'search'}`;
+  }
+  return host;
 }
 
 function listingTitles(markdown: string | undefined, baseUrl: string): Map<string, string> {
@@ -105,15 +126,31 @@ function recordId(canonicalUrl: string, contentHash: string): string {
     .slice(0, 24);
 }
 
-function sourceForUrl(url: string): CreddySourceConfig | null {
+export function sourceForUrl(url: string): CreddySourceConfig | null {
   const host = new URL(url).hostname.replace(/^www\./, '').toLocaleLowerCase('en-US');
   return (
     CREDDY_SOURCES.find(
       (source) =>
+        source.sourceClass !== 'creator_signal' &&
         new URL(source.url).hostname.replace(/^www\./, '').toLocaleLowerCase('en-US') ===
         host,
     ) ?? null
   );
+}
+
+export function resolvedArticleUrl(
+  requestedUrl: string,
+  metadata: Record<string, unknown> | undefined,
+): string {
+  for (const value of [metadata?.url, metadata?.ogUrl, metadata?.['og:url'], requestedUrl]) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    try {
+      return normalizeArticleUrl(value);
+    } catch {
+      // Provider metadata is untrusted; fall back to the next safe candidate.
+    }
+  }
+  return normalizeArticleUrl(requestedUrl);
 }
 
 function shouldRecheck(entry: UrlIndexEntry | undefined, now: Date, hours: number): boolean {
@@ -142,8 +179,8 @@ export async function runCollectionStage(
     }
   };
   const now = options.now ?? new Date();
-  const maxLinksPerSource = options.maxLinksPerSource ?? 10;
-  const maxArticleScrapes = options.maxArticleScrapes ?? 40;
+  const maxLinksPerSource = options.maxLinksPerSource ?? CREDDY_DISCOVERY_PROFILE.maxLinksPerSourceDefault;
+  const maxArticleScrapes = options.maxArticleScrapes ?? CREDDY_DISCOVERY_PROFILE.productionScrapeLimit;
   const recheckAfterHours = options.recheckAfterHours ?? 24;
   if (maxArticleScrapes < 1) throw new Error('maxArticleScrapes must be positive');
 
@@ -164,9 +201,10 @@ export async function runCollectionStage(
       errors: [],
     };
     await writeRunManifest(options.root, manifest);
+    const activeTopicSearches = activeCreddyTopicSearches(now);
     progress({
       phase: 'run_started',
-      message: `Agent 01 started run ${runId}; collecting 13 sources and ${CREDDY_TOPIC_SEARCHES.length} topic searches.`,
+      message: `Agent 01 started run ${runId}; collecting ${getEnabledCreddySources().length} sources and ${activeTopicSearches.length} of ${CREDDY_TOPIC_SEARCHES.length} rotating topic searches.`,
     });
 
     const candidates = new Map<string, DiscoveredCandidate>();
@@ -181,6 +219,72 @@ export async function runCollectionStage(
         total: enabledSources.length,
       });
       try {
+        if (source.sourceClass === 'creator_signal') {
+          const entries = await fetchYouTubeFeed(source, maxLinksPerSource, options.youtubeFetchImpl);
+          for (const entry of entries) {
+            const canonical = normalizeArticleUrl(entry.url);
+            candidates.set(canonical, {
+              url: canonical,
+              source,
+              discoveredTitle: entry.title,
+              discoveredDescription: entry.markdown.slice(0, 1_000),
+              prefetchedMarkdown: entry.markdown,
+              publishedAt: entry.publishedAt,
+              providerMetadata: entry.providerMetadata,
+              laneId: `source:${source.id}`,
+              publisherKey: source.id,
+            });
+          }
+          sourceResults.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            configuredUrl: source.url,
+            provider: 'youtube_rss',
+            status: 'completed',
+            discoveredCount: entries.length,
+          });
+          progress({
+            phase: 'source_completed',
+            message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} completed via YouTube RSS; ${entries.length} videos discovered.`,
+            completed: sourceIndex + 1,
+            total: enabledSources.length,
+          });
+          continue;
+        }
+        if (source.id.startsWith('reddit-')) {
+          const redditDelayMs = Math.max(0, 3_000 - (Date.now() - lastRedditRequestAt));
+          if (redditDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, redditDelayMs));
+          lastRedditRequestAt = Date.now();
+          const entries = await fetchRedditRss(source, maxLinksPerSource, options.redditFetchImpl);
+          for (const entry of entries) {
+            const canonical = normalizeArticleUrl(entry.url);
+            candidates.set(canonical, {
+              url: canonical,
+              source,
+              discoveredTitle: entry.title,
+              prefetchedMarkdown: entry.markdown,
+              publishedAt: entry.publishedAt,
+              providerMetadata: { collectionProvider: 'reddit_rss' },
+              laneId: `source:${source.id}`,
+              publisherKey: source.id,
+            });
+          }
+          sourceResults.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            configuredUrl: source.url,
+            provider: 'reddit_rss',
+            status: 'completed',
+            discoveredCount: entries.length,
+          });
+          progress({
+            phase: 'source_completed',
+            message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} completed via RSS; ${entries.length} entries discovered.`,
+            completed: sourceIndex + 1,
+            total: enabledSources.length,
+          });
+          continue;
+        }
         const listing = await options.client.scrapePage(source.url);
         const links = filterSourceArticleLinks(
           source,
@@ -193,6 +297,8 @@ export async function runCollectionStage(
             url: link,
             source,
             discoveredTitle: discoveredTitles.get(link),
+            laneId: `source:${source.id}`,
+            publisherKey: source.id,
           });
         }
         sourceResults.push({
@@ -210,79 +316,22 @@ export async function runCollectionStage(
           total: enabledSources.length,
         });
       } catch (error) {
-        const firecrawlError = (error as Error).message;
-        if (source.id.startsWith('reddit-')) {
-          try {
-            const redditDelayMs = Math.max(0, 3_000 - (Date.now() - lastRedditRequestAt));
-            if (redditDelayMs > 0) {
-              await new Promise((resolve) => setTimeout(resolve, redditDelayMs));
-            }
-            lastRedditRequestAt = Date.now();
-            const entries = await fetchRedditRss(
-              source,
-              maxLinksPerSource,
-              options.redditFetchImpl,
-            );
-            for (const entry of entries) {
-              const canonical = normalizeArticleUrl(entry.url);
-              candidates.set(canonical, {
-                url: canonical,
-                source,
-                discoveredTitle: entry.title,
-                prefetchedMarkdown: entry.markdown,
-                publishedAt: entry.publishedAt,
-                providerMetadata: { collectionProvider: 'reddit_rss_fallback' },
-              });
-            }
-            sourceResults.push({
-              sourceId: source.id,
-              sourceName: source.name,
-              configuredUrl: source.url,
-              provider: 'reddit_rss_fallback',
-              status: 'completed_with_fallback',
-              discoveredCount: entries.length,
-              error: `Firecrawl unavailable; fallback used: ${firecrawlError}`,
-            });
-            progress({
-              phase: 'source_completed',
-              message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} completed with RSS fallback; ${entries.length} entries discovered.`,
-              completed: sourceIndex + 1,
-              total: enabledSources.length,
-            });
-            continue;
-          } catch (fallbackError) {
-            const combined = `${firecrawlError}; RSS fallback: ${(fallbackError as Error).message}`;
-            sourceResults.push({
-              sourceId: source.id,
-              sourceName: source.name,
-              configuredUrl: source.url,
-              provider: 'reddit_rss_fallback',
-              status: 'failed',
-              discoveredCount: 0,
-              error: combined,
-            });
-            manifest.failedCount += 1;
-            manifest.errors.push(`${source.id}: ${combined}`);
-            progress({
-              phase: 'source_failed',
-              message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} unavailable; warning recorded and collection continues.`,
-              completed: sourceIndex + 1,
-              total: enabledSources.length,
-            });
-            continue;
-          }
-        }
+        const sourceError = (error as Error).message;
         sourceResults.push({
           sourceId: source.id,
           sourceName: source.name,
           configuredUrl: source.url,
-          provider: 'firecrawl',
+          provider: source.sourceClass === 'creator_signal'
+            ? 'youtube_rss'
+            : source.id.startsWith('reddit-')
+              ? 'reddit_rss'
+              : 'firecrawl',
           status: 'failed',
           discoveredCount: 0,
-          error: firecrawlError,
+          error: sourceError,
         });
         manifest.failedCount += 1;
-        manifest.errors.push(`${source.id}: ${firecrawlError}`);
+        manifest.errors.push(`${source.id}: ${sourceError}`);
         progress({
           phase: 'source_failed',
           message: `Source ${sourceIndex + 1}/${enabledSources.length}: ${source.name} failed; warning recorded and collection continues.`,
@@ -293,12 +342,13 @@ export async function runCollectionStage(
     }
 
     const topicSearchResults: TopicSearchCollectionResult[] = [];
-    for (const [searchIndex, query] of CREDDY_TOPIC_SEARCHES.entries()) {
+    for (const [searchIndex, search] of activeTopicSearches.entries()) {
+      const { id: queryId, query, intent: queryIntent } = search;
       progress({
         phase: 'search_started',
-        message: `Topic search ${searchIndex + 1}/${CREDDY_TOPIC_SEARCHES.length}: “${query}” started.`,
+        message: `Topic search ${searchIndex + 1}/${activeTopicSearches.length}: “${query}” started.`,
         completed: searchIndex,
-        total: CREDDY_TOPIC_SEARCHES.length,
+        total: activeTopicSearches.length,
       });
       try {
         const results = await options.client.searchNews(query);
@@ -312,30 +362,40 @@ export async function runCollectionStage(
             continue;
           }
           if (!candidates.has(canonical)) {
+            const source = sourceForUrl(canonical);
             candidates.set(canonical, {
               url: canonical,
-              source: sourceForUrl(canonical),
+              source,
               searchQuery: query,
               discoveredTitle: result.title,
+              discoveredDescription: result.description,
+              laneId: `search:${queryId}`,
+              publisherKey: publisherKeyForUrl(canonical, source, queryId),
+              queryId,
+              queryIntent,
             });
             discoveredCount += 1;
           }
         }
         topicSearchResults.push({
+          id: queryId,
           query,
+          intent: queryIntent,
           provider: 'firecrawl',
           status: 'completed',
           discoveredCount,
         });
         progress({
           phase: 'search_completed',
-          message: `Topic search ${searchIndex + 1}/${CREDDY_TOPIC_SEARCHES.length}: “${query}” completed; ${discoveredCount} new candidates.`,
+          message: `Topic search ${searchIndex + 1}/${activeTopicSearches.length}: “${query}” completed; ${discoveredCount} new candidates.`,
           completed: searchIndex + 1,
-          total: CREDDY_TOPIC_SEARCHES.length,
+          total: activeTopicSearches.length,
         });
       } catch (error) {
         topicSearchResults.push({
+          id: queryId,
           query,
+          intent: queryIntent,
           provider: 'firecrawl',
           status: 'failed',
           discoveredCount: 0,
@@ -345,9 +405,9 @@ export async function runCollectionStage(
         manifest.errors.push(`search:${query}: ${(error as Error).message}`);
         progress({
           phase: 'search_failed',
-          message: `Topic search ${searchIndex + 1}/${CREDDY_TOPIC_SEARCHES.length}: “${query}” failed; warning recorded and collection continues.`,
+          message: `Topic search ${searchIndex + 1}/${activeTopicSearches.length}: “${query}” failed; warning recorded and collection continues.`,
           completed: searchIndex + 1,
-          total: CREDDY_TOPIC_SEARCHES.length,
+          total: activeTopicSearches.length,
         });
       }
     }
@@ -355,11 +415,9 @@ export async function runCollectionStage(
     manifest.inputCount = candidates.size;
     const index = await loadUrlIndex(options.root);
     const due = [...candidates.values()]
-      .filter((candidate) => shouldRecheck(index[candidate.url], now, recheckAfterHours))
-      // RSS entries already include their text, so process them before pages
-      // that require another paid/slow Firecrawl scrape.
-      .sort((a, b) => Number(Boolean(b.prefetchedMarkdown)) - Number(Boolean(a.prefetchedMarkdown)));
-    const eligible = due.slice(0, maxArticleScrapes);
+      .filter((candidate) => shouldRecheck(index[candidate.url], now, recheckAfterHours));
+    const selection = selectDiscoveryCandidates(due, maxArticleScrapes, now);
+    const eligible = selection.selected;
     manifest.skippedCount += candidates.size - eligible.length;
     progress({
       phase: 'queue_ready',
@@ -378,14 +436,26 @@ export async function runCollectionStage(
       scrapeLimit: maxArticleScrapes,
       sourceResults,
       topicSearchResults,
+      inactiveTopicSearchIds: CREDDY_TOPIC_SEARCHES
+        .filter((search) => !activeTopicSearches.some((active) => active.id === search.id))
+        .map((search) => search.id),
       candidates: [...candidates.values()].map((candidate): DiscoveryCandidateRecord => ({
         url: candidate.url,
         sourceId: candidate.source?.id ?? `topic-search:${candidate.searchQuery ?? 'unknown'}`,
         sourceName: candidate.source?.name ?? `Firecrawl search: ${candidate.searchQuery ?? 'unknown'}`,
         searchQuery: candidate.searchQuery,
+        queryId: candidate.queryId,
+        queryIntent: candidate.queryIntent,
+        publisherKey: candidate.publisherKey,
+        eventFingerprint: discoveryEventFingerprint(candidate),
         discoveredTitle: candidate.discoveredTitle,
+        discoveredDescription: candidate.discoveredDescription,
+        discoveryClass: selection.classified.get(candidate.url)?.discoveryClass,
+        selectionReason: selection.classified.get(candidate.url)?.reason,
         disposition: eligibleUrls.has(candidate.url)
           ? 'selected_for_scrape'
+          : selection.classified.get(candidate.url)?.discoveryClass === 'low_relevance'
+            ? 'deferred_low_relevance'
           : dueUrls.has(candidate.url)
             ? 'deferred_capacity'
             : 'recently_checked',
@@ -411,12 +481,24 @@ export async function runCollectionStage(
         const markdown = page.markdown?.trim() ?? '';
         if (!markdown) throw new Error('Firecrawl returned empty Markdown');
         const title = String(page.metadata?.title ?? candidate.discoveredTitle ?? '').trim();
-        const identity = buildArticleIdentity({ url: candidate.url, content: markdown, title });
+        const resolvedUrl = resolvedArticleUrl(candidate.url, page.metadata);
+        const identity = buildArticleIdentity({ url: resolvedUrl, content: markdown, title });
+        const source = candidate.source ?? sourceForUrl(identity.canonicalUrl);
         const previous = index[identity.canonicalUrl];
         if (previous?.lastContentHash === identity.contentHash) {
           previous.lastFetchedAt = now.toISOString();
+          index[candidate.url] = previous;
           const discovered = discoveryByUrl.get(candidate.url);
-          if (discovered) discovered.disposition = 'unchanged';
+          if (discovered) {
+            if (source) {
+              discovered.sourceId = source.id;
+              discovered.sourceName = source.name;
+            }
+            discovered.resolvedPublisherKey = publisherKeyForUrl(identity.canonicalUrl, source, candidate.queryId);
+            discovered.resolvedEventFingerprint = discoveryEventFingerprint({ ...candidate, discoveredTitle: title });
+            discovered.rawRecordId = previous.lastRecordId;
+            discovered.disposition = 'unchanged';
+          }
           manifest.skippedCount += 1;
           progress({
             phase: 'article_skipped',
@@ -428,7 +510,6 @@ export async function runCollectionStage(
         }
 
         const id = recordId(identity.canonicalUrl, identity.contentHash);
-        const source = candidate.source;
         const record: RawArticleRecord = {
           version: CREDDY_PIPELINE_VERSION,
           id,
@@ -453,6 +534,12 @@ export async function runCollectionStage(
         );
         const discovered = discoveryByUrl.get(candidate.url);
         if (discovered) {
+          if (source) {
+            discovered.sourceId = source.id;
+            discovered.sourceName = source.name;
+          }
+          discovered.resolvedPublisherKey = publisherKeyForUrl(identity.canonicalUrl, source, candidate.queryId);
+          discovered.resolvedEventFingerprint = discoveryEventFingerprint({ ...candidate, discoveredTitle: title });
           discovered.disposition = 'stored_raw';
           discovered.rawRecordId = id;
         }
@@ -461,6 +548,7 @@ export async function runCollectionStage(
           lastContentHash: identity.contentHash,
           lastRecordId: id,
         };
+        index[candidate.url] = index[identity.canonicalUrl];
         manifest.outputCount += 1;
         progress({
           phase: 'article_stored',

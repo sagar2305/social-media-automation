@@ -24,7 +24,7 @@ async function fixture(): Promise<{ root: string; manifest: Record<string, unkno
   const plan: VisualPlanRecord = {
     version: CREDDY_PIPELINE_VERSION, id: 'plan-1', contentDraftId: draft.id, analysisId: draft.analysisId,
     canonicalId: draft.canonicalId, createdAt: new Date().toISOString(), format: '3:4', theme: 'midnight',
-    characterPack: 'credit-card-rewards/creddy', cover: { headline: 'Hook', subheadline: 'Support' },
+    characterPack: 'credit-card-rewards/creddy', phoneTemplateId: 'app_store_dark', cover: { headline: 'Hook', subheadline: 'Support' },
     scenes: expressions.map((expression, sceneIndex) => ({ sceneIndex, text: `Scene ${sceneIndex + 1}`, role: sceneIndex === 5 ? 'cta' : 'fact', expression, emphasis: [], background: { mode: 'template' } })),
     visualBrief: 'Brief', safetyOverlays: ['Verify'], sourceUrls: draft.sourceUrls, factualClaims: [],
   };
@@ -70,6 +70,44 @@ test('Agent 7 accepts only a varied six-slide locked-template slideshow', async 
   const rerun = await runSlideshowContentBankHandoff(root, new Date(), notifier);
   assert.equal(rerun.slackNotificationsSkipped, 1);
   assert.equal(notifications, 1, 'a persisted receipt prevents duplicate Slack messages');
+});
+
+test('Agent 7 accepts the role-driven renderer with semantic emphasis and optional compact support', async () => {
+  const { root, manifest } = await fixture();
+  const planPath = safeDataPath(root, '06-visual-plans', 'plan-1.json');
+  const plan = await readJson<VisualPlanRecord>(planPath);
+  const slides = manifest.slides as Array<Record<string, unknown>>;
+  const treatments = ['hook', 'standard', 'standard', 'standard', 'caution', 'cta'] as const;
+  plan.scenes.forEach((scene, index) => {
+    scene.role = index === 0 ? 'hook' : index === 4 ? 'caution' : index === 5 ? 'cta' : 'context';
+    scene.emphasis = [`Scene ${index + 1}`];
+    scene.background.style = index === 4 ? 'burgundy' : index > 0 && index < 4 ? 'deep_navy' : 'spotlight';
+    slides[index]!.roleTreatment = treatments[index];
+    slides[index]!.headlineLayout = {
+      ...(slides[index]!.headlineLayout as Record<string, unknown>),
+      treatment: treatments[index],
+      emphasis: scene.emphasis,
+      highlightedTokens: ['Scene', String(index + 1)],
+      fontSize: index === 0 ? 100 : 90,
+    };
+    if (index < 5) {
+      slides[index]!.supportCopy = '';
+      slides[index]!.supportLayout = null;
+    }
+  });
+  await writeJsonAtomic(planPath, plan);
+  await writeJsonAtomic(safeDataPath(root, '07-slideshow-renders', 'plan-1', 'manifest.json'), manifest);
+  const result = await runSlideshowContentBankHandoff(root, new Date(), async () => ({
+    sent: true as const, channel: 'C123', messageTs: '123.456', fileIds: ['F1', 'F2', 'F3', 'F4', 'F5', 'F6'],
+  }));
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.created, 1);
+
+  const unsafeLayout = slides[5]!.headlineLayout as { boxes: number[][] };
+  unsafeLayout.boxes = [[52, 142, 520, 220]];
+  await writeJsonAtomic(safeDataPath(root, '07-slideshow-renders', 'plan-1', 'manifest.json'), manifest);
+  const unsafe = await runSlideshowContentBankHandoff(root);
+  assert.match(unsafe.failures[0]!, /phone proof safe zone/);
 });
 
 test('Agent 7 baselines legacy review items without flooding Slack, then notifies a new revision', async () => {

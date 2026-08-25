@@ -35,11 +35,20 @@ type SlideshowManifest = {
     headlineLayout?: TextLayout;
     supportCopy?: string;
     supportLayout?: TextLayout | null;
+    roleTreatment?: 'hook' | 'standard' | 'caution' | 'cta';
   }>;
 };
 
 type Box = [number, number, number, number];
-type TextLayout = { lines: string[]; fontSize: number; boxes: Box[]; lineGap: number };
+type TextLayout = {
+  lines: string[];
+  fontSize: number;
+  boxes: Box[];
+  lineGap: number;
+  treatment?: 'hook' | 'standard' | 'caution' | 'cta';
+  emphasis?: string[];
+  highlightedTokens?: string[];
+};
 
 const LOCKED_HEADLINE_FONT = {
   name: 'Tungsten Condensed Bold',
@@ -129,6 +138,8 @@ async function validateSlides(
   const renderDirectory = dirname(manifestPath);
   const paths: string[] = [];
   const visibleExpressions: string[] = [];
+  const currentRenderer = manifest.slides.every((slide) => Boolean(slide.roleTreatment));
+  const treatments = new Set<string>();
   for (let index = 0; index < 6; index += 1) {
     const slide = manifest.slides[index];
     if (slide.number !== index + 1) throw new Error(`slide ${index + 1} has an invalid sequence number`);
@@ -136,20 +147,52 @@ async function validateSlides(
       throw new Error(`slide ${index + 1} does not match its approved visual plan`);
     }
     validateTextLayout(slide.headlineLayout, `slide ${index + 1} headline`, 12);
+    if (currentRenderer) {
+      const role = plan.scenes[index]!.role;
+      const expectedTreatment = role === 'hook' || role === 'caution' || role === 'cta' ? role : 'standard';
+      if (slide.roleTreatment !== expectedTreatment || slide.headlineLayout?.treatment !== expectedTreatment) {
+        throw new Error(`slide ${index + 1} did not use its approved role treatment`);
+      }
+      const minimumFont = expectedTreatment === 'hook' ? 96 : expectedTreatment === 'cta' ? 86 : 84;
+      const maximumLines = expectedTreatment === 'hook' ? 4 : 5;
+      if (slide.headlineLayout!.fontSize < minimumFont || slide.headlineLayout!.lines.length > maximumLines) {
+        throw new Error(`slide ${index + 1} failed the mobile-legibility type gate`);
+      }
+      if (expectedTreatment === 'cta' && slide.headlineLayout!.boxes.some((box) => box[2] > 495)) {
+        throw new Error('slide 6 CTA copy intrudes into the real-app phone proof safe zone');
+      }
+      if (JSON.stringify(slide.headlineLayout?.emphasis ?? []) !== JSON.stringify(plan.scenes[index]!.emphasis) ||
+          (plan.scenes[index]!.emphasis.length > 0 && !slide.headlineLayout?.highlightedTokens?.length)) {
+        throw new Error(`slide ${index + 1} did not render its approved semantic emphasis`);
+      }
+      treatments.add(expectedTreatment);
+    }
     if (index < 5) {
       const expectedFile = APPROVED_EXPRESSION_TEMPLATES[slide.expression ?? ''];
       if (!expectedFile || slide.templateFamily !== 'expression' ||
           slide.template !== `assets/creddy/slideshow-expressions-1080x1440/${expectedFile}`) {
         throw new Error(`slide ${index + 1} did not use its approved Creddy expression asset`);
       }
-      validateTextLayout(slide.supportLayout ?? undefined, `slide ${index + 1} support card`, 8);
-      if (!slide.supportCopy?.trim()) throw new Error(`slide ${index + 1} support copy is missing`);
+      if (currentRenderer) {
+        if (Boolean(slide.supportCopy?.trim()) !== Boolean(slide.supportLayout)) {
+          throw new Error(`slide ${index + 1} support copy and compact treatment disagree`);
+        }
+        if (slide.supportLayout) validateTextLayout(slide.supportLayout, `slide ${index + 1} support card`, 5);
+      } else {
+        validateTextLayout(slide.supportLayout ?? undefined, `slide ${index + 1} support card`, 8);
+        if (!slide.supportCopy?.trim()) throw new Error(`slide ${index + 1} support copy is missing`);
+      }
       visibleExpressions.push(slide.expression!);
     } else {
       const expectedPhoneFile = APPROVED_PHONE_TEMPLATES[slide.phoneTemplateId ?? ''];
       if (!expectedPhoneFile || slide.templateFamily !== 'phone-screen' ||
           slide.template !== `assets/creddy/slideshow-templates/phone-screens/${expectedPhoneFile}`) {
         throw new Error('slide 6 must use one approved real-app phone-screen template');
+      }
+      // Legacy accepted plans predate explicit phone-template selection. Agent 5
+      // now requires it for new plans while preserving the approved backlog.
+      if (plan.phoneTemplateId && slide.phoneTemplateId !== plan.phoneTemplateId) {
+        throw new Error('slide 6 phone screen must match the approved Agent 5 visual plan');
       }
       if (slide.supportCopy || slide.supportLayout != null) {
         throw new Error('slide 6 product proof must not be covered by a support-card overlay');
@@ -167,6 +210,9 @@ async function validateSlides(
   }
   if (visibleExpressions.some((expression, index) => index > 0 && expression === visibleExpressions[index - 1])) {
     throw new Error('adjacent Creddy slides cannot repeat an expression');
+  }
+  if (currentRenderer && !['hook', 'standard', 'cta'].every((treatment) => treatments.has(treatment))) {
+    throw new Error('slideshow lacks the required hook, standard, and CTA visual rhythm');
   }
   return paths;
 }

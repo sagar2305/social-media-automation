@@ -43,14 +43,16 @@ export interface SourceCollectionResult {
   sourceId: string;
   sourceName: string;
   configuredUrl: string;
-  provider: 'firecrawl' | 'reddit_rss_fallback';
+  provider: 'firecrawl' | 'reddit_rss' | 'reddit_rss_fallback' | 'youtube_rss';
   status: 'completed' | 'completed_with_fallback' | 'failed';
   discoveredCount: number;
   error?: string;
 }
 
 export interface TopicSearchCollectionResult {
+  id?: string;
   query: string;
+  intent?: 'timely' | 'evergreen' | 'experimental';
   provider: 'firecrawl';
   status: 'completed' | 'failed';
   discoveredCount: number;
@@ -62,11 +64,23 @@ export interface DiscoveryCandidateRecord {
   sourceId: string;
   sourceName: string;
   searchQuery?: string;
+  queryId?: string;
+  queryIntent?: 'timely' | 'evergreen' | 'experimental';
+  /** Immutable publisher lane used when the pre-scrape selector enforced caps. */
+  publisherKey?: string;
+  /** Informational identity resolved from the completed article scrape. */
+  resolvedPublisherKey?: string;
+  eventFingerprint?: string;
+  resolvedEventFingerprint?: string;
   discoveredTitle?: string;
+  discoveredDescription?: string;
+  discoveryClass?: 'core' | 'adjacent' | 'low_relevance';
+  selectionReason?: string;
   disposition:
     | 'selected_for_scrape'
     | 'recently_checked'
     | 'deferred_capacity'
+    | 'deferred_low_relevance'
     | 'stored_raw'
     | 'unchanged'
     | 'scrape_failed';
@@ -82,6 +96,7 @@ export interface DiscoveryRunRecord {
   scrapeLimit: number;
   sourceResults?: SourceCollectionResult[];
   topicSearchResults?: TopicSearchCollectionResult[];
+  inactiveTopicSearchIds?: string[];
   candidates: DiscoveryCandidateRecord[];
 }
 
@@ -108,6 +123,8 @@ export interface FilteredArticleRecord extends RawArticleRecord {
   qualification: {
     qualifies: true;
     matchedKeywords: string[];
+    filterRunId?: string;
+    filteredAt?: string;
   };
 }
 
@@ -117,6 +134,8 @@ export interface RejectedArticleRecord {
   sourceRecordId: string;
   canonicalUrl: string;
   rejectedAt: string;
+  filterRunId?: string;
+  dedupeRunId?: string;
   reason:
     | 'keyword_gate'
     | 'non_article'
@@ -151,7 +170,7 @@ export interface AnalysisTaskRecord {
   id: string;
   canonicalId: string;
   queuedAt: string;
-  instructionsVersion: 'creddy-analysis-v1' | 'creddy-ranking-v2';
+  instructionsVersion: 'creddy-analysis-v1' | 'creddy-ranking-v2' | 'creddy-ranking-v3';
   article: CanonicalNewsRecord;
 }
 
@@ -191,6 +210,36 @@ export interface AnalysisDecisionRecord {
   productFitScore?: number;
   /** Estimated audience-interest potential, not measured social engagement. */
   popularityScore?: number;
+  /** Ranking v3 separates editorial upside from factual readiness. */
+  rubricVersion?: 'creddy-ranking-v3';
+  viralPotential?: {
+    score: number;
+    hookStrength: number;
+    audienceBreadth: number;
+    financialMagnitude: number;
+    novelty: number;
+    urgency: number;
+    practicalUtility: number;
+    visualPotential: number;
+    discussionPotential: number;
+    emotionalAspiration: number;
+    shareSavePotential: number;
+    reasons: string[];
+  };
+  channelScores?: {
+    instagramTikTok: number;
+    blogSeo: number;
+    newsletter: number;
+    evergreen: number;
+  };
+  freshnessScore?: number;
+  editorialPriorityScore?: number;
+  editorialDisposition?: 'produce' | 'evergreen' | 'defer' | 'reject';
+  verificationState?: 'ready' | 'official_source_needed' | 'independent_confirmation_needed' | 'community_signal_only';
+  verificationRequirements?: string[];
+  hookType?: string;
+  hookRationale?: string;
+  portfolioCategory?: 'card_offer' | 'loyalty_news' | 'redemption' | 'travel_development' | 'evergreen_education';
   importanceScore: number;
   confidenceScore: number;
   importanceReasons: string[];
@@ -201,6 +250,23 @@ export interface AnalysisDecisionRecord {
   route: CreddyAnalysisRoute;
   rejectionReasons: string[];
   evidenceRecordIds: string[];
+}
+
+export interface AnalysisPerformanceFeedbackRecord {
+  version: typeof CREDDY_PIPELINE_VERSION;
+  id: string;
+  canonicalId: string;
+  recordedAt: string;
+  channel: 'instagram_tiktok' | 'blog_seo' | 'newsletter' | 'evergreen';
+  editorialVerdict?: 'promote' | 'accurate' | 'demote';
+  views?: number;
+  watchTimeSeconds?: number;
+  shares?: number;
+  saves?: number;
+  comments?: number;
+  clicks?: number;
+  conversions?: number;
+  note?: string;
 }
 
 export interface ContentPackageRecord {
@@ -223,6 +289,9 @@ export interface ContentPackageRecord {
     label: string;
     deepLink: string;
     fallbackUrl?: string;
+    kind?: 'product' | 'engagement';
+    messageId?: CreddyCtaMessageId;
+    capabilityId?: CreddyCapabilityId;
   };
   imagePrompts: string[];
   imagePaths?: string[];
@@ -239,6 +308,9 @@ export interface ContentPackageRecord {
 
 export interface ContentDraftRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  /** New Agent 04 drafts use the claim-traceable concept contract. Omitted only
+   * on legacy drafts that remain readable by downstream stages. */
+  copyVersion?: 'creddy-copy-v2';
   id: string;
   analysisId: string;
   canonicalId: string;
@@ -246,6 +318,7 @@ export interface ContentDraftRecord {
   audience: string;
   slot: 'act_now' | 'understand' | 'decide_or_discuss';
   hook: string;
+  conceptPack?: ContentConceptPack;
   textScenes: string[];
   narrationScript: string;
   instagramCaption: string;
@@ -255,10 +328,85 @@ export interface ContentDraftRecord {
     label: string;
     deepLink: string;
     fallbackUrl?: string;
+    /** Agent 04 v2 drafts must select an approved truthful CTA. Legacy
+     * drafts remain readable without these fields. */
+    kind?: 'product' | 'engagement';
+    messageId?: CreddyCtaMessageId;
+    capabilityId?: CreddyCapabilityId;
   };
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+}
+
+export type CreddyCapabilityId =
+  | 'general_card_value'
+  | 'benefit_credit_tracking'
+  | 'welcome_offer_progress'
+  | 'renewal_tracking'
+  | 'loyalty_wallet'
+  | 'voucher_wallet';
+
+export type CreddyCtaMessageId =
+  | 'general-get-more-from-cards'
+  | 'benefits-see-used-and-remaining'
+  | 'benefits-track-before-reset'
+  | 'welcome-see-progress-and-time'
+  | 'renewal-review-benefits-and-timing'
+  | 'loyalty-organize-points-and-status'
+  | 'vouchers-organize-and-track-expiry'
+  | 'engagement-save-award-checklist'
+  | 'engagement-ask-audience-choice'
+  | 'engagement-follow-creddy';
+
+export type ContentConceptStyle =
+  | 'specific_payoff'
+  | 'loss_avoidance'
+  | 'surprising_result'
+  | 'contrast'
+  | 'decision_question'
+  | 'timely_change'
+  | 'myth_correction';
+
+export interface ContentConceptCandidate {
+  id: string;
+  style: ContentConceptStyle;
+  concept: string;
+  promise: string;
+  supportingClaimFields: string[];
+  /** Optional current research pattern. At most one of the four candidates may
+   * use a trend pattern so stable editorial judgment remains the default. */
+  trendPatternId?: string;
+}
+
+export interface ClaimTracedCopy {
+  claimFields: string[];
+}
+
+export interface ContentConceptPack {
+  trendSnapshotId?: string;
+  /** Short standalone identity used in every platform title/cover, such as
+   * "Citi AAdvantage Executive" or "Award tool". */
+  subjectLabel: string;
+  candidates: ContentConceptCandidate[];
+  selectedCandidateId: string;
+  selectionRationale: string;
+  rejectionReasons: Array<{ candidateId: string; reason: string }>;
+  resolution: { slideNumber: 2 | 3; slideExcerpt: string; explanation: string };
+  fulfillment: {
+    slideNumbers: number[];
+    narrationExcerpt: string;
+    instagramCaptionExcerpt: string;
+    tiktokCaptionExcerpt: string;
+  };
+  platforms: {
+    blog: ClaimTracedCopy & { headline: string; lede: string };
+    newsletter: ClaimTracedCopy & { subject: string; preheader: string };
+    youtubeLong: ClaimTracedCopy & { title: string; thumbnailPhrase: string; openingLine: string };
+    youtubeShort: ClaimTracedCopy & { title: string; openingLine: string };
+    instagram: ClaimTracedCopy & { coverHook: string; captionOpener: string };
+    tiktok: ClaimTracedCopy & { coverHook: string; captionOpener: string };
+  };
 }
 
 export interface ContentOpportunityTaskRecord {
@@ -277,6 +425,7 @@ export interface VisualScenePlan {
   background: {
     mode: 'template' | 'generated_illustration';
     prompt?: string;
+    style?: 'spotlight' | 'deep_navy' | 'forest' | 'burgundy';
   };
 }
 
@@ -290,6 +439,9 @@ export interface VisualPlanRecord {
   format: '9:16' | '3:4';
   theme: CreddyVisualTheme;
   characterPack: 'credit-card-rewards/creddy';
+  /** Required for the locked 3:4 slideshow and selected from the approved
+   * CTA capability rather than guessed by the renderer. */
+  phoneTemplateId?: 'wallet_vouchers' | 'spend_goals' | 'app_store_dark' | 'app_store_light';
   cover: { headline: string; subheadline: string };
   scenes: VisualScenePlan[];
   visualBrief: string;

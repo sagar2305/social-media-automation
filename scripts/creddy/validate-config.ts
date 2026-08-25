@@ -12,28 +12,37 @@ function unique(values: readonly string[], label: string): void {
 }
 
 export function validateCreddyConfig(): void {
-  if (CREDDY_SOURCES.length !== 13) {
-    throw new Error(`Expected 13 registered sources, found ${CREDDY_SOURCES.length}`);
-  }
-
   const enabled = getEnabledCreddySources();
-  if (enabled.length !== 13) {
-    throw new Error(`Expected all 13 sources to be enabled, found ${enabled.length}`);
+  const approvedSourceIds = [
+    'awardwallet', 'doctor-of-credit', 'frequent-miler', 'one-mile-at-a-time',
+    'the-points-guy', '10x-travel', 'miles-talk', 'upgraded-points',
+    'view-from-the-wing', 'rove-miles', 'flyertalk', 'reddit-awardtravel',
+    'reddit-churning', 'geobreeze-travel', 'thrifty-traveler', 'loyalty-lobby',
+    'miles-to-memories', 'max-miles-points',
+  ];
+  const sourceIds = CREDDY_SOURCES.map((source) => source.id);
+  if (sourceIds.length !== approvedSourceIds.length || approvedSourceIds.some((id) => !sourceIds.includes(id))) {
+    throw new Error('Registered Creddy sources do not match the approved source IDs');
   }
+  if (enabled.length !== approvedSourceIds.length) throw new Error('Every approved Creddy source must be enabled');
   if (enabled.some((source) => source.cadence !== 'twice_daily')) {
     throw new Error('Every boss-approved source must run twice daily');
   }
 
   unique(CREDDY_SOURCES.map((source) => source.id), 'Source IDs');
-  unique(CREDDY_SOURCES.map((source) => new URL(source.url).hostname + new URL(source.url).pathname), 'Source URLs');
-  unique(CREDDY_TOPIC_SEARCHES, 'Topic searches');
+  unique(CREDDY_SOURCES.map((source) => new URL(source.url).toString()), 'Source URLs');
+  unique(CREDDY_TOPIC_SEARCHES.map((search) => search.id), 'Topic search IDs');
+  unique(CREDDY_TOPIC_SEARCHES.map((search) => search.query), 'Topic searches');
   unique(CREDDY_FILTER_KEYWORDS, 'Filter keywords');
 
-  if (CREDDY_TOPIC_SEARCHES.length !== 4) {
-    throw new Error(`Expected 4 topic searches, found ${CREDDY_TOPIC_SEARCHES.length}`);
+  if (CREDDY_TOPIC_SEARCHES.length !== 12) throw new Error(`Expected 12 topic searches, found ${CREDDY_TOPIC_SEARCHES.length}`);
+  for (let pair = 0; pair < 6; pair += 1) {
+    if (CREDDY_TOPIC_SEARCHES.filter((search) => search.pair === pair).length !== 2) {
+      throw new Error(`Topic search pair ${pair} must contain exactly two searches`);
+    }
   }
-  if (CREDDY_FILTER_KEYWORDS.length !== 8) {
-    throw new Error(`Expected 8 OR keywords, found ${CREDDY_FILTER_KEYWORDS.length}`);
+  if (CREDDY_FILTER_KEYWORDS.length !== 23) {
+    throw new Error(`Expected 23 OR keywords, found ${CREDDY_FILTER_KEYWORDS.length}`);
   }
 }
 
@@ -42,7 +51,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(
     `Creddy config valid: ${CREDDY_SOURCES.length} registered sources, ` +
       `${getEnabledCreddySources().length} enabled sources, ` +
-      `${CREDDY_TOPIC_SEARCHES.length} topic searches, ` +
+      `${CREDDY_TOPIC_SEARCHES.length} rotating topic searches, ` +
       `${CREDDY_FILTER_KEYWORDS.length} OR keywords.`,
   );
 }
