@@ -86,7 +86,12 @@ test('validates and renders the unified Creddy website article', () => {
   const html = renderCreddyArticlePreview(value);
   assert.match(html, /#FBFAF7/i);
   assert.match(html, /Get practical Creddy guides/);
-  assert.match(html, /Download on the App Store/);
+  assert.match(html, /Download on the/);
+  assert.match(html, /App Store/);
+  assert.match(html, /Get it on/);
+  assert.match(html, /Google Play/);
+  assert.match(html, /data-download-article/);
+  assert.match(html, /how-a-card-benefit-reset-works\.html/);
   assert.match(html, /Advertiser disclosure/);
 });
 
