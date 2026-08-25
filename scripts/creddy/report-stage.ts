@@ -715,7 +715,12 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
       const revision = bank?.revision ?? Math.max(1, ...jobs.map((job) => job.revision));
       const textStatus = jobs.find((job) => job.revision === revision && job.format === 'text_music')?.status ?? 'missing';
       const narratedStatus = jobs.find((job) => job.revision === revision && job.format === 'narrated')?.status ?? 'missing';
-      return `| ${cell(content.hook)} | ${revision} | ${cell(textStatus)} | ${cell(narratedStatus)} | ${cell(bank?.status ?? 'waiting_for_video_pair')} | ${cell(content.platformCaptions?.instagram ?? content.caption)} | ${cell(content.platformCaptions?.tiktok ?? content.caption)} | ${cell(`${content.cta.label} → ${content.cta.deepLink}`)} | ${content.factualClaims.length} | ${content.sourceUrls.length} |`;
+      const cta = content.cta
+        ? `${content.cta.label} → ${content.cta.deepLink}`
+        : content.distributionMode === 'article_only'
+          ? 'Article CTAs'
+          : 'missing';
+      return `| ${cell(content.hook)} | ${revision} | ${cell(textStatus)} | ${cell(narratedStatus)} | ${cell(bank?.status ?? 'waiting_for_video_pair')} | ${cell(content.platformCaptions?.instagram ?? content.caption ?? '')} | ${cell(content.platformCaptions?.tiktok ?? content.caption ?? '')} | ${cell(cta)} | ${content.factualClaims?.length ?? 0} | ${content.sourceUrls?.length ?? 0} |`;
     }),
   ];
   const reviewPath = safeDataPath(outputRoot, '07-content-bank-review.md');
