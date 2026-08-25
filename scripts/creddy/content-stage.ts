@@ -49,9 +49,9 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
   }
   if (content.characterExpressions !== undefined) {
     const supported = new Set([
-      'neutral', 'waving', 'thinking', 'idea', 'worried', 'surprised',
+      'neutral', 'waving', 'thinking', 'confused', 'idea', 'worried', 'surprised',
       'sleepy', 'starstruck', 'sad', 'wink', 'card', 'thumbs-up',
-      'guide', 'rewards', 'celebrate',
+      'guide', 'rewards', 'celebrate', 'curious', 'skeptical', 'happy',
       'excited', 'concerned', 'celebrating', 'pointing', 'explaining', 'urgent',
     ]);
     if (!Array.isArray(content.characterExpressions)

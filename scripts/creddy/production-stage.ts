@@ -11,6 +11,7 @@ import {
 } from './pipeline-store.js';
 import {
   CREDDY_PIPELINE_VERSION,
+  type AnalysisDecisionRecord,
   type ContentDraftRecord,
   type ContentPackageRecord,
   type VideoJobRecord,
@@ -36,17 +37,32 @@ function topLevelJson(paths: string[], nested: RegExp): string[] {
 }
 
 export async function listProductionTasks(root: string): Promise<ProductionTaskRecord[]> {
+  const decisions = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '05-content-opportunities')))
+      .map((path) => readJson<AnalysisDecisionRecord>(path)),
+  );
+  const eligibleAnalysisIds = new Set(decisions
+    .filter((decision) =>
+      decision.rubricVersion === 'creddy-ranking-v3' &&
+      decision.verificationState === 'ready' &&
+      ['auto_process', 'evergreen_queue'].includes(decision.route))
+    .map((decision) => decision.id));
   const draftPaths = topLevelJson(
     await listJsonFiles(safeDataPath(root, '06-content-drafts')),
     /\/(scripts|captions|briefs|articles|legacy)\//,
   );
   const drafts = await Promise.all(draftPaths.map((path) => readJson<ContentDraftRecord>(path)));
-  const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
+  const draftById = new Map(drafts
+    .filter((draft) =>
+      draft.copyVersion === 'creddy-copy-v3' &&
+      Boolean(draft.article) &&
+      eligibleAnalysisIds.has(draft.analysisId))
+    .map((draft) => [draft.id, draft]));
   const tasks: ProductionTaskRecord[] = [];
   for (const path of await listJsonFiles(safeDataPath(root, '06-visual-plans'))) {
     const visualPlan = await readJson<VisualPlanRecord>(path);
     const draft = draftById.get(visualPlan.contentDraftId);
-    if (draft) tasks.push({ draft, visualPlan });
+    if (draft && visualPlan.articleVisuals) tasks.push({ draft, visualPlan });
   }
   return tasks;
 }

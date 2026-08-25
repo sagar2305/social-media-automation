@@ -625,8 +625,14 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   await writeMarkdown(visualPath, visualLines.join('\n'));
   written.push(visualPath);
 
-  const productionPackages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
+  const allProductionPackages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path) && /\/production-[^/]+\.json$/.test(path));
+  const currentVisualDraftIds = new Set(currentVisualPlans.map((plan) => plan.contentDraftId));
+  const currentProductionIds = new Set(conceptDrafts
+    .filter((draft) => currentVisualDraftIds.has(draft.id))
+    .map((draft) => `production-${draft.analysisId}`));
+  const productionPackages = allProductionPackages.filter((path) =>
+    currentProductionIds.has(path.split('/').at(-1)!.replace(/\.json$/, '')));
   const allVideoJobs = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '07-video-jobs')))
       .map((path) => readJson<VideoJobRecord>(path)),
@@ -640,8 +646,9 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const productionLines = [
     '# Agent 06 — Video Factory production', '',
     `Generated: ${new Date().toISOString()}`,
-    `Visual-plan inputs: ${visualPlans.length}`,
+    `Current visual-plan inputs: ${currentVisualPlans.length}`,
     `Production packages: ${productionPackages.length}`,
+    `Archived/legacy production packages: ${Math.max(0, allProductionPackages.length - productionPackages.length)}`,
     `Video jobs: ${productionJobs.length} (${Object.entries(jobCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'})`,
     `Rendered text + music: ${productionJobs.filter((job) => job.format === 'text_music' && job.status === 'done').length}`,
     `Rendered narrated: ${productionJobs.filter((job) => job.format === 'narrated' && job.status === 'done').length}`,
