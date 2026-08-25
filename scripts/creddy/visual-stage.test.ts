@@ -15,7 +15,7 @@ import { acceptVisualPlan, listPendingVisualTasks, selectCreddyExpression, valid
 
 function draft(): ContentDraftRecord {
   return {
-    version: CREDDY_PIPELINE_VERSION, copyVersion: 'creddy-copy-v3', id: 'copy-analysis-1', analysisId: 'analysis-1', canonicalId: 'canonical-1',
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_and_social', copyVersion: 'creddy-copy-v3', id: 'copy-analysis-1', analysisId: 'analysis-1', canonicalId: 'canonical-1',
     createdAt: '2026-08-19T12:30:00.000Z', audience: 'US rewards users', slot: 'understand',
     hook: 'A transfer bonus can change the math',
     textScenes: ['A 20% transfer bonus is available.', 'Check award space before transferring.', 'Transfers may be irreversible.'],
@@ -70,7 +70,7 @@ function decision(): AnalysisDecisionRecord {
 function plan(): VisualPlanRecord {
   const copy = draft();
   return {
-    version: CREDDY_PIPELINE_VERSION, id: 'visual-copy-analysis-1', contentDraftId: copy.id,
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_and_social', id: 'visual-copy-analysis-1', contentDraftId: copy.id,
     analysisId: copy.analysisId, canonicalId: copy.canonicalId, createdAt: '2026-08-19T12:40:00.000Z',
     format: '9:16', theme: 'editorial', characterPack: 'credit-card-rewards/creddy',
     cover: { headline: copy.hook, subheadline: 'Check the award first' },

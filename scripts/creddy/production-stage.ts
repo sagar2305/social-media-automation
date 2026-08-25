@@ -12,11 +12,13 @@ import {
 import {
   CREDDY_PIPELINE_VERSION,
   type AnalysisDecisionRecord,
+  type CanonicalNewsRecord,
   type ContentDraftRecord,
   type ContentPackageRecord,
   type VideoJobRecord,
   type VisualPlanRecord,
 } from './pipeline-types.js';
+import { isVerifiedSocialDecision, listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 export interface ProductionTaskRecord {
   draft: ContentDraftRecord;
@@ -37,16 +39,19 @@ function topLevelJson(paths: string[], nested: RegExp): string[] {
 }
 
 export async function listProductionTasks(root: string): Promise<ProductionTaskRecord[]> {
-  const decisions = await Promise.all(
-    (await listJsonFiles(safeDataPath(root, '05-content-opportunities')))
-      .map((path) => readJson<AnalysisDecisionRecord>(path)),
+  const canonical = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '03-canonical-news', 'approved')))
+      .map((path) => readJson<CanonicalNewsRecord>(path)),
   );
-  const eligibleAnalysisIds = new Set(decisions
-    .filter((decision) =>
-      decision.rubricVersion === 'creddy-ranking-v3' &&
-      decision.verificationState === 'ready' &&
-      ['auto_process', 'evergreen_queue'].includes(decision.route))
-    .map((decision) => decision.id));
+  const articleById = new Map(canonical.map((article) => [article.canonicalId, article]));
+  const decisions = await listPublicationDecisions(root);
+  const modesByAnalysisId = new Map(decisions.flatMap((decision) => {
+    const article = articleById.get(decision.canonicalId);
+    const mode = isVerifiedSocialDecision(decision)
+      ? 'article_and_social' as const
+      : article && publicationModeForOpportunity(decision, article);
+    return mode ? [[decision.id, mode] as const] : [];
+  }));
   const draftPaths = topLevelJson(
     await listJsonFiles(safeDataPath(root, '06-content-drafts')),
     /\/(scripts|captions|briefs|articles|legacy)\//,
@@ -56,13 +61,13 @@ export async function listProductionTasks(root: string): Promise<ProductionTaskR
     .filter((draft) =>
       draft.copyVersion === 'creddy-copy-v3' &&
       Boolean(draft.article) &&
-      eligibleAnalysisIds.has(draft.analysisId))
+      draft.distributionMode === modesByAnalysisId.get(draft.analysisId))
     .map((draft) => [draft.id, draft]));
   const tasks: ProductionTaskRecord[] = [];
   for (const path of await listJsonFiles(safeDataPath(root, '06-visual-plans'))) {
     const visualPlan = await readJson<VisualPlanRecord>(path);
     const draft = draftById.get(visualPlan.contentDraftId);
-    if (draft && visualPlan.articleVisuals) tasks.push({ draft, visualPlan });
+    if (draft && visualPlan.articleVisuals && visualPlan.distributionMode === draft.distributionMode) tasks.push({ draft, visualPlan });
   }
   return tasks;
 }
@@ -71,7 +76,9 @@ export async function listPendingProductionTasks(root: string): Promise<Producti
   const pending: ProductionTaskRecord[] = [];
   for (const task of await listProductionTasks(root)) {
     const id = `production-${task.draft.analysisId}`;
-    if (!(await pathExists(safeDataPath(root, '06-content-packages', `${id}.json`)))) pending.push(task);
+    const destination = safeDataPath(root, '06-content-packages', `${id}.json`);
+    const existing = await pathExists(destination) ? await readJson<ContentPackageRecord>(destination) : undefined;
+    if (!existing || existing.distributionMode !== task.draft.distributionMode) pending.push(task);
   }
   return pending;
 }
@@ -88,6 +95,7 @@ function partitionNarration(narration: string, count: number): string[] {
 
 export function buildProductionPackage(task: ProductionTaskRecord, now = new Date()): ContentPackageRecord {
   const { draft, visualPlan } = task;
+  const articleOnly = draft.distributionMode === 'article_only';
   if (visualPlan.contentDraftId !== draft.id) throw new Error('Visual plan and content draft do not match');
   if (visualPlan.scenes.some((scene, index) => scene.text !== draft.textScenes[index])) {
     throw new Error('Visual plan changed Agent 4 copy');
@@ -98,6 +106,8 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
   }
   const content: ContentPackageRecord = {
     version: CREDDY_PIPELINE_VERSION,
+    distributionMode: draft.distributionMode,
+    contentDraftId: draft.id,
     id: `production-${draft.analysisId}`,
     analysisId: draft.analysisId,
     canonicalId: draft.canonicalId,
@@ -105,16 +115,16 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
     audience: draft.audience,
     slot: draft.slot,
     hook: draft.hook,
-    scriptLines: visualPlan.scenes.map((scene) => scene.text),
-    narrationLines: partitionNarration(draft.narrationScript, visualPlan.scenes.length),
-    caption: draft.instagramCaption,
-    platformCaptions: { instagram: draft.instagramCaption, tiktok: draft.tiktokCaption },
-    hashtags: draft.hashtags,
+    scriptLines: articleOnly ? [] : visualPlan.scenes.map((scene) => scene.text),
+    narrationLines: articleOnly ? [] : partitionNarration(draft.narrationScript, visualPlan.scenes.length),
+    caption: articleOnly ? '' : draft.instagramCaption,
+    platformCaptions: articleOnly ? undefined : { instagram: draft.instagramCaption, tiktok: draft.tiktokCaption },
+    hashtags: articleOnly ? [] : draft.hashtags,
     cta: draft.cta,
     imagePrompts: visualPlan.scenes
       .filter((scene) => scene.background.mode === 'generated_illustration')
       .map((scene) => scene.background.prompt!),
-    characterExpressions: visualPlan.scenes.map((scene) => scene.expression),
+    characterExpressions: articleOnly ? [] : visualPlan.scenes.map((scene) => scene.expression),
     visualPlanId: visualPlan.id,
     visualTheme: visualPlan.theme,
     brief: `${draft.brief}\n\nVisual direction: ${visualPlan.visualBrief}\nSafety overlays: ${visualPlan.safetyOverlays.join('; ')}`,
@@ -128,7 +138,7 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
         ? 'needs_assets'
         : undefined,
   };
-  if (content.narrationLines!.join(' ') !== draft.narrationScript.trim().replace(/\s+/g, ' ')) {
+  if (!articleOnly && content.narrationLines!.join(' ') !== draft.narrationScript.trim().replace(/\s+/g, ' ')) {
     throw new Error('Production package did not preserve Agent 4 narration');
   }
   if (content.article) {
@@ -154,6 +164,12 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     const destination = safeDataPath(root, '06-content-packages', `${content.id}.json`);
     if (await pathExists(destination)) {
       const existing = await readJson<ContentPackageRecord>(destination);
+      if (existing.distributionMode !== content.distributionMode) {
+        await writeJsonAtomic(
+          safeDataPath(root, '06-content-packages', 'legacy', `${existing.id}-${existing.createdAt.replace(/[^0-9A-Za-z]+/g, '').slice(0, 24)}.json`),
+          existing,
+        );
+      } else {
       const articleChanged = Boolean(content.article) &&
         (JSON.stringify(existing.article) !== JSON.stringify(content.article) ||
          JSON.stringify(existing.articleVisuals) !== JSON.stringify(content.articleVisuals) ||
@@ -183,8 +199,9 @@ export async function prepareProductionPackages(root: string, now = new Date()):
         result.skippedCount += 1;
       }
       continue;
+      }
     }
-    const jobs: VideoJobRecord[] = await writeContentAndJobs(root, content, 1);
+    const jobs: VideoJobRecord[] = await writeContentAndJobs(root, content, 1, content.distributionMode !== 'article_only');
     if (content.article) {
       const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
       await mkdir(dirname(previewPath), { recursive: true });

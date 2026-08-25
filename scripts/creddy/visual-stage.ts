@@ -8,6 +8,7 @@ import {
 import {
   CREDDY_PIPELINE_VERSION,
   type AnalysisDecisionRecord,
+  type CanonicalNewsRecord,
   type ContentDraftRecord,
   type CreddyCharacterExpression,
   type CreddyVisualTheme,
@@ -16,6 +17,7 @@ import {
 } from './pipeline-types.js';
 import { phoneTemplateForDraft } from './product-capabilities.js';
 import { validateCreddyArticleVisuals } from './article-content.js';
+import { isVerifiedSocialDecision, listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 export const CREDDY_MANIFEST_EXPRESSIONS = new Set<CreddyCharacterExpression>([
   'neutral', 'waving', 'thinking', 'confused', 'celebrate', 'guide', 'surprised',
@@ -78,16 +80,19 @@ function contentDraftFiles(root: string): Promise<string[]> {
 }
 
 async function visualTasks(root: string): Promise<VisualPlanningTaskRecord[]> {
-  const decisions = await Promise.all(
-    (await listJsonFiles(safeDataPath(root, '05-content-opportunities')))
-      .map((path) => readJson<AnalysisDecisionRecord>(path)),
+  const canonical = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '03-canonical-news', 'approved')))
+      .map((path) => readJson<CanonicalNewsRecord>(path)),
   );
-  const eligibleAnalysisIds = new Set(decisions
-    .filter((decision) =>
-      decision.rubricVersion === 'creddy-ranking-v3' &&
-      decision.verificationState === 'ready' &&
-      ['auto_process', 'evergreen_queue'].includes(decision.route))
-    .map((decision) => decision.id));
+  const articleById = new Map(canonical.map((article) => [article.canonicalId, article]));
+  const decisions = await listPublicationDecisions(root);
+  const modesByAnalysisId = new Map(decisions.flatMap((decision) => {
+    const article = articleById.get(decision.canonicalId);
+    const mode = isVerifiedSocialDecision(decision)
+      ? 'article_and_social' as const
+      : article && publicationModeForOpportunity(decision, article);
+    return mode ? [[decision.id, mode] as const] : [];
+  }));
   const drafts = await Promise.all(
     (await contentDraftFiles(root)).map((path) => readJson<ContentDraftRecord>(path)),
   );
@@ -95,7 +100,7 @@ async function visualTasks(root: string): Promise<VisualPlanningTaskRecord[]> {
     .filter((draft) =>
       draft.copyVersion === 'creddy-copy-v3' &&
       Boolean(draft.article) &&
-      eligibleAnalysisIds.has(draft.analysisId))
+      draft.distributionMode === modesByAnalysisId.get(draft.analysisId))
     .map((draft) => ({ draft }));
 }
 
@@ -104,8 +109,8 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
   if (!plan.id || !plan.contentDraftId || !plan.analysisId || !plan.canonicalId) {
     throw new Error('Visual-plan IDs are required');
   }
-  if (!['9:16', '3:4'].includes(plan.format)) {
-    throw new Error('Creddy social visual plans must use 9:16 video or 3:4 slideshow format');
+  if (!['9:16', '3:4', 'article'].includes(plan.format)) {
+    throw new Error('Creddy visual plans must use article, 9:16 video, or 3:4 slideshow format');
   }
   if (!CREDDY_VIDEO_THEMES.has(plan.theme)) throw new Error('Unsupported Creddy Video Factory theme');
   if (plan.characterPack !== 'credit-card-rewards/creddy') throw new Error('Unsupported character pack');
@@ -115,8 +120,14 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
   if (!plan.cover?.subheadline.trim() || plan.cover.subheadline.length > 140) {
     throw new Error('Cover subheadline must contain 1–140 characters');
   }
-  if (!Array.isArray(plan.scenes) || plan.scenes.length < 3 || plan.scenes.length > 8) {
+  if (!Array.isArray(plan.scenes) || (plan.format !== 'article' && (plan.scenes.length < 3 || plan.scenes.length > 8))) {
     throw new Error('Visual plan requires 3–8 scenes');
+  }
+  if (plan.format === 'article' && plan.scenes.length !== 0) {
+    throw new Error('Article-only visual plans cannot contain social scenes');
+  }
+  if (plan.format === 'article' && plan.distributionMode !== 'article_only') {
+    throw new Error('Article visual format requires article_only distribution mode');
   }
   if (plan.format === '3:4' && plan.scenes.length !== 6) {
     throw new Error('A Creddy 3:4 slideshow post requires exactly 6 scenes');
@@ -218,11 +229,15 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
   const plan = validateVisualPlan(input);
   const task = (await visualTasks(root)).find((item) => item.draft.id === plan.contentDraftId);
   if (!task) throw new Error(`Content draft not found: ${plan.contentDraftId}`);
+  if (plan.distributionMode !== task.draft.distributionMode) throw new Error('Visual-plan distribution mode mismatch');
   if (plan.id !== `visual-${plan.contentDraftId}`) throw new Error('Visual-plan stable ID mismatch');
   if (plan.analysisId !== task.draft.analysisId || plan.canonicalId !== task.draft.canonicalId) {
     throw new Error('Visual-plan identity mismatch');
   }
-  if (plan.cover.headline !== task.draft.hook) {
+  const expectedHeadline = task.draft.distributionMode === 'article_only'
+    ? task.draft.article!.title
+    : task.draft.hook;
+  if (plan.cover.headline !== expectedHeadline) {
     throw new Error('Visual plan must preserve the selected Agent 4 hook exactly');
   }
   if (plan.scenes.length !== task.draft.textScenes.length) {

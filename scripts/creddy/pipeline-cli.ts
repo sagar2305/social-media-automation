@@ -51,7 +51,7 @@ import { writeObservablePipelineReports } from './report-stage.js';
 import { runSlackReviewStage, SlackClient } from './slack-stage.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
 import { VideoFactoryClient } from './video-factory-client.js';
-import { approveContentBankItem, rejectContentBankItem, runContentBankHandoff, runVideoStage } from './video-stage.js';
+import { approveContentBankItem, rejectContentBankItem, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
 import { exportApprovedWebsiteArticles } from './website-stage.js';
 
@@ -436,6 +436,7 @@ async function main(): Promise<void> {
   }
   if (command === 'agent-7-bank') {
     const videoCreated = await runContentBankHandoff(root);
+    const articleCreated = await runArticleContentBankHandoff(root);
     const slideshow = await runSlideshowContentBankHandoff(root);
     const bank = await Promise.all(
       (await listJsonFiles(safeDataPath(root, '09-pending-approval')))
@@ -449,6 +450,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({
       agent: 7,
       videoCreated,
+      articleCreated,
       slideshow,
       statusCounts,
       policy: 'Human review only: Agent 7 never approves, schedules, or publishes.',
@@ -506,8 +508,8 @@ async function main(): Promise<void> {
       id: string;
       approvedBy: string;
       destinations: Array<{
-        format: 'text_music' | 'narrated';
-        platform: 'instagram' | 'tiktok';
+        format: 'text_music' | 'narrated' | 'article';
+        platform: 'instagram' | 'tiktok' | 'creddy_website';
         account: string;
         scheduledFor: string;
       }>;

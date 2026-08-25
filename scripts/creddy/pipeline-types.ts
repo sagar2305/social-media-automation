@@ -271,6 +271,8 @@ export interface AnalysisPerformanceFeedbackRecord {
 
 export interface ContentPackageRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  distributionMode?: CreddyDistributionMode;
+  contentDraftId?: string;
   id: string;
   analysisId: string;
   canonicalId: string;
@@ -377,6 +379,7 @@ export interface CreddyArticleVisualPlan {
 
 export interface ContentDraftRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  distributionMode?: CreddyDistributionMode;
   /** New Agent 04 drafts use the claim-traceable concept contract. Omitted only
    * on legacy drafts that remain readable by downstream stages. */
   copyVersion?: 'creddy-copy-v2' | 'creddy-copy-v3';
@@ -484,7 +487,10 @@ export interface ContentConceptPack {
 export interface ContentOpportunityTaskRecord {
   decision: AnalysisDecisionRecord;
   article: CanonicalNewsRecord;
+  distributionMode: CreddyDistributionMode;
 }
+
+export type CreddyDistributionMode = 'article_only' | 'article_and_social';
 
 export type CreddyVisualTheme = 'editorial' | 'midnight' | 'ledger' | 'poster' | 'aurora';
 
@@ -503,12 +509,13 @@ export interface VisualScenePlan {
 
 export interface VisualPlanRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  distributionMode?: CreddyDistributionMode;
   id: string;
   contentDraftId: string;
   analysisId: string;
   canonicalId: string;
   createdAt: string;
-  format: '9:16' | '3:4';
+  format: '9:16' | '3:4' | 'article';
   theme: CreddyVisualTheme;
   characterPack: 'credit-card-rewards/creddy';
   /** Required for the locked 3:4 slideshow and selected from the approved
@@ -575,7 +582,7 @@ export interface ContentBankRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
   id: string;
   contentPackageId: string;
-  mediaType?: 'video' | 'slideshow';
+  mediaType?: 'video' | 'slideshow' | 'article';
   contentDraftId?: string;
   visualPlanId?: string;
   slideshowManifestPath?: string;

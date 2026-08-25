@@ -18,6 +18,10 @@ two approved Creddy video formats.
 
 Rules:
 
+- `article_only` packages generate the article preview and asset state but zero
+  Video Factory jobs. Exactly two videos remain mandatory only for
+  `article_and_social` packages.
+
 - Produce exactly two 9:16 outputs per production package: `text_music` and `narrated`.
 - Text-music must use only `CREDDY_BACKGROUND_MUSIC_PATH`; never download or select unlicensed music.
 - Narrated must use the existing local cloned-voice reference. Never substitute a stock voice silently.

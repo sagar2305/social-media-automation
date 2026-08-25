@@ -10,6 +10,7 @@ import { buildProductionPackage, listPendingProductionTasks, prepareProductionPa
 import {
   CREDDY_PIPELINE_VERSION,
   type AnalysisDecisionRecord,
+  type CanonicalNewsRecord,
   type ContentDraftRecord,
   type ContentPackageRecord,
   type VisualPlanRecord,
@@ -20,7 +21,7 @@ function draft(): ContentDraftRecord {
   const articleBody = Array.from({ length: 55 }, () =>
     'Check current award availability before transferring points because prices, space, eligibility, and program terms can change without notice.').join(' ');
   return {
-    version: CREDDY_PIPELINE_VERSION, copyVersion: 'creddy-copy-v3', id: 'copy-analysis-1', analysisId: 'analysis-1', canonicalId: 'canonical-1',
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_and_social', copyVersion: 'creddy-copy-v3', id: 'copy-analysis-1', analysisId: 'analysis-1', canonicalId: 'canonical-1',
     createdAt: '2026-08-19T12:30:00.000Z', audience: 'US rewards users', slot: 'understand',
     hook: 'Transfer bonus?', textScenes: ['A 20% bonus is reported.', 'Check the award first.', 'Verify current terms.'],
     narrationScript: 'A twenty percent transfer bonus is reported for eligible users. Check the exact award before moving points because availability can change. Review the current terms and remember that point transfers may be irreversible once submitted.',
@@ -75,10 +76,21 @@ function decision(): AnalysisDecisionRecord {
   };
 }
 
+function canonical(): CanonicalNewsRecord {
+  return {
+    version: CREDDY_PIPELINE_VERSION, id: 'raw-1', runId: 'run-1', sourceId: 'awardwallet', sourceName: 'AwardWallet',
+    sourceTier: 'B', factualUse: 'discovery_and_confirmation', originalUrl: 'https://example.com/bonus',
+    canonicalUrl: 'https://example.com/bonus', title: 'Transfer planning guide', markdown: 'A practical rewards guide.',
+    contentHash: 'a'.repeat(64), titleFingerprint: 'transfer planning guide', fetchedAt: '2026-08-19T12:00:00.000Z',
+    providerMetadata: {}, qualification: { qualifies: true, matchedKeywords: ['points'] }, canonicalId: 'canonical-1',
+    evidenceRecordIds: ['raw-1'], cleanedMarkdown: 'A practical rewards guide.', deduplicatedAt: '2026-08-19T12:10:00.000Z',
+  };
+}
+
 function visualPlan(): VisualPlanRecord {
   const copy = draft();
   return {
-    version: CREDDY_PIPELINE_VERSION, id: 'visual-copy-analysis-1', contentDraftId: copy.id,
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_and_social', id: 'visual-copy-analysis-1', contentDraftId: copy.id,
     analysisId: copy.analysisId, canonicalId: copy.canonicalId, createdAt: '2026-08-19T12:40:00.000Z',
     format: '9:16', theme: 'ledger', characterPack: 'credit-card-rewards/creddy',
     cover: { headline: 'Transfer bonus?', subheadline: 'Check the award first' },
@@ -108,6 +120,7 @@ function visualPlan(): VisualPlanRecord {
 test('Agent 6 assembles one immutable package and exactly two render jobs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-production-'));
   await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
   await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
   await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
   await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${visualPlan().id}.json`), visualPlan());
@@ -120,6 +133,41 @@ test('Agent 6 assembles one immutable package and exactly two render jobs', asyn
   const second = await prepareProductionPackages(root);
   assert.equal(second.createdVideoJobs, 0);
   assert.equal(second.skippedCount, 1);
+});
+
+test('Agent 6 creates an article-only package without any video jobs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-article-production-'));
+  await initializeCreddyDataRoot(root);
+  const evergreen = decision();
+  evergreen.headline = 'How to compare loyalty-program value and usability';
+  evergreen.summary = 'A stable educational framework for rewards users.';
+  evergreen.expiry = null;
+  evergreen.verificationState = 'official_source_needed';
+  evergreen.verificationRequirements = ['Confirm program-specific examples.'];
+  evergreen.route = 'reverify';
+  evergreen.hookType = 'decision_rule';
+  const articleDraft = draft();
+  articleDraft.distributionMode = 'article_only';
+  articleDraft.hook = articleDraft.article!.title;
+  articleDraft.textScenes = [];
+  articleDraft.narrationScript = '';
+  articleDraft.instagramCaption = '';
+  articleDraft.tiktokCaption = '';
+  articleDraft.hashtags = [];
+  const articlePlan = visualPlan();
+  articlePlan.distributionMode = 'article_only';
+  articlePlan.format = 'article';
+  articlePlan.cover.headline = articleDraft.article!.title;
+  articlePlan.scenes = [];
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), evergreen);
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${articleDraft.id}.json`), articleDraft);
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${articlePlan.id}.json`), articlePlan);
+  assert.equal((await listPendingProductionTasks(root)).length, 1);
+  const result = await prepareProductionPackages(root, new Date('2026-08-19T13:00:00Z'));
+  assert.equal(result.createdPackages, 1);
+  assert.equal(result.createdVideoJobs, 0);
+  assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
 });
 
 test('Agent 6 ignores legacy and no-longer-verified visual plans', async () => {

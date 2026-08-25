@@ -24,6 +24,7 @@ import type {
   VisualPlanRecord,
   VideoJobRecord,
 } from './pipeline-types.js';
+import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 function cell(value: unknown): string {
   return String(value ?? '').replaceAll('|', '\\|').replace(/\s+/g, ' ').trim();
@@ -519,15 +520,12 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     written.push(rankingLedgerPath);
   }
 
-  const opportunities = (await Promise.all(
-    (await listJsonFiles(safeDataPath(root, '05-content-opportunities')))
-      .map((path) => readJson<AnalysisDecisionRecord>(path)),
-  )).filter((item) =>
-    activeCanonicalIds.has(item.canonicalId) &&
-    item.rubricVersion === 'creddy-ranking-v3' &&
-    item.verificationState === 'ready' &&
-    ['auto_process', 'evergreen_queue'].includes(item.route),
-  );
+  const canonicalById = new Map(canonical.map((article) => [article.canonicalId, article]));
+  const opportunityModes = new Map((await listPublicationDecisions(root)).flatMap((decision) => {
+    const article = canonicalById.get(decision.canonicalId);
+    const mode = article && publicationModeForOpportunity(decision, article);
+    return mode ? [[decision.id, mode] as const] : [];
+  }));
   const drafts = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '06-content-drafts')))
       .filter((path) => !/\/(scripts|captions|briefs|articles|legacy)\//.test(path))
@@ -535,25 +533,29 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   );
   const packages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path));
-  const opportunityIds = new Set(opportunities.map((opportunity) => opportunity.id));
-  const conceptDrafts = drafts.filter((draft) =>
-    opportunityIds.has(draft.analysisId) && draft.copyVersion === 'creddy-copy-v3' && draft.conceptPack && draft.article);
+  const currentDrafts = drafts.filter((draft) =>
+    draft.copyVersion === 'creddy-copy-v3' && draft.article &&
+    draft.distributionMode === opportunityModes.get(draft.analysisId));
+  const conceptDrafts = currentDrafts.filter((draft) => draft.distributionMode === 'article_and_social' && draft.conceptPack);
+  const articleOnlyDrafts = currentDrafts.filter((draft) => draft.distributionMode === 'article_only');
   const contentLines = [
     '# Agent 04 — Articles, scripts, captions, CTA, and production briefs', '',
     `Generated: ${new Date().toISOString()}`,
-    `Content opportunities: ${opportunities.length}`,
-    `Completed copy drafts: ${conceptDrafts.length}`,
-    `Pending copy drafts: ${Math.max(0, opportunities.length - conceptDrafts.length)}`,
-    `Archived/legacy draft records: ${Math.max(0, drafts.length - conceptDrafts.length)}`,
+    `Content opportunities: ${opportunityModes.size}`,
+    `Article-only opportunities: ${[...opportunityModes.values()].filter((mode) => mode === 'article_only').length}`,
+    `Verified article + social opportunities: ${[...opportunityModes.values()].filter((mode) => mode === 'article_and_social').length}`,
+    `Completed current drafts: ${currentDrafts.length}`,
+    `Pending copy drafts: ${Math.max(0, opportunityModes.size - currentDrafts.length)}`,
+    `Archived/legacy draft records: ${Math.max(0, drafts.length - currentDrafts.length)}`,
     '',
-    '> Agent 04 writes the full website article and social copy in one record. It does not generate images, create Video Factory jobs, approve, schedule, or publish.',
+    '> Agent 04 writes a website article for every current opportunity. Social copy is added only for verified article-and-social opportunities.',
     '',
     '| Hook | Selected style | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
     '|---|---|---|---:|---:|---|---|---|---:|',
-    ...conceptDrafts.map((draft) => {
+    ...currentDrafts.map((draft) => {
       const selected = draft.conceptPack?.candidates.find((candidate) =>
         candidate.id === draft.conceptPack?.selectedCandidateId);
-      return `| ${cell(draft.hook)} | ${cell(selected?.style ?? 'legacy')} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`;
+      return `| ${cell(draft.hook)} | ${cell(selected?.style ?? draft.distributionMode)} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`;
     }),
     '',
     '## Concept candidates and selection',
@@ -593,7 +595,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Approved: ${(await listJsonFiles(safeDataPath(root, '10-approved'))).length}`,
     `Scheduled: ${(await listJsonFiles(safeDataPath(root, '11-scheduled'))).length}`,
     `Published: ${(await listJsonFiles(safeDataPath(root, '12-published'))).length}`,
-    '', 'Only current ranking-v3 Agent 3 decisions with verification state `ready` and route `auto_process` or `evergreen_queue` can enter Agent 4.',
+    '', 'Verified Agent 3 decisions can create article-and-social drafts. Stable evergreen education may create article-only drafts but can never unlock slideshow or video output.',
   ];
   const contentPath = safeDataPath(outputRoot, '04-content-writing.md');
   await writeMarkdown(contentPath, contentLines.join('\n'));
@@ -603,14 +605,16 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     (await listJsonFiles(safeDataPath(root, '06-visual-plans')))
       .map((path) => readJson<VisualPlanRecord>(path)),
   );
-  const currentDraftIds = new Set(conceptDrafts.map((draft) => draft.id));
-  const currentVisualPlans = visualPlans.filter((plan) => currentDraftIds.has(plan.contentDraftId));
+  const currentDraftIds = new Set(currentDrafts.map((draft) => draft.id));
+  const currentVisualPlans = visualPlans.filter((plan) =>
+    currentDraftIds.has(plan.contentDraftId) &&
+    currentDrafts.some((draft) => draft.id === plan.contentDraftId && draft.distributionMode === plan.distributionMode));
   const visualLines = [
     '# Agent 05 — Creddy visual direction', '',
     `Generated: ${new Date().toISOString()}`,
-    `Current Agent 04 drafts: ${conceptDrafts.length}`,
+    `Current Agent 04 drafts: ${currentDrafts.length} (${articleOnlyDrafts.length} article-only)`,
     `Completed current visual plans: ${currentVisualPlans.length}`,
-    `Pending visual plans: ${Math.max(0, conceptDrafts.length - currentVisualPlans.length)}`,
+    `Pending visual plans: ${Math.max(0, currentDrafts.length - currentVisualPlans.length)}`,
     `Archived/legacy visual plans: ${Math.max(0, visualPlans.length - currentVisualPlans.length)}`,
     '',
     '> Agent 05 plans visuals only. It does not generate/download images, create Video Factory jobs, render, approve, schedule, or publish.',
@@ -628,7 +632,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
   const allProductionPackages = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path) && /\/production-[^/]+\.json$/.test(path));
   const currentVisualDraftIds = new Set(currentVisualPlans.map((plan) => plan.contentDraftId));
-  const currentProductionIds = new Set(conceptDrafts
+  const currentProductionIds = new Set(currentDrafts
     .filter((draft) => currentVisualDraftIds.has(draft.id))
     .map((draft) => `production-${draft.analysisId}`));
   const productionPackages = allProductionPackages.filter((path) =>

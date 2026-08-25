@@ -252,6 +252,50 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
   return created;
 }
 
+export async function runArticleContentBankHandoff(root: string, now = new Date()): Promise<number> {
+  let created = 0;
+  const packagePaths = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
+    .filter((path) => /\/production-[^/]+\.json$/.test(path) && !path.includes('/legacy/'));
+  for (const path of packagePaths) {
+    const content = await readJson<ContentPackageRecord>(path);
+    if (content.distributionMode !== 'article_only' || !content.article || !content.articlePreviewPath) continue;
+    const id = `article-${content.id}`;
+    const destination = safeDataPath(root, '09-pending-approval', `${id}.json`);
+    const existing = await pathExists(destination) ? await readJson<ContentBankRecord>(destination) : undefined;
+    if (existing && !['pending_review', 'changes_requested', 'rendering_revision'].includes(existing.status)) continue;
+    const blockers = content.articleReadiness === 'ready_for_review'
+      ? []
+      : ['One or more Agent 05 article visuals do not have approved asset files yet.'];
+    const record: ContentBankRecord = {
+      ...existing,
+      version: CREDDY_PIPELINE_VERSION,
+      id,
+      contentPackageId: content.id,
+      mediaType: 'article',
+      contentDraftId: content.contentDraftId,
+      visualPlanId: content.visualPlanId,
+      articlePreviewPath: content.articlePreviewPath,
+      articleReview: {
+        status: blockers.length ? 'needs_assets' : 'pending_review',
+        blockers,
+      },
+      createdAt: existing?.createdAt ?? now.toISOString(),
+      status: 'pending_review',
+      revision: existing?.revision ?? 1,
+      changeRequest: undefined,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      destinations: undefined,
+      rejectedBy: undefined,
+      rejectedAt: undefined,
+      rejectionReason: undefined,
+    };
+    await writeJsonAtomic(destination, record);
+    created += existing ? 0 : 1;
+  }
+  return created;
+}
+
 export async function rejectContentBankItem(
   root: string,
   input: { id: string; rejectedBy: string; reason: string },
@@ -287,8 +331,8 @@ export async function approveContentBankItem(
     id: string;
     approvedBy: string;
     destinations: Array<{
-      format: 'text_music' | 'narrated';
-      platform: 'instagram' | 'tiktok';
+      format: 'text_music' | 'narrated' | 'article';
+      platform: 'instagram' | 'tiktok' | 'creddy_website';
       account: string;
       scheduledFor: string;
     }>;
@@ -300,6 +344,13 @@ export async function approveContentBankItem(
     throw new Error('At least one publishing destination is required');
   }
   const destinations = input.destinations.map((destination) => {
+    const isArticle = destination.format === 'article' || destination.platform === 'creddy_website';
+    if (isArticle && (destination.format !== 'article' || destination.platform !== 'creddy_website')) {
+      throw new Error('Website destinations must use article format on creddy_website');
+    }
+    if (!isArticle && !['instagram', 'tiktok'].includes(destination.platform)) {
+      throw new Error('Social video destinations must use Instagram or TikTok');
+    }
     if (!destination.account.trim()) throw new Error('Publishing account is required');
     const scheduled = new Date(destination.scheduledFor);
     if (!Number.isFinite(scheduled.getTime()) || scheduled <= now) {
@@ -318,11 +369,25 @@ export async function approveContentBankItem(
   if (pending.status !== 'pending_review' && pending.status !== 'changes_requested') {
     throw new Error(`Content item cannot be approved from status ${pending.status}`);
   }
+  const approvesArticle = destinations.some((destination) => destination.format === 'article');
+  if (approvesArticle) {
+    if (!pending.articleReview) throw new Error('Content item has no website article to approve');
+    if (pending.articleReview.status === 'needs_assets' || pending.articleReview.blockers?.length) {
+      throw new Error('Website article cannot be approved until all planned assets are ready');
+    }
+  }
   const approved: ContentBankRecord = {
     ...pending,
     status: 'approved',
     approvedBy: input.approvedBy,
     approvedAt: now.toISOString(),
+    articleReview: approvesArticle ? {
+      ...pending.articleReview!,
+      status: 'approved',
+      approvedBy: input.approvedBy,
+      approvedAt: now.toISOString(),
+      blockers: [],
+    } : pending.articleReview,
     destinations,
   };
   await writeJsonAtomic(safeDataPath(root, '10-approved', `${approved.id}.json`), approved);

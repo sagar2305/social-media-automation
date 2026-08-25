@@ -13,6 +13,10 @@ second pipeline or a second content identity.
 
 Rules:
 
+- Respect `distributionMode`. For `article_only`, use format `article`, create
+  zero social scenes, and plan only `articleVisuals`. For
+  `article_and_social`, preserve the existing slideshow/video rules.
+
 - Preserve every Agent 04 `textScenes` value exactly and in order. Create exactly one visual scene for each text scene.
 - Set `cover.headline` exactly to the selected Agent 04 `hook`; Agent 05 may not rewrite or replace the approved concept.
 - Preserve `sourceUrls` and `factualClaims` exactly. Do not add or modify facts, captions, narration, CTA, dates, amounts, eligibility, or advice.

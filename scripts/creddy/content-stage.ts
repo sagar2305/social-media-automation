@@ -26,10 +26,11 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
     throw new Error('Invalid content slot');
   }
   if (!content.hook.trim()) throw new Error('Content hook is required');
-  if (!Array.isArray(content.scriptLines) || content.scriptLines.length < 2) {
+  const articleOnly = content.distributionMode === 'article_only';
+  if (!Array.isArray(content.scriptLines) || (!articleOnly && content.scriptLines.length < 2) || (articleOnly && content.scriptLines.length !== 0)) {
     throw new Error('Content package requires at least two script lines');
   }
-  if (!content.caption.trim()) throw new Error('Content caption is required');
+  if (!articleOnly && !content.caption.trim()) throw new Error('Content caption is required');
   if (!content.cta?.deepLink.startsWith('creddy://')) {
     throw new Error('Creddy CTA must use a creddy:// deep link');
   }
@@ -41,6 +42,7 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid source URL');
   }
   if (!Array.isArray(content.factualClaims)) throw new Error('factualClaims must be an array');
+  if (articleOnly && !content.article) throw new Error('Article-only package requires a website article');
   if (content.article) {
     validateCreddyArticle(content.article, content.factualClaims, content.sourceUrls);
     if (!content.articleVisuals) throw new Error('Website article requires its Agent 05 visual plan');
@@ -71,6 +73,7 @@ export async function writeContentAndJobs(
   root: string,
   content: ContentPackageRecord,
   revision: number,
+  createVideoJobs = true,
 ): Promise<VideoJobRecord[]> {
   const imageRoot = safeDataPath(root, '06-content-packages', 'images');
   for (const path of content.imagePaths ?? []) {
@@ -108,7 +111,7 @@ export async function writeContentAndJobs(
   }
 
   const now = new Date().toISOString();
-  const jobs: VideoJobRecord[] = (['text_music', 'narrated'] as const).map((format) => ({
+  const jobs: VideoJobRecord[] = (createVideoJobs ? ['text_music', 'narrated'] as const : []).map((format) => ({
     version: CREDDY_PIPELINE_VERSION,
     id: videoJobId(content.id, format, revision),
     contentPackageId: content.id,

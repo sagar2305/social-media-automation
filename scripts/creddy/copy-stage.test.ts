@@ -61,7 +61,7 @@ function decision(): AnalysisDecisionRecord {
 
 function draft(): ContentDraftRecord {
   return {
-    version: CREDDY_PIPELINE_VERSION, copyVersion: 'creddy-copy-v2',
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_and_social', copyVersion: 'creddy-copy-v2',
     id: 'copy-analysis-1', analysisId: 'analysis-1',
     canonicalId: 'canonical-1', createdAt: '2026-08-19T12:30:00.000Z',
     audience: 'US rewards optimizers', slot: 'understand', hook: 'A transfer bonus can change the math',
@@ -156,6 +156,22 @@ test('Agent 4 ignores stale legacy opportunities after ranking-v3 reanalysis', a
   delete legacy.portfolioCategory;
   await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), legacy);
   assert.equal((await listPendingCopyTasks(root)).length, 0);
+});
+
+test('Agent 4 queues stable evergreen education as article-only without unlocking social', async () => {
+  const root = await fixture();
+  const evergreen = decision();
+  evergreen.headline = 'How hotel loyalty status and redemption value work together';
+  evergreen.summary = 'An evergreen framework for comparing hotel programs and benefits.';
+  evergreen.expiry = null;
+  evergreen.verificationState = 'official_source_needed';
+  evergreen.verificationRequirements = ['Confirm any program-specific examples before publication.'];
+  evergreen.route = 'reverify';
+  evergreen.hookType = 'decision_rule';
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), evergreen);
+  const pending = await listPendingCopyTasks(root);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0]!.distributionMode, 'article_only');
 });
 
 test('Agent 4 archives legacy drafts and still requires the current article-enabled version', async () => {

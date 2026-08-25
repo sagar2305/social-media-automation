@@ -23,7 +23,7 @@ import type {
   VideoFactoryApi,
   VideoFactoryRemoteJob,
 } from './video-factory-client.js';
-import { approveContentBankItem, buildCreddyVideoScript, runContentBankHandoff, runVideoStage } from './video-stage.js';
+import { approveContentBankItem, buildCreddyVideoScript, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 
 class FakeVideoFactory implements VideoFactoryApi {
   readonly jobs: VideoFactoryRemoteJob[] = [];
@@ -171,6 +171,38 @@ test('two Video Factory formats become one pending Content Bank item', async () 
     }, new Date('2026-08-19T14:00:00Z')),
     /cannot be approved/,
   );
+});
+
+test('article-only packages enter review and can be approved without videos', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-article-bank-'));
+  await initializeCreddyDataRoot(root);
+  const previewPath = join(root, 'article-preview.html');
+  await writeFile(previewPath, '<!doctype html><title>Guide</title>');
+  const content: ContentPackageRecord = {
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_only', contentDraftId: 'copy-analysis-article',
+    id: 'production-analysis-article', analysisId: 'analysis-article', canonicalId: 'canonical-article',
+    createdAt: '2026-08-19T12:30:00.000Z', audience: 'US rewards users', slot: 'understand', hook: 'Credit card guide',
+    scriptLines: [], caption: '', hashtags: [], cta: { label: 'Open Creddy', deepLink: 'creddy://home' },
+    imagePrompts: [], characterExpressions: [], narrationLines: [], visualPlanId: 'visual-copy-analysis-article',
+    brief: 'Evergreen guide.', sourceUrls: ['https://example.com/guide'], factualClaims: [],
+    article: { title: 'Credit Card Guide' } as ContentPackageRecord['article'],
+    articleVisuals: { version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1', assets: [] },
+    articlePreviewPath: previewPath, articleReadiness: 'ready_for_review',
+  };
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', `${content.id}.json`), content);
+  assert.equal(await runArticleContentBankHandoff(root), 1);
+  const bankId = `article-${content.id}`;
+  const approved = await approveContentBankItem(root, {
+    id: bankId,
+    approvedBy: 'editor@example.com',
+    destinations: [{
+      format: 'article', platform: 'creddy_website', account: 'getcreddy.com',
+      scheduledFor: '2026-08-20T15:00:00.000Z',
+    }],
+  }, new Date('2026-08-19T14:00:00.000Z'));
+  assert.equal(approved.mediaType, 'article');
+  assert.equal(approved.articleReview?.status, 'approved');
+  assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
 });
 
 test('text plus music jobs fail closed when no licensed music path is configured', async () => {

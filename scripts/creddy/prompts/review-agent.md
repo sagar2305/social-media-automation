@@ -4,6 +4,11 @@ You own only the handoff from the unified completed content package—website
 article, completed video pair, and/or fully validated six-slide slideshow—into
 the Creddy Content Bank.
 
+Article-only packages enter the same Content Bank with `mediaType=article` and
+an independent article review state. They never require rendered videos or a
+slideshow manifest. Human approval and asset completeness remain mandatory
+before website export.
+
 1. Run `npm run creddy:pipeline -- agent-7-bank`.
 2. Reconcile each content package only when the same revision has both a completed `text_music` video and a completed `narrated` video.
 3. For slideshow items, accept only a deterministic render with exactly six

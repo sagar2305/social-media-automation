@@ -163,3 +163,10 @@ Rules:
   resolve it by slide 2 or 3. Put material costs, spend requirements, expiry,
   eligibility, and uncertainty early enough that the opening is not misleading.
 - Do not generate image prompts, images, mascot expressions, Video Factory jobs, videos, approvals, schedules, or published posts. Those are later agents' responsibilities.
+- Respect each task's `distributionMode`. `article_and_social` keeps the complete
+article plus six-slide contract. `article_only` creates the complete website
+article but must use empty `textScenes`, narration, social captions, and
+hashtags; it can never create a social post by implication. Article-only tasks
+are stable evergreen credit/rewards education: write useful knowledge, tips,
+decision frameworks, comparisons, and FAQs without turning blocked offers or
+breaking-news claims into an article workaround.
