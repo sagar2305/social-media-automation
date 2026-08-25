@@ -159,3 +159,50 @@ test('Agent 5 requires explicit CTA-matched phone proof and real emphasis text',
   slideshow.scenes[1]!.emphasis = ['not in the slide'];
   assert.throws(() => validateVisualPlan(slideshow), /emphasis phrase/);
 });
+
+test('Agent 5 enforces premium-editorial role, color, and copy discipline', () => {
+  const base = plan();
+  const slideshow: VisualPlanRecord = {
+    ...base,
+    format: '3:4',
+    phoneTemplateId: 'app_store_dark',
+    scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
+      ...base.scenes[sceneIndex % 3]!,
+      sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 4 ? 'caution' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: ['rewards', 'thinking', 'worried', 'curious', 'pointing', 'urgent'][sceneIndex] as VisualPlanRecord['scenes'][number]['expression'],
+      background: {
+        mode: 'template',
+        style: sceneIndex === 4 ? 'burgundy' : sceneIndex > 0 && sceneIndex < 4 ? 'deep_navy' : 'spotlight',
+      },
+    })),
+  };
+  assert.doesNotThrow(() => validateVisualPlan(slideshow));
+
+  slideshow.scenes[2]!.background.style = 'forest';
+  assert.throws(() => validateVisualPlan(slideshow), /one deck accent family/);
+  slideshow.scenes[2]!.background.style = 'deep_navy';
+  slideshow.scenes[1]!.background.mode = 'generated_illustration';
+  slideshow.scenes[1]!.background.prompt = 'A branded illustration';
+  assert.throws(() => validateVisualPlan(slideshow), /mascot\/app-led/);
+});
+
+test('Agent 5 rejects visual overflow and arbitrary multi-phrase emphasis', () => {
+  const base = plan();
+  const slideshow: VisualPlanRecord = {
+    ...base,
+    format: '3:4',
+    phoneTemplateId: 'app_store_dark',
+    scenes: [0, 1, 2, 3, 4, 5].map((sceneIndex) => ({
+      ...base.scenes[sceneIndex % 3]!,
+      sceneIndex,
+      role: sceneIndex === 0 ? 'hook' : sceneIndex === 5 ? 'cta' : 'context',
+      expression: ['rewards', 'thinking', 'worried', 'curious', 'pointing', 'urgent'][sceneIndex] as VisualPlanRecord['scenes'][number]['expression'],
+    })),
+  };
+  slideshow.scenes[1]!.emphasis = ['Check', 'award space'];
+  assert.throws(() => validateVisualPlan(slideshow), /linked numeric values/);
+  slideshow.scenes[1]!.text = 'This deliberately excessive scene contains far too many separate words for one premium editorial slide and must return upstream for a shorter validated revision.';
+  slideshow.scenes[1]!.emphasis = ['far too many'];
+  assert.throws(() => validateVisualPlan(slideshow), /word budget/);
+});

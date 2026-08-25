@@ -84,6 +84,11 @@ Rules:
 - For this slideshow flow, write exactly six concise `textScenes`; never return five,
   seven, or a variable-length scene set. Write a clear hook of at most 140
   characters and a 35–220 word narration.
+- Keep the selected hook and slide 1 at no more than 12 words. Keep slides 2-6
+  at no more than 22 words. Prefer one clear focal idea per slide. If visual-fit
+  feedback returns from Agent 05, shorten the accepted copy here, preserve every
+  claim and the exact approved CTA, and rerun all Agent 04 validators before
+  Agent 05 sees the revision again.
 - Treat the article as research and evidence only. The slideshow must stand on its
   own as useful consumer content, not describe, review, summarize, or promote the
   article that informed it.
