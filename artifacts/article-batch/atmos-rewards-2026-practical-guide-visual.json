@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "distributionMode": "article_only",
+  "id": "visual-copy-ranking-ec11a5add69f05fa28f4354b",
+  "contentDraftId": "copy-ranking-ec11a5add69f05fa28f4354b",
+  "analysisId": "ranking-ec11a5add69f05fa28f4354b",
+  "canonicalId": "ec11a5add69f05fa28f4354b",
+  "createdAt": "2026-08-25T11:30:00.000Z",
+  "format": "article",
+  "theme": "editorial",
+  "characterPack": "credit-card-rewards/creddy",
+  "cover": {
+    "headline": "How to Approach Atmos Rewards in 2026",
+    "subheadline": "A practical framework for the combined Alaska–Hawaiian program, including earning choices, partners, status progress, ca"
+  },
+  "scenes": [],
+  "visualBrief": "Natural premium editorial photography with warm cream surfaces, restrained gold and coral accents, real material texture, believable imperfections, and no social scenes.",
+  "safetyOverlays": [],
+  "sourceUrls": [
+    "https://frequentmiler.com/alaska-air-mileage-plan-complete-guide"
+  ],
+  "factualClaims": [
+    {
+      "field": "program_identity",
+      "value": "Atmos Rewards is the combined loyalty program for Alaska Airlines and Hawaiian Airlines",
+      "sourceRecordIds": [
+        "9f5d8b8f60e529496be7a60b"
+      ],
+      "confidence": 79
+    },
+    {
+      "field": "guide_scope",
+      "value": "The guide covers updated benefits, earning methods, award partners, cards, and elite-status thresholds",
+      "sourceRecordIds": [
+        "9f5d8b8f60e529496be7a60b"
+      ],
+      "confidence": 78
+    },
+    {
+      "field": "rollout_status",
+      "value": "The guide says some new features will continue to roll out during 2026",
+      "sourceRecordIds": [
+        "9f5d8b8f60e529496be7a60b"
+      ],
+      "confidence": 78
+    }
+  ],
+  "articleVisuals": {
+    "version": "creddy-article-visuals-v1",
+    "designVersion": "creddy-guides-v1",
+    "assets": [
+      {
+        "id": "atmos-rewards-2026-practical-guide-hero",
+        "usage": "hero",
+        "articleBlockId": "hero-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "16:9",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of Pacific travel planning desk with two route-map layers joining into one network, ocean-blue and warm-gold tokens, partner cards, and 2026 calendar tabs without text, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Travel-planning materials representing Atmos Rewards",
+        "caption": "A practical overview of Atmos Rewards.",
+        "claimFields": [
+          "program_identity",
+          "guide_scope",
+          "rollout_status"
+        ],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/atmos-rewards-2026-practical-guide/atmos-rewards-2026-practical-guide-hero.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      },
+      {
+        "id": "atmos-rewards-2026-practical-guide-decision",
+        "usage": "comparison",
+        "articleBlockId": "decision-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of combined-program decision map with two route strands joining, separate redeemable and status tokens, partner markers, and a rollout calendar, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Tactile comparison materials for a Atmos Rewards decision",
+        "caption": "Compare the decision using current evidence and a real trip.",
+        "claimFields": [],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/atmos-rewards-2026-practical-guide/atmos-rewards-2026-practical-guide-decision.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      },
+      {
+        "id": "atmos-rewards-2026-practical-guide-tracker",
+        "usage": "inline",
+        "articleBlockId": "tracker-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of 2026 program review desk with blank feature cards sorted into available, verify, and later groups, plus a next-trip marker, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Blank tracking materials for reviewing Atmos Rewards",
+        "caption": "Track verification, expected value, and the result together.",
+        "claimFields": [],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/atmos-rewards-2026-practical-guide/atmos-rewards-2026-practical-guide-tracker.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      }
+    ]
+  }
+}

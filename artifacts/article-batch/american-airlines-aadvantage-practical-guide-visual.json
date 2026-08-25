@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "distributionMode": "article_only",
+  "id": "visual-copy-ranking-8407893c1526145efb688c01",
+  "contentDraftId": "copy-ranking-8407893c1526145efb688c01",
+  "analysisId": "ranking-8407893c1526145efb688c01",
+  "canonicalId": "8407893c1526145efb688c01",
+  "createdAt": "2026-08-25T11:30:00.000Z",
+  "format": "article",
+  "theme": "editorial",
+  "characterPack": "credit-card-rewards/creddy",
+  "cover": {
+    "headline": "A Practical Guide to American Airlines AAdvantage",
+    "subheadline": "Learn to separate redeemable miles, Loyalty Points, elite-status progress, partner awards, and card activity before choo"
+  },
+  "scenes": [],
+  "visualBrief": "Natural premium editorial photography with warm cream surfaces, restrained gold and coral accents, real material texture, believable imperfections, and no social scenes.",
+  "safetyOverlays": [],
+  "sourceUrls": [
+    "https://frequentmiler.com/american-airlines-aadvantage-complete-guide"
+  ],
+  "factualClaims": [
+    {
+      "field": "program_scope",
+      "value": "The 2026 guide covers earning and redeeming miles, Loyalty Points, elite status, partners, and AA credit cards",
+      "sourceRecordIds": [
+        "71fef8fbbc7682e41b41ce88"
+      ],
+      "confidence": 79
+    },
+    {
+      "field": "partner_awards",
+      "value": "The guide reports that AAdvantage retains a fixed partner award chart",
+      "sourceRecordIds": [
+        "71fef8fbbc7682e41b41ce88"
+      ],
+      "confidence": 77
+    },
+    {
+      "field": "status_earning",
+      "value": "The guide reports multiple non-flight paths to earning miles and Loyalty Points",
+      "sourceRecordIds": [
+        "71fef8fbbc7682e41b41ce88"
+      ],
+      "confidence": 77
+    }
+  ],
+  "articleVisuals": {
+    "version": "creddy-article-visuals-v1",
+    "designVersion": "creddy-guides-v1",
+    "assets": [
+      {
+        "id": "american-airlines-aadvantage-practical-guide-hero",
+        "usage": "hero",
+        "articleBlockId": "hero-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "16:9",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of airline mileage planning desk with abstract domestic and international routes, two distinct token ledgers for miles and status, and a travel calendar, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Travel-planning materials representing American Airlines AAdvantage",
+        "caption": "A practical overview of American Airlines AAdvantage.",
+        "claimFields": [
+          "program_scope",
+          "partner_awards",
+          "status_earning"
+        ],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/american-airlines-aadvantage-practical-guide/american-airlines-aadvantage-practical-guide-hero.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      },
+      {
+        "id": "american-airlines-aadvantage-practical-guide-decision",
+        "usage": "comparison",
+        "articleBlockId": "decision-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of partner-award planning composition with distance dividers, route cards, points tokens, and an availability marker, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Tactile comparison materials for a American Airlines AAdvantage decision",
+        "caption": "Compare the decision using current evidence and a real trip.",
+        "claimFields": [],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/american-airlines-aadvantage-practical-guide/american-airlines-aadvantage-practical-guide-decision.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      },
+      {
+        "id": "american-airlines-aadvantage-practical-guide-tracker",
+        "usage": "inline",
+        "articleBlockId": "tracker-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of status and redemption review with separate blank ledgers, shopping and flight symbols, calendar, and next-trip marker, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Blank tracking materials for reviewing American Airlines AAdvantage",
+        "caption": "Track verification, expected value, and the result together.",
+        "claimFields": [],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/american-airlines-aadvantage-practical-guide/american-airlines-aadvantage-practical-guide-tracker.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      }
+    ]
+  }
+}

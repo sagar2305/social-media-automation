@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "distributionMode": "article_only",
+  "id": "visual-copy-ranking-36c7c0b604db3d0d10312554",
+  "contentDraftId": "copy-ranking-36c7c0b604db3d0d10312554",
+  "analysisId": "ranking-36c7c0b604db3d0d10312554",
+  "canonicalId": "36c7c0b604db3d0d10312554",
+  "createdAt": "2026-08-25T11:30:00.000Z",
+  "format": "article",
+  "theme": "editorial",
+  "characterPack": "credit-card-rewards/creddy",
+  "cover": {
+    "headline": "How Marriott Bonvoy Brilliant Elite Benefits Work",
+    "subheadline": "A practical guide to separating automatic Platinum status, annual elite-night credits, authorized-user limits, and the v"
+  },
+  "scenes": [],
+  "visualBrief": "Natural premium editorial photography with warm cream surfaces, restrained gold and coral accents, real material texture, believable imperfections, and no social scenes.",
+  "safetyOverlays": [],
+  "sourceUrls": [
+    "https://onemileatatime.com/guides/marriott-bonvoy-brilliant-card-platinum-elite-status"
+  ],
+  "factualClaims": [
+    {
+      "field": "automatic_status",
+      "value": "Basic cardmembers are reported to receive Marriott Bonvoy Platinum Elite status while holding the card",
+      "sourceRecordIds": [
+        "799b0c141a66cf91981f46a3"
+      ],
+      "confidence": 79
+    },
+    {
+      "field": "elite_night_credits",
+      "value": 25,
+      "sourceRecordIds": [
+        "799b0c141a66cf91981f46a3"
+      ],
+      "confidence": 79
+    },
+    {
+      "field": "authorized_users",
+      "value": "Automatic Platinum Elite status is reported as unavailable to authorized users",
+      "sourceRecordIds": [
+        "799b0c141a66cf91981f46a3"
+      ],
+      "confidence": 77
+    }
+  ],
+  "articleVisuals": {
+    "version": "creddy-article-visuals-v1",
+    "designVersion": "creddy-guides-v1",
+    "assets": [
+      {
+        "id": "marriott-bonvoy-brilliant-elite-benefits-hero",
+        "usage": "hero",
+        "articleBlockId": "hero-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "16:9",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of premium hotel travel planning desk with a brass room key, blank status card, calendar, luggage tag, and twenty-five small night markers, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Travel-planning materials representing Marriott Bonvoy Brilliant elite benefits",
+        "caption": "A practical overview of Marriott Bonvoy Brilliant elite benefits.",
+        "claimFields": [
+          "automatic_status",
+          "elite_night_credits",
+          "authorized_users"
+        ],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/marriott-bonvoy-brilliant-elite-benefits/marriott-bonvoy-brilliant-elite-benefits-hero.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      },
+      {
+        "id": "marriott-bonvoy-brilliant-elite-benefits-decision",
+        "usage": "comparison",
+        "articleBlockId": "decision-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of two separate groups representing automatic status and annual elite-night progress using a room key, calendar, and twenty-five tactile markers, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Tactile comparison materials for a Marriott Bonvoy Brilliant elite benefits decision",
+        "caption": "Compare the decision using current evidence and a real trip.",
+        "claimFields": [],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/marriott-bonvoy-brilliant-elite-benefits/marriott-bonvoy-brilliant-elite-benefits-decision.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      },
+      {
+        "id": "marriott-bonvoy-brilliant-elite-benefits-tracker",
+        "usage": "inline",
+        "articleBlockId": "tracker-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Highly realistic premium editorial photograph of hotel-benefit review desk with blank ledger cards, annual-fee envelope, stay calendar, and benefit-use tokens, arranged on a warm cream surface with restrained gold, charcoal, coral, and topic-appropriate muted accents, natural window light, tactile paper and metal textures, believable human imperfections, clean hierarchy, and generous margins.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline or hotel branding, no bank-card artwork, no product interface, no people, no duplicate objects, no distorted geometry, and no glossy synthetic advertising look.",
+        "altText": "Blank tracking materials for reviewing Marriott Bonvoy Brilliant elite benefits",
+        "caption": "Track verification, expected value, and the result together.",
+        "claimFields": [],
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/marriott-bonvoy-brilliant-elite-benefits/marriott-bonvoy-brilliant-elite-benefits-tracker.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; visually reviewed and saved in the project."
+      }
+    ]
+  }
+}
