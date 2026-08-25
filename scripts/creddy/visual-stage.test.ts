@@ -28,7 +28,7 @@ function plan(): VisualPlanRecord {
     version: CREDDY_PIPELINE_VERSION, id: 'visual-copy-analysis-1', contentDraftId: copy.id,
     analysisId: copy.analysisId, canonicalId: copy.canonicalId, createdAt: '2026-08-19T12:40:00.000Z',
     format: '9:16', theme: 'editorial', characterPack: 'credit-card-rewards/creddy',
-    cover: { headline: 'Transfer bonus?', subheadline: 'Check the award first' },
+    cover: { headline: copy.hook, subheadline: 'Check the award first' },
     scenes: [
       { sceneIndex: 0, text: copy.textScenes[0]!, role: 'hook', expression: 'rewards', emphasis: ['20%'], background: { mode: 'template' } },
       { sceneIndex: 1, text: copy.textScenes[1]!, role: 'context', expression: 'thinking', emphasis: ['award space'], background: { mode: 'template' } },
@@ -126,4 +126,11 @@ test('Agent 5 cannot change Agent 4 scene copy or factual claims', async () => {
   const changedClaim = plan();
   changedClaim.factualClaims[0]!.value = 50;
   await assert.rejects(() => acceptVisualPlan(root, changedClaim), /preserve accepted factual claims exactly/);
+});
+
+test('Agent 5 cannot replace the selected Agent 4 hook', async () => {
+  const root = await fixture();
+  const changed = plan();
+  changed.cover.headline = 'A different angle';
+  await assert.rejects(() => acceptVisualPlan(root, changed), /preserve the selected Agent 4 hook/);
 });

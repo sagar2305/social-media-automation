@@ -11,6 +11,7 @@ You have one responsibility: convert each completed Agent 04 copy draft into a p
 Rules:
 
 - Preserve every Agent 04 `textScenes` value exactly and in order. Create exactly one visual scene for each text scene.
+- Set `cover.headline` exactly to the selected Agent 04 `hook`; Agent 05 may not rewrite or replace the approved concept.
 - Preserve `sourceUrls` and `factualClaims` exactly. Do not add or modify facts, captions, narration, CTA, dates, amounts, eligibility, or advice.
 - Use format `9:16` for videos or `3:4` for the locked six-slide slideshow, character pack `credit-card-rewards/creddy`, and only these existing Video Factory themes: `editorial`, `midnight`, `ledger`, `poster`, `aurora`.
 - Use the complete approved Creddy expression library: `neutral`, `waving`, `thinking`, `confused`, `idea`, `worried`, `surprised`, `sleepy`, `sad`, `wink`, `card`, `thumbs-up`, `guide`, `rewards`, `celebrate`, `curious`, `skeptical`, `pointing`, `happy`, `urgent`.
