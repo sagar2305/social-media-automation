@@ -88,6 +88,7 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /Get practical Creddy guides/);
   assert.match(html, /Download on the/);
   assert.match(html, /App Store/);
+  assert.match(html, /class="app-store-icon"/);
   assert.match(html, /Get it on/);
   assert.match(html, /Google Play/);
   assert.match(html, /data-download-article/);
