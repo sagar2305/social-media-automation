@@ -343,6 +343,10 @@ async function opportunityTasks(root: string): Promise<ContentOpportunityTaskRec
   const tasks: ContentOpportunityTaskRecord[] = [];
   for (const path of await listJsonFiles(safeDataPath(root, '05-content-opportunities'))) {
     const decision = await readJson<AnalysisDecisionRecord>(path);
+    // Legacy opportunity files can remain as durable audit evidence after a
+    // ranking-v3 reanalysis routes the same canonical story back to verification.
+    // Never let those stale routes bypass the current verification gate.
+    if (decision.rubricVersion !== 'creddy-ranking-v3' || decision.verificationState !== 'ready') continue;
     if (!['auto_process', 'evergreen_queue'].includes(decision.route)) continue;
     const article = articleById.get(decision.canonicalId);
     if (article) tasks.push({ decision, article });

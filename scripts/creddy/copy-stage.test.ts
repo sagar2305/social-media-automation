@@ -41,6 +41,18 @@ function decision(): AnalysisDecisionRecord {
     affectedPrograms: ['Example Airline'], requiredAction: 'Check award space first.', expiry: '2026-08-30',
     claims: [{ field: 'bonus_amount', value: 20, sourceRecordIds: ['raw-1'], confidence: 90 }],
     productFitScore: 90, popularityScore: 78, importanceScore: 82, confidenceScore: 90,
+    rubricVersion: 'creddy-ranking-v3',
+    viralPotential: {
+      score: 70, hookStrength: 70, audienceBreadth: 70, financialMagnitude: 70,
+      novelty: 70, urgency: 70, practicalUtility: 70, visualPotential: 70,
+      discussionPotential: 70, emotionalAspiration: 70, shareSavePotential: 70,
+      reasons: ['Useful, broadly relevant transfer decision'],
+    },
+    channelScores: { instagramTikTok: 72, blogSeo: 80, newsletter: 76, evergreen: 85 },
+    freshnessScore: 60, editorialPriorityScore: 78, editorialDisposition: 'evergreen',
+    verificationState: 'ready', verificationRequirements: [],
+    hookType: 'decision_rule', hookRationale: 'Readers can apply a concrete transfer checklist.',
+    portfolioCategory: 'evergreen_education',
     importanceReasons: ['Actionable'], confidenceReasons: ['Terms explicit'], materialConflict: false,
     conflictChangesMessage: false, verificationExhausted: true, route: 'evergreen_queue',
     rejectionReasons: [], evidenceRecordIds: ['raw-1'],
@@ -126,6 +138,24 @@ test('Agent 4 preserves v2 copy without video jobs and requeues it for the v3 ar
   assert.equal((await listPendingCopyTasks(root)).length, 1);
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts'))).length, 4);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+});
+
+test('Agent 4 ignores stale legacy opportunities after ranking-v3 reanalysis', async () => {
+  const root = await fixture();
+  const legacy = decision();
+  delete legacy.rubricVersion;
+  delete legacy.viralPotential;
+  delete legacy.channelScores;
+  delete legacy.freshnessScore;
+  delete legacy.editorialPriorityScore;
+  delete legacy.editorialDisposition;
+  delete legacy.verificationState;
+  delete legacy.verificationRequirements;
+  delete legacy.hookType;
+  delete legacy.hookRationale;
+  delete legacy.portfolioCategory;
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), legacy);
+  assert.equal((await listPendingCopyTasks(root)).length, 0);
 });
 
 test('Agent 4 archives legacy drafts and still requires the current article-enabled version', async () => {

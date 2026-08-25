@@ -524,6 +524,8 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
       .map((path) => readJson<AnalysisDecisionRecord>(path)),
   )).filter((item) =>
     activeCanonicalIds.has(item.canonicalId) &&
+    item.rubricVersion === 'creddy-ranking-v3' &&
+    item.verificationState === 'ready' &&
     ['auto_process', 'evergreen_queue'].includes(item.route),
   );
   const drafts = await Promise.all(
@@ -542,12 +544,13 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Content opportunities: ${opportunities.length}`,
     `Completed copy drafts: ${conceptDrafts.length}`,
     `Pending copy drafts: ${Math.max(0, opportunities.length - conceptDrafts.length)}`,
+    `Archived/legacy draft records: ${Math.max(0, drafts.length - conceptDrafts.length)}`,
     '',
     '> Agent 04 writes the full website article and social copy in one record. It does not generate images, create Video Factory jobs, approve, schedule, or publish.',
     '',
     '| Hook | Selected style | Slot | Text scenes | Narration words | Instagram caption | TikTok caption | CTA | Sources |',
     '|---|---|---|---:|---:|---|---|---|---:|',
-    ...drafts.map((draft) => {
+    ...conceptDrafts.map((draft) => {
       const selected = draft.conceptPack?.candidates.find((candidate) =>
         candidate.id === draft.conceptPack?.selectedCandidateId);
       return `| ${cell(draft.hook)} | ${cell(selected?.style ?? 'legacy')} | ${cell(draft.slot)} | ${draft.textScenes.length} | ${draft.narrationScript.trim().split(/\s+/).filter(Boolean).length} | ${cell(draft.instagramCaption)} | ${cell(draft.tiktokCaption)} | ${cell(`${draft.cta.label} → ${draft.cta.deepLink}`)} | ${draft.sourceUrls.length} |`;
@@ -555,7 +558,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '## Concept candidates and selection',
     '',
-    '> Accepted copy-v2 records passed structural claim references, numeric-token checks, guarded superlatives, display limits, fulfillment excerpts, and banned-phrase validation. Factual entailment remains an Agent 04 authoring and human-review responsibility.',
+    '> Accepted copy-v3 records passed structural claim references, numeric-token checks, guarded superlatives, display limits, fulfillment excerpts, and banned-phrase validation. Factual entailment remains an Agent 04 authoring and human-review responsibility.',
     '',
     ...conceptDrafts.flatMap((draft) => {
       const pack = draft.conceptPack!;
@@ -590,7 +593,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Approved: ${(await listJsonFiles(safeDataPath(root, '10-approved'))).length}`,
     `Scheduled: ${(await listJsonFiles(safeDataPath(root, '11-scheduled'))).length}`,
     `Published: ${(await listJsonFiles(safeDataPath(root, '12-published'))).length}`,
-    '', 'Only Agent 3 routes `auto_process` and `evergreen_queue` can enter Agent 4.',
+    '', 'Only current ranking-v3 Agent 3 decisions with verification state `ready` and route `auto_process` or `evergreen_queue` can enter Agent 4.',
   ];
   const contentPath = safeDataPath(outputRoot, '04-content-writing.md');
   await writeMarkdown(contentPath, contentLines.join('\n'));
