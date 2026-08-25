@@ -7,6 +7,7 @@ import {
 } from './pipeline-store.js';
 import {
   CREDDY_PIPELINE_VERSION,
+  type AnalysisDecisionRecord,
   type ContentDraftRecord,
   type CreddyCharacterExpression,
   type CreddyVisualTheme,
@@ -77,9 +78,25 @@ function contentDraftFiles(root: string): Promise<string[]> {
 }
 
 async function visualTasks(root: string): Promise<VisualPlanningTaskRecord[]> {
-  return Promise.all((await contentDraftFiles(root)).map(async (path) => ({
-    draft: await readJson<ContentDraftRecord>(path),
-  })));
+  const decisions = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '05-content-opportunities')))
+      .map((path) => readJson<AnalysisDecisionRecord>(path)),
+  );
+  const eligibleAnalysisIds = new Set(decisions
+    .filter((decision) =>
+      decision.rubricVersion === 'creddy-ranking-v3' &&
+      decision.verificationState === 'ready' &&
+      ['auto_process', 'evergreen_queue'].includes(decision.route))
+    .map((decision) => decision.id));
+  const drafts = await Promise.all(
+    (await contentDraftFiles(root)).map((path) => readJson<ContentDraftRecord>(path)),
+  );
+  return drafts
+    .filter((draft) =>
+      draft.copyVersion === 'creddy-copy-v3' &&
+      Boolean(draft.article) &&
+      eligibleAnalysisIds.has(draft.analysisId))
+    .map((draft) => ({ draft }));
 }
 
 export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {

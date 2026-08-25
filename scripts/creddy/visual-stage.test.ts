@@ -5,12 +5,17 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { initializeCreddyDataRoot, listJsonFiles, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
-import { CREDDY_PIPELINE_VERSION, type ContentDraftRecord, type VisualPlanRecord } from './pipeline-types.js';
+import {
+  CREDDY_PIPELINE_VERSION,
+  type AnalysisDecisionRecord,
+  type ContentDraftRecord,
+  type VisualPlanRecord,
+} from './pipeline-types.js';
 import { acceptVisualPlan, listPendingVisualTasks, selectCreddyExpression, validateVisualPlan } from './visual-stage.js';
 
 function draft(): ContentDraftRecord {
   return {
-    version: CREDDY_PIPELINE_VERSION, id: 'copy-analysis-1', analysisId: 'analysis-1', canonicalId: 'canonical-1',
+    version: CREDDY_PIPELINE_VERSION, copyVersion: 'creddy-copy-v3', id: 'copy-analysis-1', analysisId: 'analysis-1', canonicalId: 'canonical-1',
     createdAt: '2026-08-19T12:30:00.000Z', audience: 'US rewards users', slot: 'understand',
     hook: 'A transfer bonus can change the math',
     textScenes: ['A 20% transfer bonus is available.', 'Check award space before transferring.', 'Transfers may be irreversible.'],
@@ -19,6 +24,46 @@ function draft(): ContentDraftRecord {
     hashtags: ['#points', '#awardtravel', '#rewards'], cta: { label: 'Open Creddy', deepLink: 'creddy://rewards' },
     brief: 'Educational transfer warning.', sourceUrls: ['https://awardwallet.com/blog/bonus'],
     factualClaims: [{ field: 'bonus', value: 20, sourceRecordIds: ['raw-1'], confidence: 90 }],
+    article: {
+      version: 'creddy-article-v1', designVersion: 'creddy-guides-v1', id: 'article-analysis-1',
+      slug: 'transfer-bonus-guide', category: 'points_and_miles', title: 'Transfer Bonus Guide',
+      dek: 'A practical guide to checking award space before transferring points.',
+      excerpt: 'Check availability and current terms before moving points.',
+      seoTitle: 'Transfer Bonus Guide — Creddy', seoDescription: 'Learn how to evaluate a transfer bonus safely.',
+      authorName: 'Creddy Editorial', createdAt: '2026-08-19T12:30:00.000Z', updatedAt: '2026-08-19T12:30:00.000Z',
+      readingMinutes: 5, heroVisualId: 'hero-transfer', sourceUrls: ['https://awardwallet.com/blog/bonus'],
+      referralDisclosure: 'Creddy may earn compensation from referral links. Editorial decisions remain independent.',
+      blocks: [
+        { id: 'hero-block', type: 'visual', visualId: 'hero-transfer', caption: 'Transfer planning overview.' },
+        { id: 'award-block', type: 'visual', visualId: 'award-space', caption: 'Award-space verification.' },
+        { id: 'terms-block', type: 'visual', visualId: 'terms-check', caption: 'Current-terms checklist.' },
+      ],
+    },
+  };
+}
+
+function decision(): AnalysisDecisionRecord {
+  return {
+    version: CREDDY_PIPELINE_VERSION, id: 'analysis-1', canonicalId: 'canonical-1',
+    analyzedAt: '2026-08-19T12:20:00.000Z', market: 'US', headline: '20% transfer bonus',
+    summary: 'Eligible members can receive a transfer bonus.', eventType: 'transfer_bonus', topic: 'points',
+    affectedPrograms: ['Example Airline'], requiredAction: 'Check award space first.', expiry: '2026-08-30',
+    claims: [{ field: 'bonus', value: 20, sourceRecordIds: ['raw-1'], confidence: 90 }],
+    productFitScore: 90, popularityScore: 78, importanceScore: 82, confidenceScore: 90,
+    rubricVersion: 'creddy-ranking-v3',
+    viralPotential: {
+      score: 70, hookStrength: 70, audienceBreadth: 70, financialMagnitude: 70,
+      novelty: 70, urgency: 70, practicalUtility: 70, visualPotential: 70,
+      discussionPotential: 70, emotionalAspiration: 70, shareSavePotential: 70,
+      reasons: ['Useful transfer decision'],
+    },
+    channelScores: { instagramTikTok: 72, blogSeo: 80, newsletter: 76, evergreen: 85 },
+    freshnessScore: 60, editorialPriorityScore: 78, editorialDisposition: 'evergreen',
+    verificationState: 'ready', verificationRequirements: [], hookType: 'decision_rule',
+    hookRationale: 'Readers can apply a concrete checklist.', portfolioCategory: 'evergreen_education',
+    importanceReasons: ['Actionable'], confidenceReasons: ['Terms explicit'], materialConflict: false,
+    conflictChangesMessage: false, verificationExhausted: true, route: 'evergreen_queue',
+    rejectionReasons: [], evidenceRecordIds: ['raw-1'],
   };
 }
 
@@ -36,12 +81,26 @@ function plan(): VisualPlanRecord {
     ],
     visualBrief: 'Use restrained motion and readable text.', safetyOverlays: ['Verify current terms'],
     sourceUrls: copy.sourceUrls, factualClaims: copy.factualClaims,
+    articleVisuals: {
+      version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1',
+      assets: [
+        ['hero-transfer', 'hero', 'hero-block', '16:9'],
+        ['award-space', 'inline', 'award-block', '4:3'],
+        ['terms-check', 'inline', 'terms-block', '4:3'],
+      ].map(([id, usage, articleBlockId, aspectRatio]) => ({
+        id: id!, usage: usage as 'hero' | 'inline', articleBlockId: articleBlockId!,
+        assetType: 'licensed_photo' as const, aspectRatio: aspectRatio as '16:9' | '4:3',
+        generationMode: 'supply' as const, altText: `Editorial visual for ${id}`,
+        caption: `Approved ${id} visual.`, claimFields: [], provenance: 'Test fixture asset',
+      })),
+    },
   };
 }
 
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'creddy-visual-'));
   await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
   await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
   return root;
 }
@@ -53,6 +112,21 @@ test('Agent 5 accepts a manifest-safe plan without creating video jobs', async (
   assert.equal((await listPendingVisualTasks(root)).length, 0);
   assert.equal((await listJsonFiles(safeDataPath(root, '06-visual-plans'))).length, 1);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+});
+
+test('Agent 5 ignores legacy or no-longer-verified Agent 4 drafts', async () => {
+  const root = await fixture();
+  const legacy = draft();
+  delete legacy.copyVersion;
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${legacy.id}.json`), legacy);
+  assert.equal((await listPendingVisualTasks(root)).length, 0);
+
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
+  const blocked = decision();
+  blocked.verificationState = 'independent_confirmation_needed';
+  blocked.route = 'reverify';
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), blocked);
+  assert.equal((await listPendingVisualTasks(root)).length, 0);
 });
 
 test('Agent 5 accepts the locked 3:4 Creddy slideshow format', () => {

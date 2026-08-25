@@ -603,12 +603,15 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     (await listJsonFiles(safeDataPath(root, '06-visual-plans')))
       .map((path) => readJson<VisualPlanRecord>(path)),
   );
+  const currentDraftIds = new Set(conceptDrafts.map((draft) => draft.id));
+  const currentVisualPlans = visualPlans.filter((plan) => currentDraftIds.has(plan.contentDraftId));
   const visualLines = [
     '# Agent 05 — Creddy visual direction', '',
     `Generated: ${new Date().toISOString()}`,
-    `Completed Agent 04 drafts: ${drafts.length}`,
-    `Completed visual plans: ${visualPlans.length}`,
-    `Pending visual plans: ${Math.max(0, drafts.length - visualPlans.length)}`,
+    `Current Agent 04 drafts: ${conceptDrafts.length}`,
+    `Completed current visual plans: ${currentVisualPlans.length}`,
+    `Pending visual plans: ${Math.max(0, conceptDrafts.length - currentVisualPlans.length)}`,
+    `Archived/legacy visual plans: ${Math.max(0, visualPlans.length - currentVisualPlans.length)}`,
     '',
     '> Agent 05 plans visuals only. It does not generate/download images, create Video Factory jobs, render, approve, schedule, or publish.',
     '> Allowed character expressions use the complete approved Creddy library: neutral, waving, thinking, confused, idea, worried, surprised, sleepy, sad, wink, card, thumbs-up, guide, rewards, celebrate, curious, skeptical, pointing, happy, urgent.',
@@ -616,7 +619,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '| Cover | Theme | Scenes | Expressions | Generated illustration scenes | Safety overlays |',
     '|---|---|---:|---|---:|---|',
-    ...visualPlans.map((plan) => `| ${cell(plan.cover.headline)} | ${cell(plan.theme)} | ${plan.scenes.length} | ${cell(plan.scenes.map((scene) => scene.expression).join(', '))} | ${plan.scenes.filter((scene) => scene.background.mode === 'generated_illustration').length} | ${cell(plan.safetyOverlays.join('; '))} |`),
+    ...currentVisualPlans.map((plan) => `| ${cell(plan.cover.headline)} | ${cell(plan.theme)} | ${plan.scenes.length} | ${cell(plan.scenes.map((scene) => scene.expression).join(', '))} | ${plan.scenes.filter((scene) => scene.background.mode === 'generated_illustration').length} | ${cell(plan.safetyOverlays.join('; '))} |`),
   ];
   const visualPath = safeDataPath(outputRoot, '05-visual-planning.md');
   await writeMarkdown(visualPath, visualLines.join('\n'));
