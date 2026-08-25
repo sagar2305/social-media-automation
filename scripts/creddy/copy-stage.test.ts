@@ -69,6 +69,7 @@ function draft(): ContentDraftRecord {
     brief: 'Educational US rewards post with a clear transfer caution.',
     sourceUrls: ['https://awardwallet.com/blog/bonus'], factualClaims: decision().claims,
     conceptPack: {
+      subjectLabel: 'Transfer bonus',
       candidates: [
         { id: 'payoff', style: 'specific_payoff', concept: 'A transfer bonus can stretch your points', promise: 'Show when a transfer bonus improves the redemption math.', supportingClaimFields: ['bonus_amount'] },
         { id: 'loss', style: 'loss_avoidance', concept: 'Moving points too early can backfire', promise: 'Show why checking award space before a transfer matters.', supportingClaimFields: ['bonus_amount'] },
@@ -95,11 +96,11 @@ function draft(): ContentDraftRecord {
       },
       platforms: {
         blog: { headline: 'When a Transfer Bonus Actually Helps', lede: 'A larger mileage balance matters when the award you want is available.', claimFields: ['bonus_amount'] },
-        newsletter: { subject: 'Check the award before transferring', preheader: 'A transfer bonus can improve the math, but availability comes first.', claimFields: ['bonus_amount'] },
+        newsletter: { subject: 'Transfer bonus: check the award first', preheader: 'A transfer bonus can improve the math, but availability comes first.', claimFields: ['bonus_amount'] },
         youtubeLong: { title: 'When a Transfer Bonus Is Actually Worth It', thumbnailPhrase: 'Check Award Space', openingLine: 'A transfer bonus helps when the award you want is bookable.', claimFields: ['bonus_amount'] },
-        youtubeShort: { title: 'Check This Before a Points Transfer', openingLine: 'A transfer bonus can help—but check the seat before moving points.', claimFields: ['bonus_amount'] },
+        youtubeShort: { title: 'Transfer Bonus: Check Before Moving Points', openingLine: 'A transfer bonus can help—but check the seat before moving points.', claimFields: ['bonus_amount'] },
         instagram: { coverHook: 'A transfer bonus can change the math', captionOpener: 'A transfer bonus can help, but availability comes first.', claimFields: ['bonus_amount'] },
-        tiktok: { coverHook: 'Check the seat before transferring', captionOpener: 'A bigger bonus is useless when the award is gone.', claimFields: ['bonus_amount'] },
+        tiktok: { coverHook: 'Transfer Bonus: Check the Seat', captionOpener: 'A bigger bonus is useless when the award is gone.', claimFields: ['bonus_amount'] },
       },
     },
   };
@@ -205,4 +206,11 @@ test('Agent 4 requires the declared resolution excerpt and selected claim fields
   changedAngle.factualClaims.push({ field: 'other', value: 'Other fact', sourceRecordIds: ['raw-1'], confidence: 90 });
   changedAngle.conceptPack!.candidates[0]!.supportingClaimFields.push('other');
   assert.throws(() => validateContentConceptPack(changedAngle), /preserve every selected-concept claim field/);
+});
+
+test('Agent 4 requires standalone titles and hooks to name their subject', () => {
+  const vague = draft();
+  vague.conceptPack!.platforms.instagram.coverHook = 'Is this still worth it?';
+  vague.hook = vague.conceptPack!.platforms.instagram.coverHook;
+  assert.throws(() => validateContentConceptPack(vague), /must name the standalone subject/);
 });

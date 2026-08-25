@@ -353,6 +353,9 @@ export interface ClaimTracedCopy {
 }
 
 export interface ContentConceptPack {
+  /** Short standalone identity used in every platform title/cover, such as
+   * "Citi AAdvantage Executive" or "Award tool". */
+  subjectLabel: string;
   candidates: ContentConceptCandidate[];
   selectedCandidateId: string;
   selectionRationale: string;

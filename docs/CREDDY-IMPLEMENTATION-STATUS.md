@@ -67,7 +67,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 131 automated unit/integration tests pass.
+- 132 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.

@@ -71,6 +71,9 @@ function assertDisplayCopy(value: string, field: string, max: number, maxWords?:
 export function validateContentConceptPack(draft: ContentDraftRecord): ContentConceptPack {
   const pack = draft.conceptPack;
   if (!pack) throw new Error('Agent 04 copy v2 requires a concept pack');
+  if (!pack.subjectLabel?.trim() || pack.subjectLabel.length > 50) {
+    throw new Error('Concept pack requires a concise standalone subject label');
+  }
   if (!Array.isArray(pack.candidates) || pack.candidates.length !== 4) {
     throw new Error('Concept pack requires exactly four candidates');
   }
@@ -148,6 +151,19 @@ export function validateContentConceptPack(draft: ContentDraftRecord): ContentCo
   assertDisplayCopy(pack.platforms.instagram.captionOpener, 'Instagram caption opener', 160);
   assertDisplayCopy(pack.platforms.tiktok.coverHook, 'TikTok cover hook', 60, 10);
   assertDisplayCopy(pack.platforms.tiktok.captionOpener, 'TikTok caption opener', 160);
+  const standaloneTitles = [
+    ['Blog headline', pack.platforms.blog.headline],
+    ['Newsletter subject', pack.platforms.newsletter.subject],
+    ['YouTube title', pack.platforms.youtubeLong.title],
+    ['YouTube Short title', pack.platforms.youtubeShort.title],
+    ['Instagram cover hook', pack.platforms.instagram.coverHook],
+    ['TikTok cover hook', pack.platforms.tiktok.coverHook],
+  ] as const;
+  for (const [name, value] of standaloneTitles) {
+    if (!value.toLocaleLowerCase().includes(pack.subjectLabel.toLocaleLowerCase())) {
+      throw new Error(`${name} must name the standalone subject: ${pack.subjectLabel}`);
+    }
+  }
   if (draft.hook !== pack.platforms.instagram.coverHook) {
     throw new Error('Legacy hook must equal the selected Instagram cover hook');
   }

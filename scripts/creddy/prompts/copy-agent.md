@@ -22,6 +22,13 @@ Use four different appropriate styles from: `specific_payoff`, `loss_avoidance`,
 and one or more `supportingClaimFields` copied from `decision.claims[].field`.
 Do not create punctuation-level rewrites or force an unsuitable style.
 
+Set a concise `subjectLabel` that makes the story identifiable without surrounding
+context—for example, `Marriott Brilliant`, `Citi AAdvantage Executive`, or
+`Award tool`. The blog headline, newsletter subject, both YouTube titles, and both
+Instagram/TikTok cover hooks must contain that label. Never use vague standalone
+copy such as "this card," "this offer," or "one tool said no trip" without naming
+the product/program/category and completing the payoff.
+
 Select one promise for qualified attention—clarity, relevance, useful curiosity,
 saves, shares, clicks, and retention—not raw views. Store the selection rationale
 and one concise rejection reason for each other candidate. Set `resolution` to
@@ -55,6 +62,10 @@ Rules:
   fields. Never introduce a number, date, currency amount, deadline, eligibility
   statement, guarantee, or superlative absent from those accepted claims.
 - Preserve dates, uncertainty, limitations, eligibility, and conflicts exactly.
+- For a welcome offer, lead the title and social hook with the reward or distinctive
+  benefit. Treat minimum spend, annual fee, and eligibility as essential early
+  context, but do not make the spending hurdle the main concept unless affordability
+  is the actual story. For a fee-change story, name the specific card in the hook.
 - Include the canonical article URL in `sourceUrls`.
 - For this slideshow flow, write exactly six concise `textScenes`; never return five,
   seven, or a variable-length scene set. Write a clear hook of at most 140
