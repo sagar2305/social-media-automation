@@ -109,6 +109,9 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
   if (plan.format === '3:4' && (plan.scenes[0]?.role !== 'hook' || plan.scenes[5]?.role !== 'cta')) {
     throw new Error('A Creddy slideshow requires a hook on slide 1 and CTA on slide 6');
   }
+  if (plan.format === '3:4' && plan.cover.headline.trim().split(/\s+/).length > 12) {
+    throw new Error('A Creddy slideshow cover must use at most 12 words; return copy to Agent 4 for shortening');
+  }
   for (const [index, scene] of plan.scenes.entries()) {
     if (scene.sceneIndex !== index) throw new Error('Visual scene indexes must be zero-based and sequential');
     if (!scene.text.trim()) throw new Error('Every visual scene requires text');
@@ -121,6 +124,13 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
     if (!Array.isArray(scene.emphasis) || scene.emphasis.some((value) => !value.trim())) {
       throw new Error('Scene emphasis must be a string array');
     }
+    if (plan.format === '3:4' && (scene.emphasis.length < 1 || scene.emphasis.length > 2)) {
+      throw new Error('Each Creddy slideshow scene requires one meaningful emphasis phrase, or two linked numeric values');
+    }
+    if (plan.format === '3:4' && scene.emphasis.length === 2 &&
+        scene.emphasis.some((value) => !/[\d$%]/.test(value))) {
+      throw new Error('Two emphasis phrases are allowed only for linked numeric values');
+    }
     if (scene.emphasis.some((value) => !scene.text.toLocaleLowerCase().includes(value.toLocaleLowerCase()))) {
       throw new Error('Every emphasis phrase must appear exactly in its scene text');
     }
@@ -132,6 +142,32 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
     }
     if (scene.background.mode === 'generated_illustration' && !scene.background.prompt?.trim()) {
       throw new Error('Generated illustration scenes require a prompt');
+    }
+    if (plan.format === '3:4' && scene.background.mode !== 'template') {
+      throw new Error('Creddy slideshows remain mascot/app-led and use template backgrounds only');
+    }
+    if (plan.format === '3:4' && scene.text.trim().split(/\s+/).length > (index === 0 ? 12 : 22)) {
+      throw new Error('Slideshow copy exceeds the premium-editorial word budget; return it to Agent 4 for shortening');
+    }
+  }
+  if (plan.format === '3:4') {
+    const styles = plan.scenes.map((scene) => scene.background.style ?? (scene.role === 'caution' ? 'burgundy' : 'spotlight'));
+    if (plan.scenes.some((scene, index) => scene.role === 'caution' && styles[index] !== 'burgundy') ||
+        plan.scenes.some((scene, index) => scene.role !== 'caution' && styles[index] === 'burgundy')) {
+      throw new Error('Burgundy is reserved for genuine caution scenes');
+    }
+    if (styles[0] !== 'spotlight' || styles[5] !== 'spotlight') {
+      throw new Error('Hook and CTA slides must use the recognizable Creddy spotlight treatment');
+    }
+    const deckAccents = new Set(styles.filter((style) => style === 'deep_navy' || style === 'forest'));
+    if (deckAccents.size > 1) {
+      throw new Error('A slideshow may use only one deck accent family beyond spotlight and caution burgundy');
+    }
+    if (!plan.scenes.slice(1, 5).some((scene) => scene.role === 'fact' || scene.role === 'context')) {
+      throw new Error('A slideshow requires a standard editorial treatment between its hook and CTA');
+    }
+    if (plan.scenes.slice(0, 5).some((scene) => scene.role === 'cta')) {
+      throw new Error('CTA treatment is reserved for slide 6');
     }
   }
   const uniqueExpressions = new Set(plan.scenes.map((scene) => scene.expression)).size;

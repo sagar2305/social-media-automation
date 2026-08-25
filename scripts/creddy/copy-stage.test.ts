@@ -207,6 +207,18 @@ test('Agent 4 rejects unsupported numbers in concept copy', () => {
   assert.throws(() => validateContentConceptPack(invalid), /unsupported number/);
 });
 
+test('Agent 4 rejects slideshow copy that cannot meet the Agent 5 visual word budget', () => {
+  const invalid = draft();
+  invalid.textScenes[1] = 'This scene contains far too many separate words to remain readable at mobile feed size and therefore must be shortened before it reaches the visual design agent.';
+  assert.throws(() => validateContentDraft(invalid), /visual word budget/);
+});
+
+test('Agent 4 rejects noncanonical whitespace before deterministic layout', () => {
+  const invalid = draft();
+  invalid.textScenes[2] = 'That can lower  the number of card points needed.';
+  assert.throws(() => validateContentDraft(invalid), /canonical single-space text/);
+});
+
 test('Agent 4 requires exactly four distinct concept styles and accepted claim references', () => {
   const duplicate = draft();
   duplicate.conceptPack!.candidates[1]!.style = 'specific_payoff';

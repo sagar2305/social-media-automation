@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +66,13 @@ BACKGROUND_STYLES = {
     "burgundy": "#321017",
 }
 
+ROLE_TREATMENTS = {
+    "hook": {"max_lines": 4, "max_size": 154, "min_size": 96, "max_width": 520, "y": 132},
+    "standard": {"max_lines": 5, "max_size": 126, "min_size": 84, "max_width": 485, "y": 138},
+    "caution": {"max_lines": 5, "max_size": 122, "min_size": 84, "max_width": 500, "y": 158},
+    "cta": {"max_lines": 5, "max_size": 126, "min_size": 86, "max_width": 440, "y": 142},
+}
+
 
 def phone_template(plan: dict) -> tuple[str, Path]:
     requested = str(plan.get("phoneTemplateId") or "").strip()
@@ -109,20 +116,47 @@ def wrap_words(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFon
     return lines
 
 
-def headline_layout(draw: ImageDraw.ImageDraw, text: str) -> tuple[ImageFont.FreeTypeFont, list[str], int]:
-    for size in range(132, 71, -2):
+def treatment_for_role(role: str) -> str:
+    if role == "hook":
+        return "hook"
+    if role == "caution":
+        return "caution"
+    if role == "cta":
+        return "cta"
+    return "standard"
+
+
+def headline_layout(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    treatment: str,
+    emphasis: list[str],
+) -> tuple[ImageFont.FreeTypeFont, list[str], int]:
+    rules = ROLE_TREATMENTS[treatment]
+    for size in range(rules["max_size"], rules["min_size"] - 1, -2):
         font = face(HEADLINE_FONT, size)
-        lines = wrap_words(draw, text, font, 470)
+        lines = wrap_words(draw, text, font, rules["max_width"])
         line_height = max(draw.textbbox((0, 0), line, font=font)[3] for line in lines)
-        total_height = len(lines) * line_height + max(0, len(lines) - 1) * 12
-        if len(lines) <= 5 and total_height <= 575:
+        gap = max(12, round(size * 0.09))
+        total_height = len(lines) * line_height + max(0, len(lines) - 1) * gap
+        orphan = re.sub(r"[^a-z0-9$%]", "", lines[-1].lower()) if len(lines) > 1 and len(lines[-1].split()) == 1 else ""
+        emphasized = {
+            re.sub(r"[^a-z0-9$%]", "", token.lower())
+            for value in emphasis
+            for token in value.split()
+        }
+        if len(lines) <= rules["max_lines"] and total_height <= 590 and (not orphan or orphan in emphasized):
             return font, lines, line_height
-    raise ValueError(f"Headline cannot fit safely: {text}")
+    raise ValueError(
+        f"{treatment} copy cannot meet the minimum type and line-count gate; "
+        f"return it to Agent 4 for shortening: {text}"
+    )
 
 
-def draw_rail(draw: ImageDraw.ImageDraw) -> None:
-    draw.line((18, 69, 563, 69), fill=GOLD, width=2)
-    cx, cy = 565, 69
+def draw_rail(draw: ImageDraw.ImageDraw, treatment: str) -> None:
+    end = 610 if treatment == "hook" else 555
+    draw.line((18, 69, end, 69), fill=GOLD, width=3 if treatment == "hook" else 2)
+    cx, cy = end + 2, 69
     draw.polygon(
         [(cx, cy - 22), (cx + 6, cy - 6), (cx + 22, cy), (cx + 6, cy + 6),
          (cx, cy + 22), (cx - 6, cy + 6), (cx - 22, cy), (cx - 6, cy - 6)],
@@ -130,7 +164,7 @@ def draw_rail(draw: ImageDraw.ImageDraw) -> None:
     )
 
 
-def apply_background_style(image: Image.Image, style: str) -> Image.Image:
+def apply_background_style(image: Image.Image, style: str, treatment: str) -> Image.Image:
     """Apply a branded tint only to the copy-safe background region.
 
     Creddy's approved expression assets are flattened RGB artwork. Tinting the
@@ -142,52 +176,106 @@ def apply_background_style(image: Image.Image, style: str) -> Image.Image:
         raise ValueError(f"Unknown approved background style: {style}")
     if color is None:
         return image
-    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    draw.rectangle((0, 0, 650, 830), fill=f"{color}D9")
-    return Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
+    tint = Image.new("RGBA", image.size, color)
+    mask = Image.new("L", image.size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    # The blurred copy panel preserves Creddy's premium lighting and removes
+    # the pasted-on rectangular edge of the original tint treatment.
+    panel_width = 660 if treatment == "hook" else 615
+    panel_height = 840 if treatment in {"hook", "caution"} else 790
+    mask_draw.rounded_rectangle(
+        (-100, -100, panel_width, panel_height),
+        radius=120,
+        fill=218 if treatment == "caution" else 202,
+    )
+    mask = mask.filter(ImageFilter.GaussianBlur(72))
+    tint.putalpha(mask)
+    return Image.alpha_composite(image.convert("RGBA"), tint).convert("RGB")
 
 
-def draw_headline(draw: ImageDraw.ImageDraw, text: str) -> dict:
-    font, lines, line_height = headline_layout(draw, text)
-    x, y = 52, 104
-    gap = 12
+def emphasis_ranges(text: str, phrases: list[str]) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for phrase in phrases:
+        match = re.search(re.escape(phrase.strip()), text, flags=re.IGNORECASE)
+        if match is None:
+            raise ValueError(f"Emphasis phrase is absent from exact scene copy: {phrase}")
+        ranges.append(match.span())
+    return ranges
+
+
+def draw_headline(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    emphasis: list[str],
+    treatment: str,
+) -> dict:
+    font, lines, line_height = headline_layout(draw, text, treatment, emphasis)
+    rules = ROLE_TREATMENTS[treatment]
+    x, y = 52, rules["y"]
+    gap = max(12, round(font.size * 0.09))
+    ranges = emphasis_ranges(text, emphasis)
     boxes = []
-    for index, line in enumerate(lines):
-        color = GOLD if index == len(lines) - 1 else CREAM
-        draw.text((x + 4, y + 5), line, font=font, fill="#000000A0")
-        draw.text((x, y), line, font=font, fill=color)
+    highlighted_tokens: list[str] = []
+    search_from = 0
+    for line in lines:
+        line_start = text.lower().find(line.lower(), search_from)
+        if line_start < 0:
+            raise ValueError("Wrapped headline no longer maps to exact scene copy")
+        cursor = x
+        token_offset = 0
+        for token in line.split(" "):
+            relative = line.find(token, token_offset)
+            start = line_start + relative
+            end = start + len(token)
+            highlighted = any(start < right and end > left for left, right in ranges)
+            color = GOLD if highlighted else CREAM
+            if highlighted:
+                highlighted_tokens.append(token)
+            draw.text((cursor + 4, y + 5), token, font=font, fill="#000000A0")
+            draw.text((cursor, y), token, font=font, fill=color)
+            cursor += text_width(draw, token, font) + text_width(draw, " ", font)
+            token_offset = relative + len(token)
         box = draw.textbbox((x, y), line, font=font)
         boxes.append(box)
+        search_from = line_start + len(line)
         y += line_height + gap
-    return {"lines": lines, "fontSize": font.size, "boxes": boxes, "lineGap": gap}
+    return {
+        "lines": lines,
+        "fontSize": font.size,
+        "boxes": boxes,
+        "lineGap": gap,
+        "treatment": treatment,
+        "emphasis": emphasis,
+        "highlightedTokens": highlighted_tokens,
+    }
 
 
 def wrap_card(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> list[str]:
     return wrap_words(draw, text, font, 340)
 
 
-def draw_support_card(draw: ImageDraw.ImageDraw, text: str) -> dict:
-    x, y, width, height = 55, 850, 395, 175
-    draw.rounded_rectangle((x, y, x + width, y + height), radius=4, fill=CREAM)
-    draw.rectangle((x + width - 5, y + height - 54, x + width, y + height), fill=GOLD)
-    font = face(CARD_FONT, 38)
+def draw_support_card(draw: ImageDraw.ImageDraw, text: str, treatment: str) -> dict:
+    x, y, width, height = 55, 838, 405, 104
+    fill = "#F1D9D7" if treatment == "caution" else CREAM
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=30, fill=fill)
+    draw.rounded_rectangle((x, y, x + 9, y + height), radius=5, fill=GOLD)
+    font = face(CARD_FONT, 34)
     lines = wrap_card(draw, text, font)
-    while len(lines) > 3 and font.size > 28:
+    while len(lines) > 2 and font.size > 28:
         font = face(CARD_FONT, font.size - 2)
         lines = wrap_card(draw, text, font)
-    if len(lines) > 3:
+    if len(lines) > 2:
         raise ValueError(f"Supporting copy cannot fit safely: {text}")
     line_height = max(draw.textbbox((0, 0), line, font=font)[3] for line in lines)
-    ty = y + 25
+    total = len(lines) * line_height + max(0, len(lines) - 1) * 5
+    ty = y + max(16, (height - total) // 2)
     boxes = []
-    for index, line in enumerate(lines):
-        color = GOLD if index == len(lines) - 1 else BLACK
-        draw.text((x + 28, ty), line, font=font, fill=color)
+    for line in lines:
+        draw.text((x + 28, ty), line, font=font, fill=BLACK)
         box = draw.textbbox((x + 28, ty), line, font=font)
         boxes.append(box)
-        ty += line_height + 8
-    return {"lines": lines, "fontSize": font.size, "boxes": boxes, "lineGap": 8}
+        ty += line_height + 5
+    return {"lines": lines, "fontSize": font.size, "boxes": boxes, "lineGap": 5, "treatment": treatment}
 
 
 def validate_no_overlap(first: dict, second: dict, label: str) -> None:
@@ -206,13 +294,21 @@ def support_text(plan: dict, index: int) -> str:
     explicit = str(plan["scenes"][index].get("supportText") or "").strip()
     if explicit:
         return explicit
-    if index == 0:
-        return plan["cover"]["subheadline"]
-    if index == len(plan["scenes"]) - 1:
-        return "Open Creddy. Keep the research organized."
-    overlays = plan.get("safetyOverlays") or []
-    overlay = overlays[0].strip() if overlays else ""
-    return overlay if 0 < len(overlay) <= 70 else "Verify current details before deciding."
+    role = plan["scenes"][index].get("role")
+    if role == "hook":
+        candidate = str(plan["cover"].get("subheadline") or "").strip()
+    elif role == "caution":
+        overlays = plan.get("safetyOverlays") or []
+        candidate = overlays[0].strip() if overlays else ""
+    else:
+        return ""
+    if not 0 < len(candidate) <= 70:
+        return ""
+    headline_words = set(re.findall(r"[a-z0-9]+", plan["scenes"][index]["text"].lower()))
+    support_words = set(re.findall(r"[a-z0-9]+", candidate.lower()))
+    if support_words and len(headline_words & support_words) / len(support_words) >= 0.7:
+        return ""
+    return candidate
 
 
 def validate_plan(plan: dict) -> None:
@@ -227,11 +323,21 @@ def validate_plan(plan: dict) -> None:
             raise ValueError("Scene order or text is invalid")
         if scene.get("background", {}).get("mode") != "template":
             raise ValueError("Locked slideshow rendering accepts reusable templates only")
-        background_style = str(scene.get("background", {}).get("style") or "spotlight")
+        role = scene.get("role")
+        if role not in {"hook", "fact", "context", "caution", "cta"}:
+            raise ValueError(f"Unknown slideshow scene role: {role}")
+        default_style = "burgundy" if role == "caution" else "spotlight"
+        background_style = str(scene.get("background", {}).get("style") or default_style)
         if background_style not in BACKGROUND_STYLES:
             raise ValueError(f"Unknown approved background style: {background_style}")
+        emphasis = scene.get("emphasis") or []
+        if not isinstance(emphasis, list) or len(emphasis) > 2 or any(not str(value).strip() for value in emphasis):
+            raise ValueError("Each slide may use at most two meaningful emphasis phrases")
+        emphasis_ranges(scene["text"], [str(value) for value in emphasis])
         if scene.get("expression") not in EXPRESSION_FILES:
             raise ValueError(f"No approved 3:4 template for expression: {scene.get('expression')}")
+    if plan["scenes"][0].get("role") != "hook" or plan["scenes"][-1].get("role") != "cta":
+        raise ValueError("Slide 1 must be the hook treatment and slide 6 the CTA treatment")
     expressions = [scene["expression"] for scene in plan["scenes"]]
     if len(set(expressions)) < 5:
         raise ValueError("A six-slide Creddy post requires at least five distinct expressions")
@@ -310,21 +416,23 @@ def main() -> None:
     phone_id, phone_path = phone_template(plan)
     for number, scene in enumerate(plan["scenes"], start=1):
         is_phone_proof = number == len(plan["scenes"])
+        treatment = treatment_for_role(scene["role"])
         template = phone_path if is_phone_proof else EXPRESSIONS / EXPRESSION_FILES[scene["expression"]]
         image = Image.open(template).convert("RGB")
         if image.size != (WIDTH, HEIGHT):
             raise ValueError(f"Template must be {WIDTH}x{HEIGHT}: {template}")
-        background_style = str(scene.get("background", {}).get("style") or "spotlight")
-        image = apply_background_style(image, background_style)
+        default_style = "burgundy" if treatment == "caution" else "spotlight"
+        background_style = str(scene.get("background", {}).get("style") or default_style)
+        image = apply_background_style(image, background_style, treatment)
         draw = ImageDraw.Draw(image)
-        draw_rail(draw)
-        headline = draw_headline(draw, scene["text"])
+        draw_rail(draw, treatment)
+        headline = draw_headline(draw, scene["text"], scene.get("emphasis") or [], treatment)
         # The approved product templates already contain Creddy and the real
         # phone screen. A support card placed over that artwork can hide the
         # mascot, so Slide 6 is intentionally overlay-free apart from its
         # headline. The CTA remains in the copy/caption and deep link.
         support_copy = "" if is_phone_proof else support_text(plan, number - 1)
-        card = None if is_phone_proof else draw_support_card(draw, support_copy)
+        card = None if not support_copy or is_phone_proof else draw_support_card(draw, support_copy, treatment)
         if card is not None:
             validate_no_overlap(headline, card, "headline and support card")
         output = args.output / f"slide-{number:02d}.png"
@@ -341,6 +449,7 @@ def main() -> None:
             "templateFamily": "phone-screen" if is_phone_proof else "expression",
             "phoneTemplateId": phone_id if is_phone_proof else None,
             "backgroundStyle": background_style,
+            "roleTreatment": treatment,
             "headlineLayout": headline,
             "supportCopy": support_copy,
             "supportLayout": card,

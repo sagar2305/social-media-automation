@@ -294,6 +294,14 @@ export function validateContentDraft(draft: ContentDraftRecord): ContentDraftRec
   if (draft.textScenes.some((scene) => !scene.trim() || scene.length > 220)) {
     throw new Error('Every text scene must contain 1–220 characters');
   }
+  if (draft.copyVersion === 'creddy-copy-v2' &&
+      (words(draft.hook) > 12 || draft.textScenes.some((scene, index) => words(scene) > (index === 0 ? 12 : 22)))) {
+    throw new Error('Agent 4 slideshow copy exceeds the visual word budget: 12 words for the hook, 22 elsewhere');
+  }
+  if (draft.copyVersion === 'creddy-copy-v2' &&
+      [draft.hook, ...draft.textScenes].some((value) => value !== value.trim().replace(/\s+/g, ' '))) {
+    throw new Error('Agent 4 slideshow copy must use canonical single-space text for deterministic visual layout');
+  }
   validateIndependentSlideshowCopy(draft);
   const narrationWords = words(draft.narrationScript);
   if (narrationWords < 35 || narrationWords > 220) throw new Error('Narration must contain 35–220 words');
