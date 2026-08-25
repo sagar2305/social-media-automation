@@ -54,6 +54,8 @@ export const CREDDY_DATA_DIRECTORIES = [
   'reports/latest',
   'feedback/agent-01/records',
   'feedback/agent-01/snapshots',
+  'feedback/agent-04/trends/runs',
+  'feedback/agent-04/trends/snapshots',
   'locks',
   'indexes',
 ] as const;

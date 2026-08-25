@@ -59,13 +59,18 @@ function draft(): ContentDraftRecord {
       'That can lower the number of card points needed for the same award.',
       'Compare the award price and cash fare before moving any points.',
       'Confirm eligibility and award space first because transfers may be irreversible.',
-      'Check the live terms and compare the redemption in Creddy.',
+      'Save this checklist, then verify every award with the airline.',
     ],
     narrationScript: 'A 20 percent transfer bonus can stretch your points, but the bonus alone does not make a redemption valuable. Check real award availability, compare the cash price, and confirm the program terms before moving points. Transfers may be irreversible, so verify the booking you want first.',
     instagramCaption: 'A transfer bonus can help, but verify award space before moving points.',
     tiktokCaption: 'Bonus first? No—award space first. Check before you transfer.',
     hashtags: ['#creditcardpoints', '#awardtravel', '#travelrewards'],
-    cta: { label: 'Open Creddy', deepLink: 'creddy://benefits' },
+    cta: {
+      kind: 'engagement',
+      messageId: 'engagement-save-award-checklist',
+      label: 'Save this checklist, then verify every award with the airline.',
+      deepLink: 'creddy://home',
+    },
     brief: 'Educational US rewards post with a clear transfer caution.',
     sourceUrls: ['https://awardwallet.com/blog/bonus'], factualClaims: decision().claims,
     conceptPack: {
@@ -117,7 +122,7 @@ async function fixture(): Promise<string> {
 test('Agent 4 accepts copy-only output without creating video jobs', async () => {
   const root = await fixture();
   assert.equal((await listPendingCopyTasks(root)).length, 1);
-  await acceptContentDraft(root, draft());
+  await acceptContentDraft(root, draft(), new Date('2026-08-25T00:00:00Z'));
   assert.equal((await listPendingCopyTasks(root)).length, 0);
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts'))).length, 4);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
@@ -130,7 +135,7 @@ test('Agent 4 requeues legacy drafts for a claim-traceable concept pack', async 
   delete legacy.conceptPack;
   await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${legacy.id}.json`), legacy);
   assert.equal((await listPendingCopyTasks(root)).length, 1);
-  await acceptContentDraft(root, draft());
+  await acceptContentDraft(root, draft(), new Date('2026-08-25T00:00:00Z'));
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts', 'legacy'))).length, 1);
   assert.equal((await listPendingCopyTasks(root)).length, 0);
 });
@@ -139,13 +144,27 @@ test('Agent 4 rejects changed accepted claims', async () => {
   const root = await fixture();
   const changed = draft();
   changed.factualClaims[0]!.value = 30;
-  await assert.rejects(() => acceptContentDraft(root, changed), /preserve the accepted factual claims exactly/);
+  await assert.rejects(
+    () => acceptContentDraft(root, changed, new Date('2026-08-25T00:00:00Z')),
+    /preserve the accepted factual claims exactly/,
+  );
 });
 
 test('Agent 4 requires an app deep link', () => {
   const invalid = draft();
   invalid.cta.deepLink = 'https://creddy.example';
   assert.throws(() => validateContentDraft(invalid), /creddy:\/\//);
+});
+
+test('Agent 4 rejects invented product routes and unsupported product promises', () => {
+  const inventedRoute = draft();
+  inventedRoute.cta.deepLink = 'creddy://redemptions';
+  assert.throws(() => validateContentDraft(inventedRoute), /approved current Creddy message/);
+
+  const inventedPromise = draft();
+  inventedPromise.textScenes[5] = 'Save the verified award option in Creddy.';
+  inventedPromise.cta.label = inventedPromise.textScenes[5];
+  assert.throws(() => validateContentDraft(inventedPromise), /approved current Creddy message|Slide 6/);
 });
 
 test('Agent 4 rejects article-summary language in slideshow copy', () => {
@@ -157,15 +176,29 @@ test('Agent 4 rejects article-summary language in slideshow copy', () => {
   );
 });
 
-test('Agent 4 rejects publisher names in on-slide copy but permits caption attribution', async () => {
+test('Agent 4 rejects publisher names in slides and public captions', async () => {
   const root = await fixture();
   const invalid = draft();
   invalid.textScenes[0] = 'AwardWallet explains how a 20% transfer bonus works.';
   invalid.instagramCaption += ' Source: AwardWallet.';
   await assert.rejects(
-    () => acceptContentDraft(root, invalid),
-    /independent of the publisher/,
+    () => acceptContentDraft(root, invalid, new Date('2026-08-25T00:00:00Z')),
+    /cannot name publishers|independent of the publisher/,
   );
+});
+
+test('Agent 4 keeps publishers and third-party tool names out of every public field', () => {
+  const slide = draft();
+  slide.textScenes[2] = 'Frequent Miler says this transfer is worth making.';
+  assert.throws(() => validateContentDraft(slide), /cannot name publishers/);
+
+  const caption = draft();
+  caption.tiktokCaption = 'PointsYeah found the seat first.';
+  assert.throws(() => validateContentDraft(caption), /cannot name publishers/);
+
+  const platformTitle = draft();
+  platformTitle.conceptPack!.platforms.youtubeLong.title = 'AwardWallet Transfer Bonus Test';
+  assert.throws(() => validateContentDraft(platformTitle), /cannot name publishers/);
 });
 
 test('Agent 4 rejects unsupported numbers in concept copy', () => {

@@ -19,6 +19,9 @@ Rules:
 - Match expression to the script meaning: questions/comparisons → `thinking`, `confused`, `curious`, or `skeptical`; discoveries/tips → `idea`, `curious`, `wink`, or `pointing`; rewards/points/value → `rewards`, `happy`, or `celebrate`; card-specific facts → `card`, `guide`, or `pointing`; warnings/loss/devaluation → `worried`, `sad`, `skeptical`, or `urgent`; true urgency → `urgent`, `surprised`, or `worried`; confirmed success → `thumbs-up`, `celebrate`, `happy`, or `wink`; instructions → `guide` or `pointing`; CTA → `guide`, `waving`, `pointing`, or `wink`.
 - Do not pick poses randomly. Every 6-slide slideshow must use at least five distinct visible character expressions, must not repeat an expression on adjacent slides, and must balance usage across the full 20-expression library over a batch. A repetitive slideshow is invalid and must be corrected before rendering.
 - Slides 1–5 use approved character-expression templates. Slide 6 must use one approved real Creddy phone-screen template selected for the script intent (`wallet_vouchers`, `spend_goals`, `app_store_dark`, or `app_store_light`). Never invent phone UI and never omit product proof from a six-slide slideshow.
+- Copy the required `phoneTemplateId` from the Agent 04 CTA capability. Do not
+  guess from keywords. Slide 1 must use role `hook`, slide 6 must use role `cta`,
+  and every emphasis phrase must appear exactly in that scene's preserved text.
 - Choose a scene role from `hook`, `fact`, `context`, `caution`, or `cta`.
 - Default to `template` backgrounds. Use `generated_illustration` only when an illustration materially improves comprehension; provide a brand-safe prompt without logos, card designs, copyrighted characters, people, or unsupported factual text.
 - Add only necessary safety overlays such as “Verify current terms” or “Transfers may be irreversible.”

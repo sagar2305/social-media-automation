@@ -13,6 +13,7 @@ import {
   type VisualPlanRecord,
   type VisualPlanningTaskRecord,
 } from './pipeline-types.js';
+import { phoneTemplateForDraft } from './product-capabilities.js';
 
 export const CREDDY_MANIFEST_EXPRESSIONS = new Set<CreddyCharacterExpression>([
   'neutral', 'waving', 'thinking', 'confused', 'celebrate', 'guide', 'surprised',
@@ -22,6 +23,10 @@ export const CREDDY_MANIFEST_EXPRESSIONS = new Set<CreddyCharacterExpression>([
 
 export const CREDDY_VIDEO_THEMES = new Set<CreddyVisualTheme>([
   'editorial', 'midnight', 'ledger', 'poster', 'aurora',
+]);
+
+const CREDDY_PHONE_TEMPLATES = new Set<NonNullable<VisualPlanRecord['phoneTemplateId']>>([
+  'wallet_vouchers', 'spend_goals', 'app_store_dark', 'app_store_light',
 ]);
 
 type ExpressionScene = Pick<VisualPlanRecord['scenes'][number], 'role' | 'text'>;
@@ -98,6 +103,12 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
   if (plan.format === '3:4' && plan.scenes.length !== 6) {
     throw new Error('A Creddy 3:4 slideshow post requires exactly 6 scenes');
   }
+  if (plan.format === '3:4' && (!plan.phoneTemplateId || !CREDDY_PHONE_TEMPLATES.has(plan.phoneTemplateId))) {
+    throw new Error('A Creddy 3:4 slideshow requires one approved phoneTemplateId');
+  }
+  if (plan.format === '3:4' && (plan.scenes[0]?.role !== 'hook' || plan.scenes[5]?.role !== 'cta')) {
+    throw new Error('A Creddy slideshow requires a hook on slide 1 and CTA on slide 6');
+  }
   for (const [index, scene] of plan.scenes.entries()) {
     if (scene.sceneIndex !== index) throw new Error('Visual scene indexes must be zero-based and sequential');
     if (!scene.text.trim()) throw new Error('Every visual scene requires text');
@@ -110,8 +121,14 @@ export function validateVisualPlan(plan: VisualPlanRecord): VisualPlanRecord {
     if (!Array.isArray(scene.emphasis) || scene.emphasis.some((value) => !value.trim())) {
       throw new Error('Scene emphasis must be a string array');
     }
+    if (scene.emphasis.some((value) => !scene.text.toLocaleLowerCase().includes(value.toLocaleLowerCase()))) {
+      throw new Error('Every emphasis phrase must appear exactly in its scene text');
+    }
     if (!['template', 'generated_illustration'].includes(scene.background?.mode)) {
       throw new Error('Unsupported scene background mode');
+    }
+    if (scene.background.style && !['spotlight', 'deep_navy', 'forest', 'burgundy'].includes(scene.background.style)) {
+      throw new Error('Unsupported scene background style');
     }
     if (scene.background.mode === 'generated_illustration' && !scene.background.prompt?.trim()) {
       throw new Error('Generated illustration scenes require a prompt');
@@ -165,6 +182,9 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
   }
   if (JSON.stringify(plan.factualClaims) !== JSON.stringify(task.draft.factualClaims)) {
     throw new Error('Visual plan must preserve accepted factual claims exactly');
+  }
+  if (plan.format === '3:4' && plan.phoneTemplateId !== phoneTemplateForDraft(task.draft)) {
+    throw new Error('Visual plan phone template must match the approved Agent 4 CTA');
   }
   await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${plan.id}.json`), plan);
 }

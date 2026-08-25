@@ -13,6 +13,12 @@ import { runCollectionStage } from './collection-stage.js';
 import { CREDDY_DISCOVERY_PROFILE } from './config.js';
 import { acceptContentDraft, listPendingCopyTasks } from './copy-stage.js';
 import {
+  acceptHookTrendSnapshot,
+  activeHookTrendSnapshot,
+  refreshHookTrendResearch,
+  type HookTrendSnapshot,
+} from './hook-trend-stage.js';
+import {
   acceptContentPackage,
   acceptContentRevision,
   listPendingContentOpportunities,
@@ -37,6 +43,7 @@ import type {
   VisualPlanRecord,
 } from './pipeline-types.js';
 import { requireStableDashboardBaseUrl } from './public-dashboard.js';
+import { refreshCreddyProductReleaseStatus } from './product-release-stage.js';
 import { runPublishStage } from './publish-stage.js';
 import { listPendingProductionTasks, prepareProductionPackages } from './production-stage.js';
 import { writeObservablePipelineReports } from './report-stage.js';
@@ -343,9 +350,28 @@ async function main(): Promise<void> {
   }
   if (command === 'agent-4-prepare') {
     await runAnalysisQueueStage(root);
+    const [productCapabilities, hookResearch, activeHookPatterns] = await Promise.all([
+      refreshCreddyProductReleaseStatus(root),
+      refreshHookTrendResearch(root),
+      activeHookTrendSnapshot(root),
+    ]);
     const pending = await listPendingCopyTasks(root);
     const reports = await writeObservablePipelineReports(root);
-    console.log(JSON.stringify({ agent: 4, pendingCount: pending.length, pending, reports }, null, 2));
+    console.log(JSON.stringify({
+      agent: 4,
+      productCapabilities,
+      hookResearch,
+      activeHookPatterns,
+      pendingCount: pending.length,
+      pending,
+      reports,
+    }, null, 2));
+    return;
+  }
+  if (command === 'accept-hook-trends') {
+    const snapshot = await readJson<HookTrendSnapshot>(argument(3, 'hook trend snapshot file'));
+    await acceptHookTrendSnapshot(root, snapshot);
+    console.log(JSON.stringify({ accepted: snapshot.id, patternCount: snapshot.patterns.length }, null, 2));
     return;
   }
   if (command === 'copy-pending') {

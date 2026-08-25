@@ -289,6 +289,9 @@ export interface ContentPackageRecord {
     label: string;
     deepLink: string;
     fallbackUrl?: string;
+    kind?: 'product' | 'engagement';
+    messageId?: CreddyCtaMessageId;
+    capabilityId?: CreddyCapabilityId;
   };
   imagePrompts: string[];
   imagePaths?: string[];
@@ -325,11 +328,36 @@ export interface ContentDraftRecord {
     label: string;
     deepLink: string;
     fallbackUrl?: string;
+    /** Agent 04 v2 drafts must select an approved truthful CTA. Legacy
+     * drafts remain readable without these fields. */
+    kind?: 'product' | 'engagement';
+    messageId?: CreddyCtaMessageId;
+    capabilityId?: CreddyCapabilityId;
   };
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
 }
+
+export type CreddyCapabilityId =
+  | 'general_card_value'
+  | 'benefit_credit_tracking'
+  | 'welcome_offer_progress'
+  | 'renewal_tracking'
+  | 'loyalty_wallet'
+  | 'voucher_wallet';
+
+export type CreddyCtaMessageId =
+  | 'general-get-more-from-cards'
+  | 'benefits-see-used-and-remaining'
+  | 'benefits-track-before-reset'
+  | 'welcome-see-progress-and-time'
+  | 'renewal-review-benefits-and-timing'
+  | 'loyalty-organize-points-and-status'
+  | 'vouchers-organize-and-track-expiry'
+  | 'engagement-save-award-checklist'
+  | 'engagement-ask-audience-choice'
+  | 'engagement-follow-creddy';
 
 export type ContentConceptStyle =
   | 'specific_payoff'
@@ -346,6 +374,9 @@ export interface ContentConceptCandidate {
   concept: string;
   promise: string;
   supportingClaimFields: string[];
+  /** Optional current research pattern. At most one of the four candidates may
+   * use a trend pattern so stable editorial judgment remains the default. */
+  trendPatternId?: string;
 }
 
 export interface ClaimTracedCopy {
@@ -353,6 +384,7 @@ export interface ClaimTracedCopy {
 }
 
 export interface ContentConceptPack {
+  trendSnapshotId?: string;
   /** Short standalone identity used in every platform title/cover, such as
    * "Citi AAdvantage Executive" or "Award tool". */
   subjectLabel: string;
@@ -393,6 +425,7 @@ export interface VisualScenePlan {
   background: {
     mode: 'template' | 'generated_illustration';
     prompt?: string;
+    style?: 'spotlight' | 'deep_navy' | 'forest' | 'burgundy';
   };
 }
 
@@ -406,6 +439,9 @@ export interface VisualPlanRecord {
   format: '9:16' | '3:4';
   theme: CreddyVisualTheme;
   characterPack: 'credit-card-rewards/creddy';
+  /** Required for the locked 3:4 slideshow and selected from the approved
+   * CTA capability rather than guessed by the renderer. */
+  phoneTemplateId?: 'wallet_vouchers' | 'spend_goals' | 'app_store_dark' | 'app_store_light';
   cover: { headline: string; subheadline: string };
   scenes: VisualScenePlan[];
   visualBrief: string;
