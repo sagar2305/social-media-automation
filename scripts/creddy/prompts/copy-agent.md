@@ -28,6 +28,9 @@ context—for example, `Marriott Brilliant`, `Citi AAdvantage Executive`, or
 Instagram/TikTok cover hooks must contain that label. Never use vague standalone
 copy such as "this card," "this offer," or "one tool said no trip" without naming
 the product/program/category and completing the payoff.
+When a short label materially improves comprehension, also name the content type—
+for example, `welcome offer`, `annual-fee change`, `transfer bonus`, or `award-tool
+test`—so readers immediately understand what the headline's numbers or claim mean.
 
 Select one promise for qualified attention—clarity, relevance, useful curiosity,
 saves, shares, clicks, and retention—not raw views. Store the selection rationale
