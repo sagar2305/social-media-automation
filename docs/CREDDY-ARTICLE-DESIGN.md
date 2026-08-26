@@ -19,10 +19,10 @@ The `creddy-guides-v1` design mirrors the public `getcreddy.com` Guides language
 - `/guides/<slug>` public routes;
 - advertiser disclosure plus App Store and Google Play actions.
 
-The article body is approximately 760px wide inside a 1120px page shell. The
+The article uses a fluid desktop canvas with small responsive page gutters. The
 desktop hero uses a 44–76px responsive serif headline and 22px dek. Body copy is
-19px with a 1.7 line height. Mobile collapses referral, subscription, and download
-cards to one column.
+19px with a 1.7 line height. Mobile uses 16px page gutters and collapses referral,
+subscription, and download cards to one column.
 
 ## Article anatomy
 
@@ -69,6 +69,16 @@ logos, invented app screens, baked-in text, distorted anatomy, duplicated
 objects, plastic skin, implausible lighting, public figures, or fake documentary
 moments. Headline type belongs in HTML. Every asset records alt text, caption,
 claim fields, path, and provenance.
+
+Every new Agent 05 visual plan sets
+`imageBlockStyle: creddy-abstract-editorial-v1`; all article assets use 16:9.
+The renderer—not the bitmap generator—adds the approved block to every visual:
+a compact 900px image inside a cream gallery mat with an abstract coin cluster,
+dotted travel route, card outline, and starburst in the surrounding desktop
+space. The decorations are visual-only and disappear below 1100px. Image prompts
+keep the subject inside the central 78% safe area and must not bake the frame,
+ornaments, caption, or typography into the image. Agent 08 exports this exact
+presentation contract with the approved article payload.
 
 ## Referral and subscription safety
 

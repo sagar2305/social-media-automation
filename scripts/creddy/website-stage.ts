@@ -1,6 +1,6 @@
 import { access, readFile } from 'node:fs/promises';
 
-import { CREDDY_ARTICLE_THEME, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
+import { CREDDY_ARTICLE_IMAGE_BLOCK, CREDDY_ARTICLE_THEME, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
 import { listJsonFiles, pathExists, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import type {
   ContentBankRecord,
@@ -92,7 +92,11 @@ export async function exportApprovedWebsiteArticles(
         approvedBy: bank.articleReview.approvedBy,
         approvedAt: bank.articleReview.approvedAt,
         route: `/guides/${source.article.slug}`,
-        design: { version: source.article.designVersion, tokens: CREDDY_ARTICLE_THEME },
+        design: {
+          version: source.article.designVersion,
+          tokens: CREDDY_ARTICLE_THEME,
+          articleImageBlock: CREDDY_ARTICLE_IMAGE_BLOCK,
+        },
         article: source.article,
         visuals: source.visuals,
         referrals: referralIds.map((id) => registry.get(id)),

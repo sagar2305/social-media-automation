@@ -43,7 +43,7 @@ export class GeminiArticleImageClient implements ArticleImageApi {
       throw new Error('Gemini receives only validated generated article assets');
     }
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(this.apiKey)}`;
-    const prompt = `Series-wide art direction (keep identical across every image in this article): ${asset.seriesStyle}\n\nSection-specific composition: ${asset.prompt}\n\nComposition: ${asset.aspectRatio} ${asset.usage} image for a premium consumer-finance editorial article. Do not add any words or typography.\n\nAvoid: ${asset.negativePrompt}`;
+    const prompt = `Series-wide art direction (keep identical across every image in this article): ${asset.seriesStyle}\n\nSection-specific composition: ${asset.prompt}\n\nComposition: ${asset.aspectRatio} ${asset.usage} image for a premium consumer-finance editorial article. Keep the important subject inside the central 78% safe area for the approved Creddy website frame. Generate only the clean image artwork: do not add the cream gallery mat, coin cluster, travel route, card outline, starburst, words, badges, or typography because the website renderer adds that presentation automatically.\n\nAvoid: ${asset.negativePrompt}`;
     let lastError = 'Image generation failed';
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const response = await fetch(url, {

@@ -41,5 +41,12 @@ Rules:
 - Preserve the exact shared `seriesStyle` across every generated article image;
   only the section-specific subject/composition may change. Never silently
   substitute an unrelated style for an inline image.
+- Require new article plans to use
+  `imageBlockStyle: creddy-abstract-editorial-v1` and 16:9 for every asset.
+  Generate only clean centered artwork with its important subject inside the
+  central 78% safe area. Never bake the cream mat, abstract ornaments, border,
+  caption, or other website chrome into the bitmap. The article renderer adds
+  the approved responsive image block automatically to every visual section,
+  and Agent 08 exports the same block contract for getcreddy.com.
 - Missing article assets may block website readiness but must not duplicate or
   corrupt completed social video jobs.

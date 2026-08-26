@@ -60,9 +60,11 @@ Rules:
 ## Article visuals
 
 For every Agent 04 v3 draft, add `articleVisuals` with version
-`creddy-article-visuals-v1` and design version `creddy-guides-v1`. Plan 3–8
-assets, including exactly one 16:9 hero matching `article.heroVisualId` and the
-inline/comparison visuals requested by article blocks.
+`creddy-article-visuals-v1`, design version `creddy-guides-v1`, and
+`imageBlockStyle: creddy-abstract-editorial-v1`. Plan 3–8 assets, including
+exactly one hero matching `article.heroVisualId` and the inline/comparison
+visuals requested by article blocks. Every asset must use 16:9 so every section
+fits the same approved website frame without a layout jump.
 
 Each asset must name its article block, usage, type, aspect ratio, generation
 mode, alt text, caption, and accepted claim fields. Use a deliberate mix of
@@ -89,3 +91,10 @@ comparison images must unmistakably belong to that same editorial series.
 Do not mix photography, 3D rendering, collage, flat illustration, or unrelated
 color treatments within one article unless the plan explicitly uses supplied
 licensed/product assets rather than generated images.
+
+The approved website image block is presentation, not part of the generated
+bitmap. Keep the important subject inside the central 78% safe area. Do not ask
+the image generator to draw the surrounding cream gallery mat, abstract coin
+cluster, dotted travel route, card outline, starburst, border, caption, or any
+text. Agent 06 and the website renderer add the exact responsive block around
+every hero and inline image automatically; ornaments are hidden below 1100px.

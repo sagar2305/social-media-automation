@@ -19,8 +19,11 @@ Run `npm run creddy:pipeline -- agent-5-prepare`, create one visual record, then
 run `npm run creddy:pipeline -- accept-visual <visual.json>`.
 
 Pass when the same visual record contains the six-slide plan and 3–8 article
-assets. Inspect prompts, alt text, claim fields, provenance, and hero identity.
-Reject fake UI, logos, generated text, or generic synthetic advertising imagery.
+assets. Confirm `imageBlockStyle` is `creddy-abstract-editorial-v1`, every asset
+is 16:9, and important subjects remain inside the central 78% safe area. Inspect
+prompts, alt text, claim fields, provenance, and hero identity. Reject fake UI,
+logos, generated text, generic synthetic advertising imagery, or prompts that
+bake the website frame and ornaments into the image.
 
 ## 3. Article assets
 
@@ -33,8 +36,9 @@ For assets marked `generationMode: generate`, run
 missing approved assets, validates the returned image container, stores it under
 the Creddy data root, records model provenance, and refreshes Agent 06 assembly.
 
-Pass when every file exists, the hero is 16:9, inline assets match their blocks,
-and visuals remain truthful to the accepted claims.
+Pass when every file exists, the hero is 16:9, all inline assets are also 16:9,
+and visuals remain truthful to the accepted claims. Raw files contain clean
+artwork only; the HTML renderer owns the cream mat, decorations, and caption.
 
 ## 4. Agent 06 — assembly and private preview
 
@@ -43,8 +47,9 @@ preview from the Content Bank after handoff. Run `agent-6-render` separately onl
 when Video Factory, cloned voice, and licensed music are ready.
 
 Pass when article readiness is `ready_for_review`, the preview matches
-`creddy-guides-v1`, links and blocks are complete, and the two social video jobs
-remain idempotent.
+`creddy-guides-v1`, every article image uses the approved abstract editorial
+block on desktop and hides its ornaments below 1100px, links and blocks are
+complete, and the two social video jobs remain idempotent.
 
 ## 5. Agent 07 — one Content Bank identity
 

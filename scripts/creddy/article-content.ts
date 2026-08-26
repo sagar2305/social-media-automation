@@ -22,6 +22,15 @@ export const CREDDY_ARTICLE_THEME = {
   radius: '18px',
 } as const;
 
+export const CREDDY_ARTICLE_IMAGE_BLOCK = {
+  version: 'creddy-abstract-editorial-v1',
+  aspectRatio: '16:9',
+  desktopImageWidthPx: 900,
+  frame: 'cream-gallery-mat',
+  ornaments: ['coin-cluster', 'travel-route', 'card-outline', 'starburst'],
+  hideOrnamentsBelowPx: 1100,
+} as const;
+
 function words(value: string): number {
   return value.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -161,6 +170,13 @@ export function validateCreddyArticleVisuals(
   }
   if (!Array.isArray(plan.assets) || plan.assets.length < 3 || plan.assets.length > 8) {
     throw new Error('Article requires 3–8 planned visuals');
+  }
+  if (plan.imageBlockStyle && String(plan.imageBlockStyle) !== CREDDY_ARTICLE_IMAGE_BLOCK.version) {
+    throw new Error('Article visual plan requests an unsupported image block style');
+  }
+  if (plan.imageBlockStyle === CREDDY_ARTICLE_IMAGE_BLOCK.version &&
+      plan.assets.some((asset) => asset.aspectRatio !== CREDDY_ARTICLE_IMAGE_BLOCK.aspectRatio)) {
+    throw new Error('The approved Creddy article image block requires every planned asset to use 16:9');
   }
   const ids = new Set(plan.assets.map((asset) => asset.id));
   if (ids.size !== plan.assets.length || !ids.has(article.heroVisualId)) {

@@ -378,6 +378,9 @@ export type CreddyArticleVisualAsset = {
 export interface CreddyArticleVisualPlan {
   version: 'creddy-article-visuals-v1';
   designVersion: 'creddy-guides-v1';
+  /** New Agent 05 plans lock the approved website presentation. Omitted only
+   * on legacy plans created before the abstract editorial block was approved. */
+  imageBlockStyle?: 'creddy-abstract-editorial-v1';
   assets: CreddyArticleVisualAsset[];
 }
 

@@ -71,10 +71,11 @@ function visuals(): CreddyArticleVisualPlan {
   return {
     version: 'creddy-article-visuals-v1',
     designVersion: 'creddy-guides-v1',
+    imageBlockStyle: 'creddy-abstract-editorial-v1',
     assets: [
       generated('hero-reset-clock', 'hero', 'hero-visual', '16:9'),
-      generated('inline-reset-clock', 'inline', 'clock-visual', '4:3'),
-      generated('comparison-value', 'comparison', 'value-chart', '4:3'),
+      generated('inline-reset-clock', 'inline', 'clock-visual', '16:9'),
+      generated('comparison-value', 'comparison', 'value-chart', '16:9'),
     ],
   };
 }
@@ -125,6 +126,15 @@ test('requires one identical art direction across pending generated article imag
   assert.throws(
     () => validateCreddyArticleVisuals(inconsistent, article(), claims),
     /same seriesStyle/,
+  );
+});
+
+test('approved abstract article image blocks require uniform 16:9 assets', () => {
+  const inconsistent = visuals();
+  inconsistent.assets[1]!.aspectRatio = '4:3';
+  assert.throws(
+    () => validateCreddyArticleVisuals(inconsistent, article(), claims),
+    /requires every planned asset to use 16:9/,
   );
 });
 
