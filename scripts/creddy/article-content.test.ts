@@ -110,7 +110,10 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /width:min\(100%,900px\)/);
   assert.match(html, /aspect-ratio:16\/9/);
   assert.match(html, /class="visual-ornaments" aria-hidden="true"/);
-  assert.match(html, /ornament-dollar/);
+  assert.match(html, /ornament-coins/);
+  assert.match(html, /ornament-route/);
+  assert.match(html, /ornament-card/);
+  assert.match(html, /ornament-star/);
   assert.match(html, /@media\(max-width:1100px\)\{\.visual \.visual-ornaments\{display:none\}\}/);
   assert.match(html, /repeating-linear-gradient\(to bottom/);
   assert.match(html, /box-shadow:none/);
