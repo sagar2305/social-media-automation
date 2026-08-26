@@ -112,6 +112,8 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /class="visual-ornaments" aria-hidden="true"/);
   assert.match(html, /ornament-dollar/);
   assert.match(html, /@media\(max-width:1100px\)\{\.visual \.visual-ornaments\{display:none\}\}/);
+  assert.match(html, /repeating-linear-gradient\(to bottom/);
+  assert.match(html, /box-shadow:none/);
 });
 
 test('requires one identical art direction across pending generated article images', () => {
