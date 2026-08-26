@@ -109,6 +109,9 @@ test('validates and renders the unified Creddy website article', () => {
   assert.doesNotMatch(html, /Creddy visual guide/);
   assert.match(html, /width:min\(100%,900px\)/);
   assert.match(html, /aspect-ratio:16\/9/);
+  assert.match(html, /class="visual-ornaments" aria-hidden="true"/);
+  assert.match(html, /ornament-dollar/);
+  assert.match(html, /@media\(max-width:1100px\)\{\.visual \.visual-ornaments\{display:none\}\}/);
 });
 
 test('requires one identical art direction across pending generated article images', () => {
