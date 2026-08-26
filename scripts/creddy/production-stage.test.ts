@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { CREDDY_ARTICLE_DISCLOSURE } from './article-content.js';
 import { initializeCreddyDataRoot, listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
-import { buildProductionPackage, listPendingProductionTasks, prepareProductionPackages } from './production-stage.js';
+import { buildProductionPackage, listPendingProductionTasks, prepareProductionPackages, refreshArticlePreviews } from './production-stage.js';
 import {
   CREDDY_PIPELINE_VERSION,
   type AnalysisDecisionRecord,
@@ -133,6 +133,9 @@ test('Agent 6 assembles one immutable package and exactly two render jobs', asyn
   const second = await prepareProductionPackages(root);
   assert.equal(second.createdVideoJobs, 0);
   assert.equal(second.skippedCount, 1);
+  const refresh = await refreshArticlePreviews(root);
+  assert.equal(refresh.refreshedCount, 1);
+  assert.match(await readFile(refresh.previewPaths[0]!, 'utf8'), /width:min\(100%,1440px\)/);
 });
 
 test('Agent 6 creates an article-only package without any video jobs', async () => {

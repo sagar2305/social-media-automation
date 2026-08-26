@@ -34,6 +34,11 @@ export interface ProductionPreparationResult {
   packageIds: string[];
 }
 
+export interface ArticlePreviewRefreshResult {
+  refreshedCount: number;
+  previewPaths: string[];
+}
+
 function topLevelJson(paths: string[], nested: RegExp): string[] {
   return paths.filter((path) => !nested.test(path));
 }
@@ -110,6 +115,29 @@ async function writeArticlePreview(root: string, content: ContentPackageRecord):
   await mkdir(dirname(previewPath), { recursive: true });
   await writeFile(previewPath, renderCreddyArticlePreview(content.article, visualAssets));
   return previewPath;
+}
+
+/** Re-render existing article packages after a shared website-template update. */
+export async function refreshArticlePreviews(root: string): Promise<ArticlePreviewRefreshResult> {
+  const packagePaths = topLevelJson(
+    await listJsonFiles(safeDataPath(root, '06-content-packages')),
+    /\/(articles|legacy)\//,
+  );
+  const result: ArticlePreviewRefreshResult = { refreshedCount: 0, previewPaths: [] };
+  for (const packagePath of packagePaths) {
+    const content = await readJson<ContentPackageRecord>(packagePath);
+    if (!content.article) continue;
+    const previewPath = await writeArticlePreview(root, content);
+    await writeJsonAtomic(packagePath, { ...content, articlePreviewPath: previewPath });
+    const sidecarPath = safeDataPath(root, '06-content-packages', 'articles', `${content.id}.json`);
+    if (await pathExists(sidecarPath)) {
+      const sidecar = await readJson<Record<string, unknown>>(sidecarPath);
+      await writeJsonAtomic(sidecarPath, { ...sidecar, previewPath });
+    }
+    result.refreshedCount += 1;
+    result.previewPaths.push(previewPath);
+  }
+  return result;
 }
 
 export function buildProductionPackage(task: ProductionTaskRecord, now = new Date()): ContentPackageRecord {

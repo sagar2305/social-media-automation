@@ -99,6 +99,11 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /Advertiser disclosure/);
   assert.match(html, /<img src="assets\/hero-reset-clock\.png" alt="Calendar markers on a planning desk"/);
   assert.match(html, /Visual · inline-reset-clock/);
+  assert.match(html, /width:min\(100%,1440px\)/);
+  assert.match(html, /\.article\{width:100%;max-width:1120px/);
+  assert.match(html, /@media\(max-width:700px\)\{header,main,footer\{padding-inline:16px\}/);
+  assert.match(html, /\.store-buttons\{grid-template-columns:1fr\}/);
+  assert.match(html, /figure\{margin-inline:0\}/);
 });
 
 test('requires one identical art direction across pending generated article images', () => {

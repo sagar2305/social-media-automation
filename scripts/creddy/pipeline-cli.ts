@@ -46,7 +46,7 @@ import type {
 import { requireStableDashboardBaseUrl } from './public-dashboard.js';
 import { refreshCreddyProductReleaseStatus } from './product-release-stage.js';
 import { runPublishStage } from './publish-stage.js';
-import { listPendingProductionTasks, prepareProductionPackages } from './production-stage.js';
+import { listPendingProductionTasks, prepareProductionPackages, refreshArticlePreviews } from './production-stage.js';
 import { writeObservablePipelineReports } from './report-stage.js';
 import { runSlackReviewStage, SlackClient } from './slack-stage.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
@@ -155,6 +155,10 @@ async function main(): Promise<void> {
   if (command === 'report') {
     await initializeCreddyDataRoot(root);
     console.log(JSON.stringify({ reports: await writeObservablePipelineReports(root) }, null, 2));
+    return;
+  }
+  if (command === 'article-previews-refresh') {
+    console.log(JSON.stringify(await refreshArticlePreviews(root), null, 2));
     return;
   }
   if (command === 'agent-1-feedback') {
