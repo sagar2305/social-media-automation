@@ -105,6 +105,10 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /@media\(max-width:700px\)\{header,main,footer\{padding-inline:16px\}/);
   assert.match(html, /\.store-buttons\{grid-template-columns:1fr\}/);
   assert.match(html, /figure\{margin-inline:0\}/);
+  assert.match(html, /class="visual-topline"/);
+  assert.match(html, /Creddy visual guide/);
+  assert.match(html, /class="visual-frame"/);
+  assert.match(html, /max-height:540px/);
 });
 
 test('requires one identical art direction across pending generated article images', () => {
