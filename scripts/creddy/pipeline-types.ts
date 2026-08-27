@@ -570,13 +570,26 @@ export interface ContentBankRecord {
   slideCount?: number;
   articlePreviewPath?: string;
   articleReview?: {
-    status: 'needs_assets' | 'pending_review' | 'changes_requested' | 'approved' | 'published';
+    status: 'needs_assets' | 'pending_review' | 'changes_requested' | 'approved' | 'publishing' | 'published' | 'publish_failed' | 'unpublished';
     approvedBy?: string;
     approvedAt?: string;
+    approvedContentSha256?: string;
+    publishingStartedAt?: string;
+    publishAttemptedAt?: string;
+    publishAttempts?: number;
+    publishError?: string;
+    cmsIdentifier?: string;
+    publishedAt?: string;
     publishedUrl?: string;
+    unpublishedBy?: string;
+    unpublishedAt?: string;
+    requestedBy?: string;
+    requestedAt?: string;
+    changeNotes?: string;
     blockers?: string[];
   };
   createdAt: string;
+  updatedAt?: string;
   status: 'pending_review' | 'changes_requested' | 'rendering_revision' | 'approved' | 'scheduled' | 'published' | 'rejected';
   textMusicVideoPath?: string;
   narratedVideoPath?: string;

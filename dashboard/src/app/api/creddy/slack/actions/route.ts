@@ -4,6 +4,7 @@ import {
   rejectCreddyItem,
   resolveCreddySlackReview,
 } from "@/lib/creddy-file-store";
+import { approveAndPublishCreddyWebsiteArticle, requestCreddyWebsiteArticleChanges } from "@/lib/creddy-website-publish";
 
 type SlackPayload = {
   user?: { id?: string; username?: string };
@@ -50,6 +51,21 @@ export async function POST(request: Request) {
         replace_original: true,
         text: `✅ Creddy post approved in the portal by ${actor}. Nothing was scheduled or published.`,
       });
+    }
+    if (action.action_id === "creddy_website_approve") {
+      const published = await approveAndPublishCreddyWebsiteArticle({ id: action.value, approvedBy: `Slack: ${actor}` });
+      return Response.json({
+        replace_original: true,
+        text: `✅ Website article approved by ${actor} and published at ${published.liveUrl}. The slideshow remains unchanged.`,
+      });
+    }
+    if (action.action_id === "creddy_website_changes") {
+      await requestCreddyWebsiteArticleChanges({
+        id: action.value,
+        requestedBy: `Slack: ${actor}`,
+        notes: `Website article changes requested by ${actor} in Slack.`,
+      });
+      return Response.json({ replace_original: true, text: `Website article changes requested by ${actor}. Nothing was published.` });
     }
     if (action.action_id === "creddy_content_reject") {
       await rejectCreddyItem({

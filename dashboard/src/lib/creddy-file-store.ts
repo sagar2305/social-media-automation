@@ -79,10 +79,22 @@ type ContentBankFile = {
   slideCount?: number;
   articlePreviewPath?: string;
   articleReview?: {
-    status: "needs_assets" | "pending_review" | "changes_requested" | "approved" | "published";
+    status: "needs_assets" | "pending_review" | "changes_requested" | "approved" | "publishing" | "published" | "publish_failed" | "unpublished";
     approvedBy?: string;
     approvedAt?: string;
+    approvedContentSha256?: string;
+    publishingStartedAt?: string;
+    publishAttemptedAt?: string;
+    publishAttempts?: number;
+    publishError?: string;
+    cmsIdentifier?: string;
+    publishedAt?: string;
     publishedUrl?: string;
+    unpublishedBy?: string;
+    unpublishedAt?: string;
+    requestedBy?: string;
+    requestedAt?: string;
+    changeNotes?: string;
     blockers?: string[];
   };
   createdAt: string;
@@ -130,6 +142,7 @@ type ContentPackageFile = {
   brief: string;
   sourceUrls: string[];
   article?: ArticleFile;
+  articleVisuals?: { assets?: Array<{ id: string; assetPath?: string; aspectRatio?: string; altText?: string; caption?: string }> };
   factualClaims?: Array<{
     field: string;
     value: string | number | boolean | null;
@@ -171,6 +184,7 @@ type VisualPlanFile = {
     background?: { mode?: string; style?: string };
   }>;
   safetyOverlays?: string[];
+  articleVisuals?: { assets?: Array<{ id: string; assetPath?: string; aspectRatio?: string; altText?: string; caption?: string }> };
   [key: string]: unknown;
 };
 
@@ -203,7 +217,13 @@ export type CreddyBankItemDto = {
   slideEditor?: CreddySlideEditor;
   article?: ArticleFile;
   articlePreviewAvailable: boolean;
+  articleImageCount: number;
   articleReview?: ContentBankFile["articleReview"];
+  articlePublication?: {
+    publishedAt: string;
+    url: string;
+    revalidation: "revalidated" | "not_configured" | "failed";
+  };
   /** True when this DTO came from the deployed, read-only Supabase mirror. */
   cloudBacked?: boolean;
 };
@@ -342,6 +362,27 @@ async function toDto(record: ContentBankFile): Promise<CreddyBankItemDto> {
       );
   const isDraft = "textScenes" in content;
   const caption = isDraft ? content.instagramCaption : content.caption;
+  const articleImages = await articleImagePaths(record, content);
+  let articlePublication: CreddyBankItemDto["articlePublication"];
+  if (content.article?.slug && record.articleReview?.approvedAt) {
+    try {
+      const receipt = await readJson<{
+        approvedAt: string;
+        publishedAt: string;
+        revalidation: "revalidated" | "not_configured" | "failed";
+      }>(safePath("reports", "website-cms-published", `${content.article.slug}.json`));
+      if (receipt.approvedAt === record.articleReview.approvedAt) {
+        const baseUrl = (process.env.CREDDY_WEBSITE_BASE_URL?.trim() || "https://getcreddy.com").replace(/\/$/, "");
+        articlePublication = {
+          publishedAt: receipt.publishedAt,
+          url: `${baseUrl}/blog/${content.article.slug}`,
+          revalidation: receipt.revalidation,
+        };
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
   return {
     id: record.id,
     createdAt: record.createdAt,
@@ -371,8 +412,28 @@ async function toDto(record: ContentBankFile): Promise<CreddyBankItemDto> {
     slideEditor: await readSlideEditor(record),
     article: content.article,
     articlePreviewAvailable: Boolean(record.articlePreviewPath),
+    articleImageCount: articleImages.length,
     articleReview: record.articleReview,
+    articlePublication,
   };
+}
+
+async function articleImagePaths(
+  record: ContentBankFile,
+  content?: ContentDraftFile | ContentPackageFile,
+): Promise<string[]> {
+  let assets: Array<{ assetPath?: string; aspectRatio?: string }> | undefined;
+  if (record.contentDraftId && record.visualPlanId) {
+    const plan = await readJson<VisualPlanFile>(safePath("06-visual-plans", `${validateId(record.visualPlanId)}.json`));
+    assets = plan.articleVisuals?.assets;
+  } else {
+    const source = content && "scriptLines" in content
+      ? content
+      : await readJson<ContentPackageFile>(safePath("06-content-packages", `${validateId(record.contentPackageId)}.json`));
+    assets = source.articleVisuals?.assets;
+  }
+  const paths = (assets ?? []).filter((asset) => asset.aspectRatio === "16:9" && asset.assetPath).map((asset) => asset.assetPath!);
+  return paths.length === 3 ? paths : [];
 }
 
 function validateEditableText(input: {
@@ -735,33 +796,6 @@ export async function listCreddyBankItems(): Promise<CreddyBankItemDto[]> {
   return listCreddyCloudBankItems();
 }
 
-export async function approveCreddyWebsiteArticle(input: {
-  id: string;
-  approvedBy: string;
-}, now = new Date()): Promise<void> {
-  const { path, record } = await findBankFile(input.id);
-  if (!record.articlePreviewPath || !record.articleReview) throw new Error("This item has no website article preview");
-  if (record.articleReview.status === "needs_assets" || record.articleReview.blockers?.length) {
-    throw new Error("Article assets must be completed before website approval");
-  }
-  if (["rejected", "published"].includes(record.status)) {
-    throw new Error(`Cannot approve an article from overall ${record.status} state`);
-  }
-  const updated: ContentBankFile = {
-    ...record,
-    updatedAt: now.toISOString(),
-    articleReview: {
-      ...record.articleReview,
-      status: "approved",
-      approvedBy: input.approvedBy.trim() || "human-reviewer",
-      approvedAt: now.toISOString(),
-      blockers: [],
-    },
-  };
-  await writeJsonAtomic(path, updated);
-  await writeJsonAtomic(safePath("09-pending-approval", `${record.id}.json`), updated);
-}
-
 export async function writeCreddyLiveSyncReport(report: unknown): Promise<void> {
   await writeJsonAtomic(safePath("reports", "latest", "blotato-live-sync.json"), report);
 }
@@ -934,6 +968,34 @@ export async function getCreddyArticlePreviewPath(id: string): Promise<string> {
   const info = await stat(path);
   if (!info.isFile() || extname(path).toLowerCase() !== ".html") throw new Error("Article preview is invalid");
   return path;
+}
+
+export async function getCreddyArticleImagePath(id: string, index: number): Promise<{ path: string; mime: string }> {
+  if (!Number.isInteger(index) || index < 0 || index > 2) throw new Error("Invalid article image index");
+  const { record } = await findBankFile(id);
+  const paths = await articleImagePaths(record);
+  const path = paths[index];
+  if (!path || !isAbsolute(path)) throw new Error("Article image is not available");
+  const rel = relative(root(), resolve(path));
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("Article image is outside the Creddy data root");
+  const info = await stat(path);
+  if (!info.isFile()) throw new Error("Article image is not a file");
+  const extension = extname(path).toLowerCase();
+  const mime = extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
+  return { path, mime };
+}
+
+export async function getCreddyArticlePreviewHtml(id: string): Promise<string> {
+  const path = await getCreddyArticlePreviewPath(id);
+  const { record } = await findBankFile(id);
+  const images = await articleImagePaths(record);
+  if (images.length !== 3) throw new Error("Article preview requires exactly three approved 16:9 images");
+  const byName = new Map(images.map((imagePath, index) => [imagePath.split("/").at(-1), index]));
+  const html = await readFile(path, "utf8");
+  return html.replace(/src=(["'])assets\/([^"']+)\1/g, (match, quote: string, name: string) => {
+    const index = byName.get(name);
+    return index === undefined ? match : `src=${quote}/api/creddy/article-image/${encodeURIComponent(id)}/${index}${quote}`;
+  });
 }
 
 export async function getCreddySlidePath(id: string, slide: number): Promise<{ path: string; mime: string }> {

@@ -32,9 +32,16 @@ absolute paths in `articleVisuals.assets[].assetPath`; store provenance for
 licensed, composed, and supplied assets. Reaccept the visual record.
 
 For assets marked `generationMode: generate`, run
-`npm run creddy:pipeline -- agent-6-article-images`. The command generates only
-missing approved assets, validates the returned image container, stores it under
-the Creddy data root, records model provenance, and refreshes Agent 06 assembly.
+`npm run creddy:pipeline -- agent-6-codex-image-requests`. For each request, use
+the signed-in Codex built-in image-generation tool once with the exact stored
+prompt, copy the selected output into the request's `stagingDirectory`, and
+submit one `creddy-codex-image-result-v1` manifest with
+`npm run creddy:pipeline -- agent-6-accept-codex-image <manifest.json>`.
+The importer verifies the approved prompt fingerprint, accepts only real
+10 KB–20 MB PNG/JPEG files with exact 16:9 dimensions, stores the image under
+the Creddy data root, records Codex provenance, and refreshes Agent 06 assembly.
+This path uses no Gemini or OpenAI API key. If built-in Codex image generation
+is unavailable, stop and report the missing asset instead of changing provider.
 
 Pass when every file exists, the hero is 16:9, all inline assets are also 16:9,
 and visuals remain truthful to the accepted claims. Raw files contain clean
@@ -58,8 +65,8 @@ Content Bank slideshow item. Review the article card, themed preview, six slides
 captions, sources, claims, CTAs, disclosure, and asset blockers.
 
 Pass when the article and social assets share the same canonical opportunity,
-article approval is independent, and no external publish occurs. Use **Approve
-website article** only after the private preview is accepted.
+the article automatically invokes Agent 8 after asset validation, and social
+approval remains independent.
 
 ## 6. Agent 08 — safe website export
 
@@ -68,13 +75,39 @@ Every referral card ID in the article must resolve to one active approved record
 Run `npm run creddy:pipeline -- agent-8-website-export`.
 
 Pass when one `14-website-ready/<slug>.json` payload is produced with the exact
-approved article, visual paths, disclosure, referral destinations, design tokens,
-and `/guides/<slug>` route. Missing approval, assets, preview, or referral IDs
+approved article, deployable visual paths plus their local source paths,
+disclosure, referral destinations, design tokens, and `/blog/<slug>` route.
+Missing release fingerprint, assets, preview, or referral IDs
 must fail closed.
 
-## 7. Final getcreddy.com staging integration
+## 7. One-time website CMS setup
 
-Do this only after steps 1–6 pass. Connect the export payload to the actual
-getcreddy.com repository or authenticated CMS API, publish to a staging/preview
-URL, compare desktop and mobile against the live Guides theme, test consent and
-unsubscribe end to end, then request final human production approval.
+Review and deploy the website migration `20260826170000_creddy_blog_cms.sql`
+and the dynamic `/blog` renderer once through the normal Creddy repository
+review process. Configure `REVALIDATE_SECRET` in Vercel Preview and Production.
+Verify the empty CMS leaves the existing website and local fallback intact.
+
+The older `agent-8-website-sync` and `agent-8-website-pr` commands remain only
+for a migration fallback. They are not the normal per-article workflow.
+
+## 8. Automatic CMS publishing
+
+Set the server-only Supabase URL and
+service-role key, `CREDDY_WEBSITE_BASE_URL`, and matching revalidation secret.
+Enable `CREDDY_WEBSITE_AUTO_PUBLISH=true` and
+`CREDDY_WEBSITE_CMS_PUBLISH_ENABLED=true` only after supervised verification.
+Agent 7 then invokes `agent-8-website-cms-publish` automatically. Published
+items may be deleted and later reposted from the portal or Slack.
+
+For normal and future CMS uploads, keep
+`CREDDY_WEBSITE_ASSET_WEBP_ENABLED=true` and
+`CREDDY_WEBSITE_ASSET_WEBP_QUALITY=88`. Verify uploaded asset URLs end in
+`.webp`, retain exact 16:9 dimensions, and return HTTP 200. Use
+`CREDDY_WEBSITE_CMS_FORCE_REPUBLISH=true` only for a supervised one-time
+replacement of assets that already have successful receipts; reset it to false
+immediately afterward.
+
+Pass when every exact 16:9 image exists in the public immutable asset bucket,
+one published row exists for the slug, no private local paths are stored, and
+the `/blog`, article, and sitemap paths revalidate. This operation creates no
+Git commit, pull request, Vercel deployment, or new website page file.

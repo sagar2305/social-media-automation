@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { contentReadyReviewBlocks } from './slack-notifications.js';
+import { articleReadyReviewBlocks, contentReadyReviewBlocks, selfContainedArticlePreview } from './slack-notifications.js';
 import {
   approveCreddyContentFromSlack,
   loadCreddySlackFullReview,
@@ -35,6 +35,50 @@ test('Agent 7 review stays inside Slack and contains no expiring URL', () => {
   const modal = fullReviewModal({ message: { blocks } });
   assert.equal(modal.type, 'modal');
   assert.doesNotMatch(JSON.stringify(modal), /trycloudflare|DASHBOARD_BASE_URL|https?:\/\//i);
+});
+
+test('website article management stays separate from slideshow approval and exposes delete or repost only', () => {
+  const blocks = articleReadyReviewBlocks({
+    id: 'slideshow-review-1',
+    title: 'A complete website article',
+    dek: 'Useful verified guidance.',
+    excerpt: 'A practical summary.',
+    category: 'guides',
+    readingMinutes: 5,
+    sourceUrls: ['https://example.com/source'],
+    articleImagePaths: ['/tmp/hero.png'],
+    articlePreviewPath: '/tmp/preview.html',
+    publishStatus: 'published',
+    publishedUrl: 'https://getcreddy.com/blog/article',
+  });
+  const encoded = JSON.stringify(blocks);
+  assert.match(encoded, /creddy_website_delete|Undo publish/);
+  assert.doesNotMatch(encoded, /creddy_website_approve|creddy_website_changes/);
+  assert.doesNotMatch(encoded, /creddy_content_approve/);
+  assert.doesNotMatch(JSON.stringify(contentReadyReviewBlocks(event)), /creddy_website_delete|creddy_website_repost/);
+
+  const failed = JSON.stringify(articleReadyReviewBlocks({
+    id: 'slideshow-review-1', title: 'Article', dek: 'Dek', excerpt: 'Excerpt', category: 'guides', readingMinutes: 5,
+    sourceUrls: [], articleImagePaths: ['/tmp/hero.png'], articlePreviewPath: '/tmp/preview.html', publishStatus: 'publish_failed',
+  }));
+  assert.match(failed, /creddy_website_repost|Retry publish/);
+  assert.doesNotMatch(failed, /creddy_website_delete|creddy_website_approve/);
+});
+
+test('Slack article HTML embeds approved images without changing the original preview', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'creddy-slack-html-'));
+  t.after(async () => rm(directory, { recursive: true, force: true }));
+  const imagePath = join(directory, 'hero.png');
+  const previewPath = join(directory, 'preview.html');
+  await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const original = '<!doctype html><img src="assets/hero.png">';
+  await writeFile(previewPath, original);
+  const bytes = await selfContainedArticlePreview({
+    id: 'article-1', title: 'Article', dek: 'Dek', excerpt: 'Excerpt', category: 'guides', readingMinutes: 4,
+    sourceUrls: [], articleImagePaths: [imagePath], articlePreviewPath: previewPath,
+  });
+  assert.match(bytes.toString(), /src="data:image\/png;base64,/);
+  assert.equal(await readFile(previewPath, 'utf8'), original);
 });
 
 test('resolved Slack messages keep full review and add undo, but remove approve and reject', () => {

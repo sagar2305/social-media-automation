@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/auth";
 import {
   approveCreddyItem,
-  approveCreddyWebsiteArticle,
   cacheCreddyBlotatoMedia,
   getCreddySlideshowSubmission,
   recordCreddyBlotatoDestination,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/creddy-file-store";
 import { notifyCreddySlack } from "@/lib/creddy-slack-notifications";
 import { syncCreddyBlotatoStatuses } from "@/lib/creddy-blotato-sync";
+import { deleteCreddyWebsiteArticle, repostCreddyWebsiteArticle } from "@/lib/creddy-website-publish";
 import {
   buildInstagramPostBody,
   buildTikTokPostBody,
@@ -52,14 +52,28 @@ function slideshowEditorValues(formData: FormData) {
   };
 }
 
-export async function approveCreddyWebsiteArticleAction(formData: FormData): Promise<void> {
+export async function repostCreddyWebsiteArticleAction(formData: FormData): Promise<void> {
   const auth = await assertRole("editor");
   if (!auth.ok) throw new Error(auth.error);
   const id = value(formData, "id");
-  await approveCreddyWebsiteArticle({ id, approvedBy: auth.user.email || auth.user.id });
+  let outcome = "article-reposted";
+  try {
+    await repostCreddyWebsiteArticle(id, auth.user.email || auth.user.id);
+  } catch (error) {
+    console.error(`[Creddy website] Repost failed for ${id}:`, error instanceof Error ? error.message : error);
+    outcome = "article-publish-failed";
+  }
   revalidatePath("/creddy/content-bank");
-  revalidatePath("/creddy/all-content");
-  redirect(`/creddy/content-bank/slideshows?item=${encodeURIComponent(id)}&updated=article-approved#${encodeURIComponent(id)}`);
+  redirect(`/creddy/content-bank/articles?item=${encodeURIComponent(id)}&updated=${outcome}#${encodeURIComponent(id)}`);
+}
+
+export async function deleteCreddyWebsiteArticleAction(formData: FormData): Promise<void> {
+  const auth = await assertRole("editor");
+  if (!auth.ok) throw new Error(auth.error);
+  const id = value(formData, "id");
+  await deleteCreddyWebsiteArticle(id, auth.user.email || auth.user.id);
+  revalidatePath("/creddy/content-bank");
+  redirect(`/creddy/content-bank/articles?item=${encodeURIComponent(id)}&updated=article-unpublished#${encodeURIComponent(id)}`);
 }
 
 export async function saveCreddyDraftAction(formData: FormData): Promise<void> {

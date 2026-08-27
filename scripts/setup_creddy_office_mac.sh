@@ -29,7 +29,7 @@ Options:
   --data-source PATH  Existing transferred data directory to copy (optional).
   --data-root PATH    New durable data location on this Mac (required with --data-source).
   --install-prerequisites
-                      Install missing Git/Node/Python/cloudflared with Homebrew.
+                      Install missing Git/Node/Python/cloudflared/cwebp with Homebrew.
                       Homebrew itself must already be installed and approved.
   --start-dashboard   Start the built dashboard on 127.0.0.1:3000 after checks.
   --skip-install      Skip npm dependency installation.
@@ -132,7 +132,7 @@ if [ -n "$ENV_FILE" ]; then
 fi
 
 missing_commands=""
-for command_name in git node npm python3 cloudflared; do
+for command_name in git node npm python3 cloudflared cwebp; do
   if command -v "$command_name" >/dev/null 2>&1; then
     echo "OK: $command_name"
   else
@@ -152,12 +152,13 @@ if [ -n "$missing_commands" ] && [ "$INSTALL_PREREQUISITES" -eq 1 ]; then
   case " $missing_commands " in *" node "*|*" npm "*) brew_packages="$brew_packages node" ;; esac
   case " $missing_commands " in *" python3 "*) brew_packages="$brew_packages python" ;; esac
   case " $missing_commands " in *" cloudflared "*) brew_packages="$brew_packages cloudflared" ;; esac
+  case " $missing_commands " in *" cwebp "*) brew_packages="$brew_packages webp" ;; esac
   echo "Installing missing prerequisites with Homebrew:$brew_packages"
   # shellcheck disable=SC2086
   brew install $brew_packages
   hash -r
   missing_commands=""
-  for command_name in git node npm python3 cloudflared; do
+  for command_name in git node npm python3 cloudflared cwebp; do
     command -v "$command_name" >/dev/null 2>&1 || missing_commands="$missing_commands $command_name"
   done
 fi
@@ -226,6 +227,10 @@ if [ -n "$DATA_ROOT" ]; then
 fi
 update_env_key .env.local CREDDY_AI_EXECUTION_MODE codex_scheduled
 update_env_key .env.local CREDDY_PIPELINE_ENABLED false
+update_env_key .env.local CREDDY_WEBSITE_ASSET_WEBP_ENABLED true
+update_env_key .env.local CREDDY_WEBSITE_ASSET_WEBP_QUALITY 88
+update_env_key .env.local CREDDY_WEBSITE_CMS_FORCE_REPUBLISH false
+update_env_key .env.local CREDDY_WEBSITE_AUTO_PUBLISH_ON_APPROVAL true
 chmod 600 .env.local dashboard/.env.local
 
 if [ "$SKIP_INSTALL" -eq 0 ]; then

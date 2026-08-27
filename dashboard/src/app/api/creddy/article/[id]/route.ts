@@ -1,7 +1,5 @@
-import { readFile } from "node:fs/promises";
-
 import { requireRole } from "@/lib/auth";
-import { getCreddyArticlePreviewPath } from "@/lib/creddy-file-store";
+import { getCreddyArticlePreviewHtml } from "@/lib/creddy-file-store";
 
 export async function GET(
   _request: Request,
@@ -10,8 +8,7 @@ export async function GET(
   await requireRole("viewer");
   const { id } = await context.params;
   try {
-    const path = await getCreddyArticlePreviewPath(id);
-    return new Response(await readFile(path, "utf8"), {
+    return new Response(await getCreddyArticlePreviewHtml(id), {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "private, no-store",

@@ -1,6 +1,6 @@
 # Creddy Slack notifications
 
-Creddy sends lifecycle updates for **Ready for review**, **Scheduled**, **Published**, and **Rejected** posts to `#social-media-update`. The Agent 7 review message includes all six rendered slides, Instagram and TikTok captions, hashtags, and safe **Approve in portal** / **Reject** buttons. Approval never schedules or publishes the post. Slack delivery retries three times and never changes or rolls back the social-post operation.
+Creddy sends lifecycle updates for **Ready for review**, **Scheduled**, **Published**, and **Rejected** posts to `#social-media-update`. The Agent 7 slideshow message includes all six rendered slides, captions, hashtags, and social review buttons. A separate website-article message includes one self-contained HTML preview with every approved 16:9 image embedded, article details, sources, and the automatic Agent 8 result. Published articles expose **Delete from website**; deleted or failed articles expose **Repost article**. It does not upload article images separately or unfurl source media. Website automation never changes slideshow approval or scheduling.
 
 ## Create the Slack app
 
@@ -34,7 +34,7 @@ DASHBOARD_BASE_URL=https://creddy.YOUR-DOMAIN
 - Restart the dashboard and scheduled worker after changing environment variables.
 - Run `npm run creddy:deploy:validate -- --live` before sending review items.
 
-The six-image review and buttons require the bot token. Slack cannot call
+The slideshow and article file reviews plus buttons require the bot token. Slack cannot call
 `localhost`; production requires the named tunnel described in
 `docs/CREDDY_MAC_MINI_DEPLOYMENT.md`. Quick tunnels may be used only for isolated
 development and must never be configured in `DASHBOARD_BASE_URL` or Slack's

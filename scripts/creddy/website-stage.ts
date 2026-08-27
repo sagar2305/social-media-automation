@@ -1,4 +1,5 @@
 import { access, readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import { CREDDY_ARTICLE_IMAGE_BLOCK, CREDDY_ARTICLE_THEME, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
 import { listJsonFiles, pathExists, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
@@ -7,8 +8,10 @@ import type {
   ContentDraftRecord,
   ContentPackageRecord,
   CreddyArticleDraft,
+  CreddyArticleVisualAsset,
   CreddyArticleVisualPlan,
 } from './pipeline-types.js';
+import { computeArticleApprovalFingerprint } from './article-approval-integrity.js';
 
 type ReferralRegistry = {
   version: 1;
@@ -22,6 +25,37 @@ export type CreddyWebsiteExportResult = {
   blockers: Array<{ id: string; reason: string }>;
   outputPaths: string[];
 };
+
+export const CREDDY_WEBSITE_EXPORT_VERSION = 'creddy-website-export-v2' as const;
+
+export type CreddyWebsiteExportPayload = {
+  version: typeof CREDDY_WEBSITE_EXPORT_VERSION;
+  contentBankId: string;
+  approvedBy: string;
+  approvedAt: string;
+  route: string;
+  design: {
+    version: CreddyArticleDraft['designVersion'];
+    tokens: typeof CREDDY_ARTICLE_THEME;
+    articleImageBlock: typeof CREDDY_ARTICLE_IMAGE_BLOCK;
+  };
+  article: CreddyArticleDraft;
+  visuals: Omit<CreddyArticleVisualPlan, 'assets'> & {
+    assets: Array<CreddyArticleVisualAsset & { assetPath: string; sourceAssetPath: string }>;
+  };
+  referrals: Array<ReferralRegistry['links'][number]>;
+  previewPath: string;
+  publishState: 'ready_for_getcreddy_integration';
+};
+
+export function creddyWebsiteArticleRoute(slug: string): string {
+  return `/blog/${slug}`;
+}
+
+export function creddyWebsiteAssetPath(slug: string, assetId: string, sourcePath: string): string {
+  const safeAssetId = assetId.replace(/[^a-zA-Z0-9_-]+/g, '-');
+  return `/blogs/${slug}/${encodeURIComponent(`${safeAssetId}-${basename(sourcePath)}`)}`;
+}
 
 async function articleSource(root: string, bank: ContentBankRecord): Promise<{
   article: CreddyArticleDraft;
@@ -66,11 +100,21 @@ export async function exportApprovedWebsiteArticles(
   for (const bank of records) {
     if (!bank.articleReview) continue;
     result.reviewed += 1;
-    if (bank.articleReview.status !== 'approved') {
+    if (!['approved', 'publishing'].includes(bank.articleReview.status)) {
       result.skipped += 1;
       continue;
     }
     try {
+      if (!bank.articleReview.approvedBy?.trim() || !bank.articleReview.approvedAt?.trim()) {
+        throw new Error('Approved article is missing Agent 7 approval identity or timestamp');
+      }
+      if (!bank.articleReview.approvedContentSha256?.trim()) {
+        throw new Error('Approved article is missing its content approval fingerprint');
+      }
+      const currentFingerprint = await computeArticleApprovalFingerprint(root, bank);
+      if (currentFingerprint !== bank.articleReview.approvedContentSha256) {
+        throw new Error('Article content changed after approval and requires Agent 7 reapproval');
+      }
       if (!bank.articlePreviewPath || !(await pathExists(bank.articlePreviewPath))) {
         throw new Error('Approved article preview is missing');
       }
@@ -86,20 +130,31 @@ export async function exportApprovedWebsiteArticles(
         .map((block) => block.referralId);
       const unresolved = referralIds.filter((id) => !registry.has(id));
       if (unresolved.length) throw new Error(`Referral registry is missing active IDs: ${unresolved.join(', ')}`);
-      const payload = {
-        version: 'creddy-website-export-v1',
+      const payload: CreddyWebsiteExportPayload = {
+        version: CREDDY_WEBSITE_EXPORT_VERSION,
         contentBankId: bank.id,
         approvedBy: bank.articleReview.approvedBy,
         approvedAt: bank.articleReview.approvedAt,
-        route: `/guides/${source.article.slug}`,
+        route: creddyWebsiteArticleRoute(source.article.slug),
         design: {
           version: source.article.designVersion,
           tokens: CREDDY_ARTICLE_THEME,
           articleImageBlock: CREDDY_ARTICLE_IMAGE_BLOCK,
         },
         article: source.article,
-        visuals: source.visuals,
-        referrals: referralIds.map((id) => registry.get(id)),
+        visuals: {
+          ...source.visuals,
+          assets: source.visuals.assets.map((asset) => {
+            const sourceAssetPath = asset.assetPath;
+            if (!sourceAssetPath) throw new Error(`Article visual ${asset.id} has no approved asset file`);
+            return {
+              ...asset,
+              sourceAssetPath,
+              assetPath: creddyWebsiteAssetPath(source.article.slug, asset.id, sourceAssetPath),
+            };
+          }),
+        },
+        referrals: referralIds.map((id) => registry.get(id)!),
         previewPath: bank.articlePreviewPath,
         publishState: 'ready_for_getcreddy_integration',
       };

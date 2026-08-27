@@ -12,8 +12,12 @@ import { CREDDY_PIPELINE_VERSION } from './pipeline-types.js';
 import type { ContentBankRecord, ContentDraftRecord, ContentPackageRecord, VisualPlanRecord } from './pipeline-types.js';
 import { validateIndependentSlideshowCopy } from './copy-stage.js';
 import { CREDDY_LEGACY_TEMPLATE_FILES, creddyExpressionFile } from './expression-library.js';
-import { notifyCreddyContentReady } from './slack-notifications.js';
-import type { CreddyContentReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
+import { notifyCreddyArticleReady, notifyCreddyContentReady } from './slack-notifications.js';
+import type {
+  CreddyArticleReadySlackEvent,
+  CreddyContentReadySlackEvent,
+  CreddyContentReadySlackResult,
+} from './slack-notifications.js';
 
 type SlideshowManifest = {
   version: 1;
@@ -75,11 +79,22 @@ export type SlideshowBankResult = {
   slackNotificationsSent: number;
   slackNotificationsSkipped: number;
   slackNotificationFailures: string[];
+  articleSlackNotificationsSent: number;
+  articleSlackNotificationsSkipped: number;
+  articleSlackNotificationFailures: string[];
+  articleAutoPublished: number;
+  articleAutoPublishFailed: number;
 };
 
 export type ContentReadyNotifier = (
   event: CreddyContentReadySlackEvent,
 ) => Promise<CreddyContentReadySlackResult>;
+
+export type ArticleReadyNotifier = (
+  event: CreddyArticleReadySlackEvent,
+) => Promise<CreddyContentReadySlackResult>;
+
+export type ArticleAutoPublisher = (id: string) => Promise<boolean>;
 
 function validateId(id: string, label: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(id)) throw new Error(`Invalid ${label}`);
@@ -220,6 +235,8 @@ export async function runSlideshowContentBankHandoff(
   root: string,
   now = new Date(),
   notifier: ContentReadyNotifier = notifyCreddyContentReady,
+  articleNotifier: ArticleReadyNotifier = notifyCreddyArticleReady,
+  articleAutoPublisher?: ArticleAutoPublisher,
 ): Promise<SlideshowBankResult> {
   const manifests = (await listJsonFiles(safeDataPath(root, '07-slideshow-renders')))
     .filter((path) => path.endsWith('/manifest.json'));
@@ -232,6 +249,11 @@ export async function runSlideshowContentBankHandoff(
     slackNotificationsSent: 0,
     slackNotificationsSkipped: 0,
     slackNotificationFailures: [],
+    articleSlackNotificationsSent: 0,
+    articleSlackNotificationsSkipped: 0,
+    articleSlackNotificationFailures: [],
+    articleAutoPublished: 0,
+    articleAutoPublishFailed: 0,
   };
 
   for (const manifestPath of manifests) {
@@ -273,10 +295,11 @@ export async function runSlideshowContentBankHandoff(
         slideImagePaths,
         slideCount: 6,
         articlePreviewPath: production?.articlePreviewPath,
-        articleReview: production?.article ? {
-          status: articleBlockers.length ? 'needs_assets' : 'pending_review',
-          blockers: articleBlockers,
-        } : undefined,
+        articleReview: production?.article
+          ? existing?.articleReview && existing.articleReview.status !== 'needs_assets'
+            ? existing.articleReview
+            : { status: articleBlockers.length ? 'needs_assets' : 'pending_review', blockers: articleBlockers }
+          : undefined,
         createdAt: existing?.createdAt ?? now.toISOString(),
         status: 'pending_review',
         revision: existing?.revision ?? 1,
@@ -291,6 +314,65 @@ export async function runSlideshowContentBankHandoff(
       await writeJsonAtomic(destination, record);
       if (existing) result.updated += 1;
       else result.created += 1;
+
+      if (
+        production?.article &&
+        production.articlePreviewPath &&
+        production.articleReadiness === 'ready_for_review' &&
+        production.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))
+      ) {
+        let articleState = record.articleReview;
+        if (articleAutoPublisher && articleState?.status !== 'unpublished') {
+          try {
+            if (await articleAutoPublisher(id)) result.articleAutoPublished += 1;
+          } catch {
+            result.articleAutoPublishFailed += 1;
+          }
+          articleState = (await readJson<ContentBankRecord>(destination)).articleReview;
+        }
+        const articleReceiptPath = safeDataPath(
+          root,
+          'reports',
+          'slack-article-ready',
+          `${id}-revision-${record.revision}.json`,
+        );
+        if (await pathExists(articleReceiptPath)) {
+          result.articleSlackNotificationsSkipped += 1;
+        } else {
+          const notification = await articleNotifier({
+            id,
+            title: production.article.title,
+            dek: production.article.dek,
+            excerpt: production.article.excerpt,
+            category: production.article.category,
+            readingMinutes: production.article.readingMinutes,
+            sourceUrls: production.article.sourceUrls,
+            articleImagePaths: production.articleVisuals.assets.map((asset) => asset.assetPath!),
+            articlePreviewPath: production.articlePreviewPath,
+            publishStatus: articleState?.status === 'published' || articleState?.status === 'publish_failed' || articleState?.status === 'publishing' || articleState?.status === 'unpublished'
+              ? articleState.status
+              : undefined,
+            publishedUrl: articleState?.publishedUrl,
+            publishError: articleState?.publishError,
+          });
+          if (notification.sent) {
+            await writeJsonAtomic(articleReceiptPath, {
+              version: 1,
+              id,
+              revision: record.revision,
+              sentAt: now.toISOString(),
+              channel: notification.channel,
+              messageTs: notification.messageTs,
+              fileIds: notification.fileIds ?? [],
+            });
+            result.articleSlackNotificationsSent += 1;
+          } else if (notification.error?.includes('is missing')) {
+            result.articleSlackNotificationsSkipped += 1;
+          } else {
+            result.articleSlackNotificationFailures.push(`${id}: ${notification.error ?? 'Slack article notification failed'}`);
+          }
+        }
+      }
 
       const receiptPath = safeDataPath(root, 'reports', 'slack-content-ready', `${id}-revision-${record.revision}.json`);
       if (await pathExists(receiptPath)) {

@@ -59,7 +59,7 @@ export default async function DashboardLayout({
       </aside>
 
       {/* Main area — sidebar offset only at md+ since the aside is hidden on mobile. */}
-      <div className="flex-1 md:ml-60 flex flex-col">
+      <div className="min-w-0 flex-1 md:ml-60 flex flex-col">
         <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-xl border-b border-border/40">
           <div className="flex items-center justify-between h-14 px-4 sm:px-6 lg:px-8 gap-3">
             <div className="flex items-center gap-2 flex-1 min-w-0">

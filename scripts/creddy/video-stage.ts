@@ -20,6 +20,7 @@ import {
   type VideoJobRecord,
 } from './pipeline-types.js';
 import type { VideoFactoryApi, VideoFactoryRemoteJob } from './video-factory-client.js';
+import type { CreddyArticleReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
 
 export interface VideoStageOptions {
   root: string;
@@ -275,7 +276,14 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
   return created;
 }
 
-export async function runArticleContentBankHandoff(root: string, now = new Date()): Promise<number> {
+export async function runArticleContentBankHandoff(
+  root: string,
+  now = new Date(),
+  options: {
+    autoPublisher?: (id: string) => Promise<boolean>;
+    notifier?: (event: CreddyArticleReadySlackEvent) => Promise<CreddyContentReadySlackResult>;
+  } = {},
+): Promise<number> {
   let created = 0;
   const packagePaths = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
     .filter((path) => /\/production-[^/]+\.json$/.test(path) && !path.includes('/legacy/'));
@@ -298,10 +306,9 @@ export async function runArticleContentBankHandoff(root: string, now = new Date(
       contentDraftId: content.contentDraftId,
       visualPlanId: content.visualPlanId,
       articlePreviewPath: content.articlePreviewPath,
-      articleReview: {
-        status: blockers.length ? 'needs_assets' : 'pending_review',
-        blockers,
-      },
+      articleReview: existing?.articleReview && existing.articleReview.status !== 'needs_assets'
+        ? existing.articleReview
+        : { status: blockers.length ? 'needs_assets' : 'pending_review', blockers },
       createdAt: existing?.createdAt ?? now.toISOString(),
       status: 'pending_review',
       revision: existing?.revision ?? 1,
@@ -314,6 +321,42 @@ export async function runArticleContentBankHandoff(root: string, now = new Date(
       rejectionReason: undefined,
     };
     await writeJsonAtomic(destination, record);
+    if (!blockers.length && options.autoPublisher && record.articleReview?.status !== 'unpublished') {
+      try { await options.autoPublisher(id); } catch { /* Durable publish_failed state is the observable result. */ }
+    }
+    if (!blockers.length && options.notifier && content.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))) {
+      const receiptPath = safeDataPath(root, 'reports', 'slack-article-ready', `${id}-revision-${record.revision}.json`);
+      if (!(await pathExists(receiptPath))) {
+        const latest = await readJson<ContentBankRecord>(destination);
+        const notification = await options.notifier({
+          id,
+          title: content.article.title,
+          dek: content.article.dek,
+          excerpt: content.article.excerpt,
+          category: content.article.category,
+          readingMinutes: content.article.readingMinutes,
+          sourceUrls: content.article.sourceUrls,
+          articleImagePaths: content.articleVisuals.assets.map((asset) => asset.assetPath!),
+          articlePreviewPath: content.articlePreviewPath,
+          publishStatus: latest.articleReview?.status === 'published' || latest.articleReview?.status === 'publish_failed' || latest.articleReview?.status === 'publishing' || latest.articleReview?.status === 'unpublished'
+            ? latest.articleReview.status
+            : undefined,
+          publishedUrl: latest.articleReview?.publishedUrl,
+          publishError: latest.articleReview?.publishError,
+        });
+        if (notification.sent) {
+          await writeJsonAtomic(receiptPath, {
+            version: 1,
+            id,
+            revision: record.revision,
+            sentAt: now.toISOString(),
+            channel: notification.channel,
+            messageTs: notification.messageTs,
+            fileIds: notification.fileIds ?? [],
+          });
+        }
+      }
+    }
     created += existing ? 0 : 1;
   }
   return created;

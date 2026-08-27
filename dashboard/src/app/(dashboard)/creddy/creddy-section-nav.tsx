@@ -26,8 +26,8 @@ export function CreddySectionNav() {
   const pathname = usePathname();
 
   return (
-    <div className="rounded-xl border bg-card p-2 shadow-sm">
-      <div className="flex items-center gap-2 overflow-x-auto">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border bg-card p-2 shadow-sm">
+      <div className="flex w-full items-center gap-2 overflow-x-auto">
         {sections.map((section) => {
           const active = pathname === section.href || pathname.startsWith(`${section.href}/`);
           const Icon = section.icon;

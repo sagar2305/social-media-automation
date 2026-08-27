@@ -46,6 +46,7 @@ data/*.backup.*
 /artifacts/
 /output/
 /tmp/
+/.firecrawl/
 /scripts/__pycache__/
 /assets/creddy/app-screens/raw/
 /assets/creddy/slideshow-expressions/

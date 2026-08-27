@@ -1,17 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { generatePendingArticleImages, type ArticleImageApi } from './article-image-stage.js';
+import {
+  CODEX_ARTICLE_IMAGE_RESULT_VERSION,
+  codexArticleImageFingerprint,
+  importCodexArticleImage,
+  prepareCodexArticleImageRequests,
+  type CodexArticleImageRequest,
+} from './article-image-stage.js';
 import { initializeCreddyDataRoot, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import { CREDDY_PIPELINE_VERSION, type VisualPlanRecord } from './pipeline-types.js';
 
-test('Agent 6 generates each missing approved article image once and records provenance', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'creddy-article-images-'));
-  await initializeCreddyDataRoot(root);
-  const plan: VisualPlanRecord = {
+function articlePlan(): VisualPlanRecord {
+  return {
     version: CREDDY_PIPELINE_VERSION,
     id: 'visual-copy-analysis-1',
     contentDraftId: 'copy-analysis-1',
@@ -31,27 +35,85 @@ test('Agent 6 generates each missing approved article image once and records pro
       }],
     },
   };
-  const path = safeDataPath(root, '06-visual-plans', `${plan.id}.json`);
-  await writeJsonAtomic(path, plan);
-  let calls = 0;
-  const client: ArticleImageApi = {
-    async generate() {
-      calls += 1;
-      const bytes = new Uint8Array(12_000);
-      bytes.set([0x89, 0x50, 0x4e, 0x47]);
-      return { bytes, mimeType: 'image/png', provenance: 'test approved generator' };
+}
+
+function pngFixture(width: number, height: number): Uint8Array {
+  const bytes = Buffer.alloc(12_000);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write('IHDR', 12, 'ascii');
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
+}
+
+test('Agent 6 writes durable Codex image requests from approved Agent 5 prompts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-codex-image-requests-'));
+  await initializeCreddyDataRoot(root);
+  const plan = articlePlan();
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${plan.id}.json`), plan);
+
+  const result = await prepareCodexArticleImageRequests(root);
+  assert.equal(result.requested, 1);
+  const request = await readJson<CodexArticleImageRequest>(result.outputPaths[0]!);
+  assert.equal(request.provider, 'codex-imagegen');
+  assert.equal(request.assets[0]!.assetId, 'hero-benefit');
+  assert.equal(request.assets[0]!.promptFingerprint, codexArticleImageFingerprint(plan.id, plan.articleVisuals!.assets[0]!));
+  assert.match(request.assets[0]!.prompt, /Use case: stylized-concept/);
+  assert.match(request.assets[0]!.prompt, /Text: none/);
+  assert.doesNotMatch(request.assets[0]!.prompt, /Gemini/i);
+});
+
+test('Agent 6 accepts each signed-in Codex image once and records validated provenance', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-codex-image-import-'));
+  await initializeCreddyDataRoot(root);
+  const plan = articlePlan();
+  const planPath = safeDataPath(root, '06-visual-plans', `${plan.id}.json`);
+  await writeJsonAtomic(planPath, plan);
+  const sourcePath = join(root, 'codex-hero.png');
+  await writeFile(sourcePath, pngFixture(1600, 900));
+  const manifest = {
+    version: CODEX_ARTICLE_IMAGE_RESULT_VERSION,
+    provider: 'codex-imagegen' as const,
+    visualPlanId: plan.id,
+    asset: {
+      assetId: 'hero-benefit',
+      promptFingerprint: codexArticleImageFingerprint(plan.id, plan.articleVisuals!.assets[0]!),
+      sourcePath,
     },
   };
 
-  const first = await generatePendingArticleImages(root, client);
-  assert.equal(first.generated, 1);
-  assert.equal(calls, 1);
-  const updated = await readJson<VisualPlanRecord>(path);
+  const first = await importCodexArticleImage(root, manifest);
+  assert.equal(first.accepted, 1);
+  const updated = await readJson<VisualPlanRecord>(planPath);
   const output = updated.articleVisuals!.assets[0]!.assetPath!;
   assert.equal((await readFile(output)).byteLength, 12_000);
-  assert.equal(updated.articleVisuals!.assets[0]!.provenance, 'test approved generator');
+  assert.match(updated.articleVisuals!.assets[0]!.provenance!, /signed-in Codex imagegen/);
 
-  const second = await generatePendingArticleImages(root, client);
-  assert.equal(second.generated, 0);
-  assert.equal(calls, 1);
+  const second = await importCodexArticleImage(root, manifest);
+  assert.equal(second.accepted, 0);
+  assert.equal(second.skipped, 1);
+});
+
+test('Agent 6 rejects Codex images that are not exact 16:9', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-codex-image-ratio-'));
+  await initializeCreddyDataRoot(root);
+  const plan = articlePlan();
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${plan.id}.json`), plan);
+  const sourcePath = join(root, 'codex-hero.png');
+  await writeFile(sourcePath, pngFixture(1200, 900));
+
+  await assert.rejects(
+    importCodexArticleImage(root, {
+      version: CODEX_ARTICLE_IMAGE_RESULT_VERSION,
+      provider: 'codex-imagegen',
+      visualPlanId: plan.id,
+      asset: {
+        assetId: 'hero-benefit',
+        promptFingerprint: codexArticleImageFingerprint(plan.id, plan.articleVisuals!.assets[0]!),
+        sourcePath,
+      },
+    }),
+    /must be exact 16:9/,
+  );
 });

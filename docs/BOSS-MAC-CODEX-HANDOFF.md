@@ -56,6 +56,14 @@ Perform these steps:
 11. Run a pipeline status/report check and a supervised no-publish dry run. Verify that every agent writes JSON/Markdown evidence locally and that at least five complete posts can reach pending human review when enough eligible unique items exist. Stop before approval or delivery.
 12. Show me one final readiness report covering code version, data path, services, account mappings, tests, dashboard URL, public callback, Slack verification, scheduler state, backups, disk space, logs, and every remaining blocker.
 
+For website articles, verify the Creddy website CMS migration and dynamic Blogs
+renderer were deployed once by the website owner. Confirm the protected local
+env contains the Supabase service-role credential, website base URL, and matching
+revalidation secret without printing them. Keep the CMS publish gate false until
+an article has explicit Agent 7 website approval. After that approval, Agent 8
+may upload the approved article and images directly to the CMS; it must not
+create one GitHub page, PR, or Vercel deployment per article.
+
 Only after I explicitly approve activation, set CREDDY_PIPELINE_ENABLED=true and create exactly one twice-daily Codex scheduled task in the Social Media Automation project. Its workflow must run Agents 1 through 8 sequentially in one task, start each agent only after the previous durable output passes validation, read the matching files under scripts/creddy/prompts before AI-driven stages, retry transient failures with bounded backoff, avoid duplicates using the existing locks/idempotency rules, preserve every JSON/Markdown report, require at least five content-bank posts per successful fetch cycle when at least five eligible unique items exist, and stop at human approval before any external delivery. Agent 8 may reconcile explicitly approved submissions, but publishing must remain human-controlled according to the portal settings. Never create one scheduled task per agent.
 
 The scheduled task must begin with `npm run creddy:validate` and `npm run creddy:test`, then use the Agent 01→08 command descriptions from `docs/CREDDY-SCHEDULED-TASKS.md`. Use that document for stage commands only: if its legacy multi-task schedule topology conflicts with this prompt, this prompt's exactly-one sequential task requirement wins. It must finish with `npm run creddy:pipeline -- report` and a visible summary of every stage, retry, no-op, blocker, output path, Content Bank status, Slack status, and exact next human action. Missing human approval is a safe no-op, not an error.
@@ -83,7 +91,8 @@ Keep the Mac powered on and the ChatGPT/Codex desktop app running for local sche
 `scripts/setup_creddy_office_mac.sh` is the repeatable installer and verifier
 that Codex runs after it has cloned the reviewed code. It:
 
-1. Confirms the computer is macOS and checks Git, Node, npm, and Python.
+1. Confirms the computer is macOS and checks Git, Node, npm, Python, and the
+   `cwebp` image optimizer.
 2. Copies the transferred data into a new empty destination and refuses to
    overwrite an existing non-empty folder.
 3. Installs the separately supplied private env file into protected root and
@@ -103,3 +112,14 @@ when it expires.
 It intentionally does **not** create the Codex scheduler, enable the pipeline,
 start publishing, schedule a post, or send a TikTok draft. Those actions happen
 only after the boss reviews the dry-run report and explicitly approves them.
+
+Keep `CREDDY_WEBSITE_ASSET_WEBP_ENABLED=true` and quality `88` on the office
+Mac. Agent 8 then converts approved article images to fingerprinted WebP files
+before upload, preserving exact 16:9 dimensions while reducing CMS storage and
+page weight. Local source images and slideshow assets are not modified. The
+setup script installs the required Homebrew `webp` package.
+
+Keep `CREDDY_WEBSITE_AUTO_PUBLISH_ON_APPROVAL=true` only on the supervised
+office Mac. Dashboard and Slack article approvals then run Agent 8 immediately.
+This still requires a server-only `SUPABASE_SERVICE_ROLE_KEY`; never expose it
+in browser code or commit it to Git.

@@ -73,6 +73,72 @@ test('Agent 7 accepts only a varied six-slide locked-template slideshow', async 
   assert.equal(notifications, 1, 'a persisted receipt prevents duplicate Slack messages');
 });
 
+test('Agent 7 sends an independent article review without changing slideshow notification', async () => {
+  const { root } = await fixture();
+  const articleDirectory = safeDataPath(root, '06-content-packages', 'articles');
+  await mkdir(articleDirectory, { recursive: true });
+  const articleImagePaths = Array.from({ length: 3 }, (_, index) => join(articleDirectory, `article-${index + 1}.png`));
+  for (const path of articleImagePaths) await writeFile(path, 'article-image');
+  const articlePreviewPath = join(articleDirectory, 'preview.html');
+  await writeFile(articlePreviewPath, '<!doctype html><title>Article preview</title>');
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'production-analysis-1.json'), {
+    version: CREDDY_PIPELINE_VERSION,
+    id: 'package-1',
+    articleReadiness: 'ready_for_review',
+    articlePreviewPath,
+    article: {
+      title: 'Independent website article',
+      dek: 'Verified article guidance.',
+      excerpt: 'A practical article summary.',
+      category: 'guides',
+      readingMinutes: 5,
+      sourceUrls: ['https://example.com/source'],
+    },
+    articleVisuals: {
+      assets: articleImagePaths.map((assetPath, index) => ({ id: `article-${index + 1}`, assetPath })),
+    },
+  });
+  let socialNotifications = 0;
+  let articleNotifications = 0;
+  const result = await runSlideshowContentBankHandoff(
+    root,
+    new Date(),
+    async () => {
+      socialNotifications += 1;
+      return { sent: true, channel: 'C123', messageTs: 'social.1', fileIds: [] };
+    },
+    async (event) => {
+      articleNotifications += 1;
+      assert.equal(event.title, 'Independent website article');
+      assert.deepEqual(event.articleImagePaths, articleImagePaths);
+      assert.equal(event.publishStatus, 'published');
+      return { sent: true, channel: 'C123', messageTs: 'article.1', fileIds: [] };
+    },
+    async (id) => {
+      const path = safeDataPath(root, '09-pending-approval', `${id}.json`);
+      const bank = await readJson<ContentBankRecord>(path);
+      bank.articleReview = { ...bank.articleReview!, status: 'published', publishedUrl: 'https://getcreddy.com/blog/test' };
+      await writeJsonAtomic(path, bank);
+      return true;
+    },
+  );
+  assert.equal(socialNotifications, 1);
+  assert.equal(articleNotifications, 1);
+  assert.equal(result.slackNotificationsSent, 1);
+  assert.equal(result.articleSlackNotificationsSent, 1);
+  assert.equal(result.articleAutoPublished, 1);
+  assert.equal(result.articleAutoPublishFailed, 0);
+
+  const rerun = await runSlideshowContentBankHandoff(
+    root,
+    new Date(),
+    async () => { throw new Error('social notification must be idempotent'); },
+    async () => { throw new Error('article notification must be idempotent'); },
+  );
+  assert.equal(rerun.slackNotificationsSkipped, 1);
+  assert.equal(rerun.articleSlackNotificationsSkipped, 1);
+});
+
 test('Agent 7 keeps already-rendered legacy expression manifests readable', async () => {
   const { root, manifest } = await fixture();
   const slides = manifest.slides as Array<Record<string, unknown>>;

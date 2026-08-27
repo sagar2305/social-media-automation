@@ -9,14 +9,14 @@ slideshow and video fields remain compatible.
 
 ## Live-site reference
 
-The `creddy-guides-v1` design mirrors the public `getcreddy.com` Guides language:
+The `creddy-guides-v1` design token set powers the public `getcreddy.com` Blogs presentation:
 
 - background `#FBFAF7`;
 - primary text `#1E1A16` and muted text `#7E7976`;
 - gold `#D2992E`, coral `#FF605D`, and cream `#FBF2DD` accents;
 - Fraunces/Georgia editorial headings and Geist/system body copy;
 - 18px rounded cards, restrained borders, generous vertical rhythm;
-- `/guides/<slug>` public routes;
+- `/blog/<slug>` public routes;
 - advertiser disclosure plus App Store and Google Play actions.
 
 The article uses a fluid desktop canvas with small responsive page gutters. The
@@ -27,7 +27,7 @@ subscription, and download cards to one column.
 ## Article anatomy
 
 1. Existing Creddy navigation.
-2. Guide breadcrumb, category, reading time, headline, and dek.
+2. Blog breadcrumb, category, reading time, headline, and dek.
 3. Visible advertiser disclosure.
 4. Hero editorial visual.
 5. Key takeaways.

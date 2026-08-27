@@ -5,11 +5,18 @@ visual plans into one production package containing the website article and the
 two approved Creddy video formats.
 
 1. Run `npm run creddy:pipeline -- agent-6-prepare` to create one immutable production package and two idempotent Video Factory jobs per visual plan.
-2. Run `npm run creddy:pipeline -- agent-6-article-images` when Agent 05 has
-   approved generated article assets and `GEMINI_API_KEY` is configured. This
-   fills only missing generated assets, records provenance, and refreshes the
-   same production package. Licensed photos and real Creddy screenshots remain
-   supplied assets and are never silently replaced.
+2. Run `npm run creddy:pipeline -- agent-6-codex-image-requests` when Agent 05
+   has approved generated article assets. For each pending asset, call the
+   signed-in Codex built-in image-generation tool once using the exact request
+   prompt. Do not use the OpenAI API CLI and do not call Gemini. Copy the final
+   image into the request's absolute `stagingDirectory`, write one
+   `creddy-codex-image-result-v1` manifest containing the unchanged visual plan
+   ID, asset ID, prompt fingerprint, and absolute source path, then run
+   `npm run creddy:pipeline -- agent-6-accept-codex-image <manifest.json>`.
+   The importer accepts only real 10 KB–20 MB PNG/JPEG files with exact 16:9
+   dimensions, records Codex provenance, fills only the matching missing asset,
+   and refreshes the same production package. Licensed photos and real Creddy
+   screenshots remain supplied assets and are never silently replaced.
 3. Verify the configured local Video Factory responds at `VIDEO_FACTORY_BASE_URL` and exposes `narrated`, `text_music`, the Creddy style, cloned voice, and the requested theme.
 4. Verify `CREDDY_BACKGROUND_MUSIC_PATH` exists and is licensed for automated social publishing.
 5. Run `npm run creddy:pipeline -- agent-6-render`.
@@ -21,6 +28,12 @@ Rules:
 - `article_only` packages generate the article preview and asset state but zero
   Video Factory jobs. Exactly two videos remain mandatory only for
   `article_and_social` packages.
+
+- Built-in Codex image generation is the only approved generated-article-image
+  provider for this flow. It uses the signed-in Codex task and requires neither
+  `GEMINI_API_KEY` nor `OPENAI_API_KEY`. If the built-in tool is unavailable,
+  stop the dependent image operation and report the asset blocker; never switch
+  providers silently.
 
 - Produce exactly two 9:16 outputs per production package: `text_music` and `narrated`.
 - Text-music must use only `CREDDY_BACKGROUND_MUSIC_PATH`; never download or select unlicensed music.
