@@ -10,10 +10,12 @@ import {
   ClipboardCheck,
   Clock3,
   LayoutGrid,
+  Newspaper,
 } from "lucide-react";
 
 const sections = [
   { href: "/creddy/all-content", label: "All Content", icon: LayoutGrid },
+  { href: "/creddy/content-bank/articles", label: "Articles", icon: Newspaper },
   { href: "/creddy/content-bank/slideshows", label: "Review Queue", icon: ClipboardCheck },
   { href: "/creddy/posts/approved", label: "Approved", icon: BadgeCheck },
   { href: "/creddy/calendar", label: "Calendar", icon: CalendarDays },

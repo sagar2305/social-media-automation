@@ -4,7 +4,12 @@ import {
   rejectCreddyItem,
   resolveCreddySlackReview,
 } from "@/lib/creddy-file-store";
-import { approveAndPublishCreddyWebsiteArticle, requestCreddyWebsiteArticleChanges } from "@/lib/creddy-website-publish";
+import {
+  approveAndPublishCreddyWebsiteArticle,
+  deleteCreddyWebsiteArticle,
+  repostCreddyWebsiteArticle,
+  requestCreddyWebsiteArticleChanges,
+} from "@/lib/creddy-website-publish";
 
 type SlackPayload = {
   user?: { id?: string; username?: string };
@@ -66,6 +71,28 @@ export async function POST(request: Request) {
         notes: `Website article changes requested by ${actor} in Slack.`,
       });
       return Response.json({ replace_original: true, text: `Website article changes requested by ${actor}. Nothing was published.` });
+    }
+    if (action.action_id === "creddy_website_delete") {
+      await deleteCreddyWebsiteArticle(action.value, `Slack: ${actor}`);
+      return Response.json({
+        replace_original: true,
+        text: `↩️ Website publication undone by ${actor}. The saved article can be reposted to the same slug. The slideshow remains unchanged.`,
+        blocks: [{
+          type: "actions",
+          elements: [{ type: "button", style: "primary", action_id: "creddy_website_repost", value: action.value, text: { type: "plain_text", text: "Repost article", emoji: true } }],
+        }],
+      });
+    }
+    if (action.action_id === "creddy_website_repost") {
+      const published = await repostCreddyWebsiteArticle(action.value, `Slack: ${actor}`);
+      return Response.json({
+        replace_original: true,
+        text: `✅ Website article reposted by ${actor} at ${published.liveUrl}. The slideshow remains unchanged.`,
+        blocks: [{
+          type: "actions",
+          elements: [{ type: "button", style: "danger", action_id: "creddy_website_delete", value: action.value, text: { type: "plain_text", text: "Undo publish", emoji: true } }],
+        }],
+      });
     }
     if (action.action_id === "creddy_content_reject") {
       await rejectCreddyItem({

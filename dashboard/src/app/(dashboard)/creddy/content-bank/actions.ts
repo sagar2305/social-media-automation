@@ -63,7 +63,8 @@ export async function repostCreddyWebsiteArticleAction(formData: FormData): Prom
     console.error(`[Creddy website] Repost failed for ${id}:`, error instanceof Error ? error.message : error);
     outcome = "article-publish-failed";
   }
-  revalidatePath("/creddy/content-bank");
+  revalidatePath("/creddy/content-bank/articles");
+  revalidatePath("/creddy/all-content");
   redirect(`/creddy/content-bank/articles?item=${encodeURIComponent(id)}&updated=${outcome}#${encodeURIComponent(id)}`);
 }
 
@@ -72,7 +73,8 @@ export async function deleteCreddyWebsiteArticleAction(formData: FormData): Prom
   if (!auth.ok) throw new Error(auth.error);
   const id = value(formData, "id");
   await deleteCreddyWebsiteArticle(id, auth.user.email || auth.user.id);
-  revalidatePath("/creddy/content-bank");
+  revalidatePath("/creddy/content-bank/articles");
+  revalidatePath("/creddy/all-content");
   redirect(`/creddy/content-bank/articles?item=${encodeURIComponent(id)}&updated=article-unpublished#${encodeURIComponent(id)}`);
 }
 
