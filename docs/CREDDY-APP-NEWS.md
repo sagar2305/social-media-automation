@@ -5,8 +5,12 @@
 On 2026-08-31, one source-verified U.S. Bank/Avianca story was published through
 the News branch and delivered to `#social-media-update`. The public snapshot
 returned HTTP 200 with the story; Slack returned receipt `1788184144.786179`.
-The production News schema is deployed. Recurring collection, Slack editor
-permissions, and end-to-end edit/delete delivery remain unverified or inactive.
+The production News schema is deployed. The owner subsequently approved the
+three current human channel members as News editors. The local dashboard and
+Socket Mode worker have management enabled. A dashboard headline edit reached
+the public app snapshot and updated the same Slack receipt at revision 2.
+Recurring collection is still off. Actual Slack button interaction and delivery
+to running iOS/Android screens still require end-to-end verification.
 
 Published notifications do not require editor permissions. With no editors
 configured, the notification has no edit/delete buttons and Slack mutations
@@ -116,7 +120,7 @@ save synchronization or guest migration is implemented in this milestone.
 
 ## Required staging checks before activation
 
-Local verification on 2026-08-31: 207 pipeline tests passed (12 News tests), root
+Local verification on 2026-08-31: 230 pipeline tests passed (19 News tests), root
 and dashboard TypeScript checks passed, and the dashboard production build passed.
 The isolated PostgreSQL migration/test passed publish, edit, stale-write rejection,
 delete, no-resurrection, notification-lease, audit, and anonymous-access checks.
