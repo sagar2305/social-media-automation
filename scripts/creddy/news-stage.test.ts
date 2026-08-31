@@ -8,7 +8,7 @@ import { prepareAppNews, newsSourceKey, runAppNewsStage } from './news-stage.js'
 import { CREDDY_PIPELINE_VERSION, type AnalysisDecisionRecord, type CanonicalNewsRecord } from './pipeline-types.js';
 import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import { NewsService } from '../../shared/creddy-news/creddy-news-service.js';
-import { authorizeNewsSlack, newsMessage, newsSlackAcknowledgement, notifyNews, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
+import { authorizeNewsSlack, handleNewsSlack, newsMessage, newsSlackAcknowledgement, notifyNews, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
 import { publicHttps, validateNewsPatch, type NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
 
 function fixtures() {
@@ -162,4 +162,67 @@ test('shared-cycle branch consumes existing evidence only and records a report',
 test('server errors never reveal upstream bodies or credentials', async () => {
   const service = new NewsService('https://example.com', 'test-key', async () => new Response('private upstream payload', { status: 500 }));
   await assert.rejects(service.get('test'), error => error instanceof Error && !error.message.includes('private upstream payload') && !error.message.includes('test-key'));
+});
+
+test('Slack edit opens promptly and loads the latest revision into the form', async () => {
+  const current = { ...item(), revision: 4 };
+  const calls: string[] = [];
+  const service = { get: async () => { calls.push('get'); return current; } } as unknown as NewsService;
+  await handleNewsSlack({ ...payload(), trigger_id: 'test-trigger' }, env, service, async (method, body) => {
+    calls.push(method);
+    if (method === 'views.open') return { view: { id: 'test-view' } };
+    const view = body.view as NonNullable<NewsSlackPayload['view']>;
+    assert.equal(view.callback_id, 'creddy_news_save');
+    assert.equal(authorizeNewsSlack({ ...payload(), view }, env).revision, 4);
+    return {};
+  });
+  assert.deepEqual(calls, ['views.open', 'get', 'views.update']);
+});
+
+test('Slack save writes once and updates the existing published notification', async () => {
+  const current = item(); current.slack_ts = '1.2'; current.slack_channel = 'CNEWS';
+  const p = payload();
+  p.view = { id: 'test-view', callback_id: 'creddy_news_save', private_metadata: p.actions![0].value,
+    state: { values: { headline: { value: { value: current.content.headline } },
+      summary: { value: { value: current.content.summary } }, category: { value: { selected_option: { value: 'Credit cards' } } } } } };
+  p.actions = undefined;
+  let writes = 0;
+  const service = {
+    manage: async (id: string, revision: number, action: string, patch: unknown, actor: string) => {
+      assert.equal(id, current.id); assert.equal(revision, 1); assert.equal(action, 'edit');
+      assert.equal(actor, 'slack:UEDITOR'); assert.ok(patch); writes++; current.revision++;
+    },
+    claimNotification: async () => current, notificationResult: async () => {},
+  } as unknown as NewsService;
+  const calls: string[] = [];
+  await handleNewsSlack(p, env, service, async (method, body) => {
+    calls.push(method);
+    if (method === 'chat.update') { assert.equal(body.ts, '1.2'); assert.match(JSON.stringify(body), /Revision 2/); return { ts:'1.2' }; }
+    assert.match(JSON.stringify(body), /Saved to app News/); return {};
+  });
+  assert.equal(writes, 1); assert.deepEqual(calls, ['chat.update', 'views.update']);
+});
+
+test('Slack deletion tombstones the item and removes controls from its notification', async () => {
+  const current = item(); current.slack_ts = '1.2'; current.slack_channel = 'CNEWS';
+  const p = payload(); p.actions![0].action_id = 'creddy_news_delete';
+  const service = {
+    manage: async (_id: string, revision: number, action: string, patch: unknown) => {
+      assert.equal(revision, 1); assert.equal(action, 'delete'); assert.equal(patch, null);
+      current.status = 'deleted'; current.revision++;
+    }, claimNotification: async () => current, notificationResult: async () => {},
+  } as unknown as NewsService;
+  await handleNewsSlack(p, env, service, async (method, body) => {
+    assert.equal(method, 'chat.update'); assert.match(JSON.stringify(body), /Deleted from app/);
+    assert.doesNotMatch(JSON.stringify(body), /creddy_news_edit|creddy_news_delete/); return { ts: '1.2' };
+  });
+});
+
+test('stale Slack actions report failure without a false success notification', async () => {
+  const p = payload(); p.actions![0].action_id = 'creddy_news_delete';
+  const service = { manage: async () => { throw new Error('News changed. Reload and try again.'); } } as unknown as NewsService;
+  await handleNewsSlack(p, env, service, async (method, body) => {
+    assert.equal(method, 'chat.postEphemeral'); assert.equal(body.user, 'UEDITOR');
+    assert.match(String(body.text), /News changed/); return {};
+  });
 });
