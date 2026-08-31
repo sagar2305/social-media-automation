@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
+import { handleNewsSlack, isNewsSlackPayload, newsSlackAcknowledgement, type NewsSlackPayload } from "@/lib/creddy-news-slack";
 import {
   approveCreddyItemFromSlack,
   rejectCreddyItem,
@@ -44,7 +46,19 @@ export async function POST(request: Request) {
   try {
     const encoded = new URLSearchParams(body).get("payload");
     if (!encoded) throw new Error("Slack payload is missing");
-    const payload = JSON.parse(encoded) as SlackPayload;
+    const payload = JSON.parse(encoded) as SlackPayload & NewsSlackPayload;
+    if (isNewsSlackPayload(payload)) {
+      try {
+        const ack = newsSlackAcknowledgement(payload);
+        after(async () => { try { await handleNewsSlack(payload); } catch { console.error('News Slack action failed. Check news service configuration.'); } });
+        return Response.json(ack);
+      } catch (error) {
+        const message = (error as Error).message;
+        return Response.json(payload.view
+          ? { response_action: 'errors', errors: { headline: message } }
+          : { response_type: 'ephemeral', text: message });
+      }
+    }
     const action = payload.actions?.[0];
     const actor = payload.user?.username || payload.user?.id;
     if (!action?.action_id || !action.value || !payload.user?.id || !actor) {

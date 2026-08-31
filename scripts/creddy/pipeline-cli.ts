@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { runAppNewsStage } from './news-stage.js';
 import { resolveWebsiteCmsCredentials } from './instant-website-publish.js';
 
 import { recordAgent1Feedback } from './agent1-feedback.js';
@@ -499,6 +500,10 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'agent-7-bank') {
+    // Independent consumer of accepted evidence; social approval remains unchanged.
+    let appNews: unknown;
+    try { appNews = await runAppNewsStage(root); }
+    catch (error) { appNews = { failed: true, error: (error as Error).message }; }
     const videoCreated = await runContentBankHandoff(root);
     const autoPublishArticle = async (id: string): Promise<boolean> => {
       const scopedId = process.env.CREDDY_AGENT7_AUTO_PUBLISH_ID?.trim();
@@ -533,6 +538,7 @@ async function main(): Promise<void> {
     }, {});
     console.log(JSON.stringify({
       agent: 7,
+      appNews,
       videoCreated,
       articleCreated,
       slideshow,
@@ -544,6 +550,11 @@ async function main(): Promise<void> {
   }
   if (command === 'content-pending') {
     console.log(JSON.stringify(await listPendingContentOpportunities(root), null, 2));
+    return;
+  }
+  if (command === 'app-news-publish') {
+    const canonicalIds = process.argv.slice(3);
+    console.log(JSON.stringify(await runAppNewsStage(root, canonicalIds.length ? { canonicalIds } : {}), null, 2));
     return;
   }
   if (command === 'accept-content') {

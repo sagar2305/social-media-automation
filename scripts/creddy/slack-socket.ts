@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
 import dotenv from 'dotenv';
+import { handleNewsSlack, isNewsSlackPayload, newsSlackAcknowledgement, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
 
 import {
   approveCreddyContentFromSlack,
@@ -18,6 +19,9 @@ dotenv.config({ path: '.env.local', quiet: true });
 
 type SlackBlock = Record<string, unknown> & { type?: string };
 type SlackActionPayload = {
+  type?: string;
+  team?: { id?: string };
+  view?: NewsSlackPayload['view'];
   user?: { id?: string; username?: string; name?: string };
   trigger_id?: string;
   channel?: { id?: string };
@@ -362,6 +366,19 @@ async function runConnection(): Promise<void> {
           return;
         }
         if (!envelope.envelope_id || envelope.type !== 'interactive' || !envelope.payload) return;
+        if (isNewsSlackPayload(envelope.payload)) {
+          try {
+            const ack = newsSlackAcknowledgement(envelope.payload);
+            socket.send(JSON.stringify({ envelope_id: envelope.envelope_id, payload: ack }));
+            await handleNewsSlack(envelope.payload);
+          } catch (error) {
+            const message = (error as Error).message;
+            if (envelope.payload.view) socket.send(JSON.stringify({ envelope_id: envelope.envelope_id,
+              payload: { response_action: 'errors', errors: { headline: message } } }));
+            else { socket.send(JSON.stringify({ envelope_id: envelope.envelope_id })); await postError(envelope.payload, message); }
+          }
+          return;
+        }
         socket.send(JSON.stringify({ envelope_id: envelope.envelope_id }));
         try {
           await handleSlackAction(envelope.payload);

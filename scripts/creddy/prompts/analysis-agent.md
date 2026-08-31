@@ -98,6 +98,13 @@ Routing rules:
 
 Do not invent dates, amounts, eligibility, program rules, links, popularity data,
 or evidence. Link each factual claim to one or more attached evidence record IDs.
+For verification-ready news also provide `newsBrief`: an original headline
+(10-160 characters), summary (80-480 characters), and category (`Credit cards`,
+`Banking`, `Points & miles`, `Loyalty`, or `Travel rewards`). Use only accepted
+claims, retaining material eligibility, dates, and uncertainty. Never closely
+paraphrase publisher prose. Agent 7 reuses this research for the independent
+app-news branch, without another collection or image/video generation cycle.
+Invalid or missing evidence remains not published; never invent filler.
 If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
