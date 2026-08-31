@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets" / "creddy"
-EXPRESSIONS = ASSETS / "slideshow-expressions-1080x1440"
+EXPRESSIONS = ASSETS / "slideshow-emotion-gestures-v4-1080x1440"
 PHONE_SCREENS = ASSETS / "slideshow-templates" / "phone-screens"
 HEADLINE_FONT = ASSETS / "slideshow-templates" / "fonts" / "tungsten-condensed-bold.ttf"
 CARD_FONT = ASSETS / "slideshow-templates" / "fonts" / "DIN-Condensed-Bold.ttf"
@@ -23,34 +23,21 @@ GOLD = "#C99625"
 BLACK = "#090806"
 
 EXPRESSION_FILES = {
-    "neutral": "01-neutral-friendly.png",
-    "waving": "02-waving-hello.png",
-    "thinking": "03-thinking.png",
-    "confused": "04-confused.png",
-    "idea": "17-aha-idea.png",
-    "worried": "12-worried.png",
-    "surprised": "07-surprised.png",
-    "sleepy": "08-sleepy.png",
-    "starstruck": "14-rewards-excited.png",
-    "sad": "11-sad.png",
-    "wink": "09-confident-wink.png",
-    "card": "13-card-approval.png",
-    "thumbs-up": "10-thumbs-up.png",
-    "guide": "06-presenting.png",
-    "rewards": "14-rewards-excited.png",
-    "celebrate": "05-celebrating.png",
-    "curious": "15-listening-curious.png",
-    "skeptical": "16-skeptical.png",
-    "pointing": "18-pointing-left.png",
-    "happy": "19-happy-laughing.png",
-    "urgent": "20-urgent-stop.png",
-    # Older accepted Agent 5 plans remain readable. These aliases map to the
-    # locked 3:4 asset library without generating replacement artwork.
-    "explaining": "06-presenting.png",
-    "concerned": "12-worried.png",
-    "celebrating": "05-celebrating.png",
-    "excited": "14-rewards-excited.png",
+    item["name"]: item["file"]
+    for item in json.loads((EXPRESSIONS / "manifest.json").read_text())["expressions"]
 }
+LEGACY_EXPRESSION_ALIASES = {
+    "neutral": "001-neutral-friendly", "waving": "002-happy-waving", "thinking": "074-thinking-left",
+    "confused": "012-confused", "idea": "061-inspired", "worried": "018-worried",
+    "surprised": "009-surprised", "sleepy": "040-sleepy", "starstruck": "079-starstruck",
+    "sad": "023-sad", "wink": "049-confident-wink", "card": "063-focused",
+    "thumbs-up": "100-celebratory-face", "guide": "003-happy-smile", "rewards": "082-rewards-excited",
+    "celebrate": "100-celebratory-face", "curious": "011-curious", "skeptical": "014-skeptical",
+    "pointing": "008-amazed", "happy": "089-warm-smile", "urgent": "068-urgent",
+    "explaining": "003-happy-smile", "concerned": "065-concerned",
+    "celebrating": "100-celebratory-face", "excited": "007-excited",
+}
+EXPRESSION_FILES.update({alias: EXPRESSION_FILES[target] for alias, target in LEGACY_EXPRESSION_ALIASES.items()})
 
 PHONE_TEMPLATES = {
     "wallet_vouchers": "creddy-phone-wallet-vouchers-1080x1440.png",
@@ -379,7 +366,7 @@ def write_report(output: Path, plan: dict, manifest: dict) -> None:
 ## Verification
 
 - Every PNG was reopened after rendering and verified at exactly {WIDTH} × {HEIGHT}.
-- Slides 1–5 use script-matched poses from the approved 20-expression Creddy library.
+- Slides 1–5 use script-matched poses from the approved 100-expression Creddy library.
 - Slide 6 uses one approved real-app phone-screen template as product proof/CTA.
 - Slide 6 never receives a support-card overlay, so Creddy and the phone screen remain unobstructed.
 - Text was rendered with the supplied local font files, not image-generated lettering.

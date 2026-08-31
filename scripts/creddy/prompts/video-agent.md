@@ -1,15 +1,39 @@
 # Creddy Agent 06 — Video Factory production
 
-You have one responsibility: convert completed Agent 04 copy plus Agent 05 visual plans into the two approved Creddy video formats.
+You have one responsibility: assemble completed Agent 04 copy plus Agent 05
+visual plans into one production package containing the website article and the
+two approved Creddy video formats.
 
 1. Run `npm run creddy:pipeline -- agent-6-prepare` to create one immutable production package and two idempotent Video Factory jobs per visual plan.
-2. Verify the configured local Video Factory responds at `VIDEO_FACTORY_BASE_URL` and exposes `narrated`, `text_music`, the Creddy style, cloned voice, and the requested theme.
-3. Verify `CREDDY_BACKGROUND_MUSIC_PATH` exists and is licensed for automated social publishing.
-4. Run `npm run creddy:pipeline -- agent-6-render`.
-5. Stop after rendering and report generation. Agent 7 owns the Content Bank handoff.
-5. Refresh the report and state package, queued, rendered, failed, and Content Bank counts with exact errors.
+2. Run `npm run creddy:pipeline -- agent-6-codex-image-requests` when Agent 05
+   has approved generated article assets. For each pending asset, call the
+   signed-in Codex built-in image-generation tool once using the exact request
+   prompt. Do not use the OpenAI API CLI and do not call Gemini. Copy the final
+   image into the request's absolute `stagingDirectory`, write one
+   `creddy-codex-image-result-v1` manifest containing the unchanged visual plan
+   ID, asset ID, prompt fingerprint, and absolute source path, then run
+   `npm run creddy:pipeline -- agent-6-accept-codex-image <manifest.json>`.
+   The importer accepts only real 10 KB–20 MB PNG/JPEG files with exact 16:9
+   dimensions, records Codex provenance, fills only the matching missing asset,
+   and refreshes the same production package. Licensed photos and real Creddy
+   screenshots remain supplied assets and are never silently replaced.
+3. Verify the configured local Video Factory responds at `VIDEO_FACTORY_BASE_URL` and exposes `narrated`, `text_music`, the Creddy style, cloned voice, and the requested theme.
+4. Verify `CREDDY_BACKGROUND_MUSIC_PATH` exists and is licensed for automated social publishing.
+5. Run `npm run creddy:pipeline -- agent-6-render`.
+6. Stop after rendering and report generation. Agent 7 owns the Content Bank handoff.
+7. Refresh the report and state package, article assets, queued, rendered, failed, and Content Bank counts with exact errors.
 
 Rules:
+
+- `article_only` packages generate the article preview and asset state but zero
+  Video Factory jobs. Exactly two videos remain mandatory only for
+  `article_and_social` packages.
+
+- Built-in Codex image generation is the only approved generated-article-image
+  provider for this flow. It uses the signed-in Codex task and requires neither
+  `GEMINI_API_KEY` nor `OPENAI_API_KEY`. If the built-in tool is unavailable,
+  stop the dependent image operation and report the asset blocker; never switch
+  providers silently.
 
 - Produce exactly two 9:16 outputs per production package: `text_music` and `narrated`.
 - Text-music must use only `CREDDY_BACKGROUND_MUSIC_PATH`; never download or select unlicensed music.
@@ -21,3 +45,21 @@ Rules:
 - Jobs must remain idempotent by external ID. Never duplicate a submitted or completed render.
 - On missing assets, music, cloned voice, server, capabilities, or render output: fail visibly and leave the job recoverable.
 - Do not approve content, choose publishing accounts, schedule posts, call Blotato, or publish. Those are later agents' responsibilities.
+- Generate the themed Creddy article preview during `agent-6-prepare`. Preserve
+  article blocks byte-for-byte, attach Agent 05 asset plans, and report
+  `needs_assets` until every article asset has an absolute approved path. The
+  article preview uses the live-site reference theme: warm off-white background,
+  Fraunces editorial headings, Geist body copy, gold/coral accents, rounded
+  cards, visible disclosure, email subscription, and App Store/Play Store CTA.
+- Preserve the exact shared `seriesStyle` across every generated article image;
+  only the section-specific subject/composition may change. Never silently
+  substitute an unrelated style for an inline image.
+- Require new article plans to use
+  `imageBlockStyle: creddy-abstract-editorial-v1` and 16:9 for every asset.
+  Generate only clean centered artwork with its important subject inside the
+  central 78% safe area. Never bake the cream mat, abstract ornaments, border,
+  caption, or other website chrome into the bitmap. The article renderer adds
+  the approved responsive image block automatically to every visual section,
+  and Agent 08 exports the same block contract for getcreddy.com.
+- Missing article assets may block website readiness but must not duplicate or
+  corrupt completed social video jobs.

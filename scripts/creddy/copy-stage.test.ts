@@ -41,6 +41,18 @@ function decision(): AnalysisDecisionRecord {
     affectedPrograms: ['Example Airline'], requiredAction: 'Check award space first.', expiry: '2026-08-30',
     claims: [{ field: 'bonus_amount', value: 20, sourceRecordIds: ['raw-1'], confidence: 90 }],
     productFitScore: 90, popularityScore: 78, importanceScore: 82, confidenceScore: 90,
+    rubricVersion: 'creddy-ranking-v3',
+    viralPotential: {
+      score: 70, hookStrength: 70, audienceBreadth: 70, financialMagnitude: 70,
+      novelty: 70, urgency: 70, practicalUtility: 70, visualPotential: 70,
+      discussionPotential: 70, emotionalAspiration: 70, shareSavePotential: 70,
+      reasons: ['Useful, broadly relevant transfer decision'],
+    },
+    channelScores: { instagramTikTok: 72, blogSeo: 80, newsletter: 76, evergreen: 85 },
+    freshnessScore: 60, editorialPriorityScore: 78, editorialDisposition: 'evergreen',
+    verificationState: 'ready', verificationRequirements: [],
+    hookType: 'decision_rule', hookRationale: 'Readers can apply a concrete transfer checklist.',
+    portfolioCategory: 'evergreen_education',
     importanceReasons: ['Actionable'], confidenceReasons: ['Terms explicit'], materialConflict: false,
     conflictChangesMessage: false, verificationExhausted: true, route: 'evergreen_queue',
     rejectionReasons: [], evidenceRecordIds: ['raw-1'],
@@ -49,7 +61,7 @@ function decision(): AnalysisDecisionRecord {
 
 function draft(): ContentDraftRecord {
   return {
-    version: CREDDY_PIPELINE_VERSION, copyVersion: 'creddy-copy-v2',
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_and_social', copyVersion: 'creddy-copy-v2',
     id: 'copy-analysis-1', analysisId: 'analysis-1',
     canonicalId: 'canonical-1', createdAt: '2026-08-19T12:30:00.000Z',
     audience: 'US rewards optimizers', slot: 'understand', hook: 'A transfer bonus can change the math',
@@ -119,16 +131,50 @@ async function fixture(): Promise<string> {
   return root;
 }
 
-test('Agent 4 accepts copy-only output without creating video jobs', async () => {
+test('Agent 4 preserves v2 copy without video jobs and requeues it for the v3 article', async () => {
   const root = await fixture();
   assert.equal((await listPendingCopyTasks(root)).length, 1);
   await acceptContentDraft(root, draft(), new Date('2026-08-25T00:00:00Z'));
-  assert.equal((await listPendingCopyTasks(root)).length, 0);
+  assert.equal((await listPendingCopyTasks(root)).length, 1);
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts'))).length, 4);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
 });
 
-test('Agent 4 requeues legacy drafts for a claim-traceable concept pack', async () => {
+test('Agent 4 ignores stale legacy opportunities after ranking-v3 reanalysis', async () => {
+  const root = await fixture();
+  const legacy = decision();
+  delete legacy.rubricVersion;
+  delete legacy.viralPotential;
+  delete legacy.channelScores;
+  delete legacy.freshnessScore;
+  delete legacy.editorialPriorityScore;
+  delete legacy.editorialDisposition;
+  delete legacy.verificationState;
+  delete legacy.verificationRequirements;
+  delete legacy.hookType;
+  delete legacy.hookRationale;
+  delete legacy.portfolioCategory;
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), legacy);
+  assert.equal((await listPendingCopyTasks(root)).length, 0);
+});
+
+test('Agent 4 queues stable evergreen education as article-only without unlocking social', async () => {
+  const root = await fixture();
+  const evergreen = decision();
+  evergreen.headline = 'How hotel loyalty status and redemption value work together';
+  evergreen.summary = 'An evergreen framework for comparing hotel programs and benefits.';
+  evergreen.expiry = null;
+  evergreen.verificationState = 'official_source_needed';
+  evergreen.verificationRequirements = ['Confirm any program-specific examples before publication.'];
+  evergreen.route = 'reverify';
+  evergreen.hookType = 'decision_rule';
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), evergreen);
+  const pending = await listPendingCopyTasks(root);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0]!.distributionMode, 'article_only');
+});
+
+test('Agent 4 archives legacy drafts and still requires the current article-enabled version', async () => {
   const root = await fixture();
   const legacy = draft();
   delete legacy.copyVersion;
@@ -137,7 +183,7 @@ test('Agent 4 requeues legacy drafts for a claim-traceable concept pack', async 
   assert.equal((await listPendingCopyTasks(root)).length, 1);
   await acceptContentDraft(root, draft(), new Date('2026-08-25T00:00:00Z'));
   assert.equal((await listJsonFiles(safeDataPath(root, '06-content-drafts', 'legacy'))).length, 1);
-  assert.equal((await listPendingCopyTasks(root)).length, 0);
+  assert.equal((await listPendingCopyTasks(root)).length, 1);
 });
 
 test('Agent 4 rejects changed accepted claims', async () => {

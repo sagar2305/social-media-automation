@@ -15,6 +15,8 @@ import {
   type ContentPackageRecord,
   type VideoJobRecord,
 } from './pipeline-types.js';
+import { validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
+import { CREDDY_APPROVED_EXPRESSIONS } from './expression-library.js';
 
 export function validateContentPackage(content: ContentPackageRecord): ContentPackageRecord {
   if (content.version !== CREDDY_PIPELINE_VERSION) throw new Error('Invalid content version');
@@ -25,10 +27,11 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
     throw new Error('Invalid content slot');
   }
   if (!content.hook.trim()) throw new Error('Content hook is required');
-  if (!Array.isArray(content.scriptLines) || content.scriptLines.length < 2) {
+  const articleOnly = content.distributionMode === 'article_only';
+  if (!Array.isArray(content.scriptLines) || (!articleOnly && content.scriptLines.length < 2) || (articleOnly && content.scriptLines.length !== 0)) {
     throw new Error('Content package requires at least two script lines');
   }
-  if (!content.caption.trim()) throw new Error('Content caption is required');
+  if (!articleOnly && !content.caption.trim()) throw new Error('Content caption is required');
   if (!content.cta?.deepLink.startsWith('creddy://')) {
     throw new Error('Creddy CTA must use a creddy:// deep link');
   }
@@ -40,16 +43,17 @@ export function validateContentPackage(content: ContentPackageRecord): ContentPa
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid source URL');
   }
   if (!Array.isArray(content.factualClaims)) throw new Error('factualClaims must be an array');
+  if (articleOnly && !content.article) throw new Error('Article-only package requires a website article');
+  if (content.article) {
+    validateCreddyArticle(content.article, content.factualClaims, content.sourceUrls);
+    if (!content.articleVisuals) throw new Error('Website article requires its Agent 05 visual plan');
+    validateCreddyArticleVisuals(content.articleVisuals, content.article, content.factualClaims);
+    if (!content.articleReadiness) throw new Error('Website article requires an asset-readiness state');
+  }
   if (content.characterExpressions !== undefined) {
-    const supported = new Set([
-      'neutral', 'waving', 'thinking', 'idea', 'worried', 'surprised',
-      'sleepy', 'starstruck', 'sad', 'wink', 'card', 'thumbs-up',
-      'guide', 'rewards', 'celebrate',
-      'excited', 'concerned', 'celebrating', 'pointing', 'explaining', 'urgent',
-    ]);
     if (!Array.isArray(content.characterExpressions)
       || content.characterExpressions.length !== content.scriptLines.length
-      || content.characterExpressions.some((expression) => !supported.has(expression))) {
+      || content.characterExpressions.some((expression) => !CREDDY_APPROVED_EXPRESSIONS.has(expression))) {
       throw new Error('characterExpressions must contain one supported expression per script line');
     }
   }
@@ -64,6 +68,7 @@ export async function writeContentAndJobs(
   root: string,
   content: ContentPackageRecord,
   revision: number,
+  createVideoJobs = true,
 ): Promise<VideoJobRecord[]> {
   const imageRoot = safeDataPath(root, '06-content-packages', 'images');
   for (const path of content.imagePaths ?? []) {
@@ -89,9 +94,19 @@ export async function writeContentAndJobs(
     { id: content.id, revision, brief: content.brief, sourceUrls: content.sourceUrls });
   await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'images', `${content.id}.json`),
     { id: content.id, revision, prompts: content.imagePrompts, paths: content.imagePaths ?? [] });
+  if (content.article) {
+    await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'articles', `${content.id}.json`), {
+      id: content.id,
+      revision,
+      readiness: content.articleReadiness,
+      previewPath: content.articlePreviewPath,
+      article: content.article,
+      visuals: content.articleVisuals,
+    });
+  }
 
   const now = new Date().toISOString();
-  const jobs: VideoJobRecord[] = (['text_music', 'narrated'] as const).map((format) => ({
+  const jobs: VideoJobRecord[] = (createVideoJobs ? ['text_music', 'narrated'] as const : []).map((format) => ({
     version: CREDDY_PIPELINE_VERSION,
     id: videoJobId(content.id, format, revision),
     contentPackageId: content.id,

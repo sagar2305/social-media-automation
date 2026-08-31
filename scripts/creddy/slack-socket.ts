@@ -9,6 +9,9 @@ import {
   undoCreddyContentDecisionFromSlack,
 } from './slack-content-store.js';
 import type { CreddySlackFullReview } from './slack-content-store.js';
+import { autoPublishWebsiteArticle, unpublishWebsiteArticle } from './article-approval-service.js';
+import { publishApprovedWebsiteArticlesImmediately, unpublishWebsiteArticleImmediately } from './instant-website-publish.js';
+import { resolveCreddyDataRoot } from './pipeline-store.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -94,6 +97,16 @@ export function fullReviewModal(payload: SlackActionPayload, details?: CreddySla
       blocks.push(section(`*CTA*\n${clean(details.cta.label ?? '')}${details.cta.deepLink ? ` → \`${clean(details.cta.deepLink)}\`` : ''}`));
     }
     if (claims) blocks.push(section(`*Verified factual claims*\n${claims}`));
+    if (details.article) {
+      blocks.push(
+        { type: 'divider' },
+        section(`*Website article*\n*${clean(details.article.title)}*\n${clean(details.article.dek)}`),
+        section(`*Article summary*\n${clean(details.article.excerpt)}\n\n*Category:* ${clean(details.article.category.replaceAll('_', ' '))}  •  *Reading time:* ${details.article.readingMinutes} min  •  *Structured blocks:* ${details.article.blocks.length}`),
+        { type: 'context', elements: [{ type: 'mrkdwn', text: details.articlePreviewAttached
+          ? ':newspaper: The complete HTML article preview and approved 16:9 images are attached with the website-review message in the channel.'
+          : ':warning: The complete article preview is not attached.' }] },
+      );
+    }
     if (details.sourceUrls.length) blocks.push(section(`*Sources*\n${sourceLinks(details.sourceUrls) || 'No valid web sources available.'}`));
     blocks.push(
       section(`*Decision log*\n${history}`),
@@ -191,6 +204,31 @@ async function updateResolvedMessage(payload: SlackActionPayload, text: string):
   });
 }
 
+async function updateArticleMessage(
+  payload: SlackActionPayload,
+  text: string,
+  action: 'delete' | 'repost' | 'retry',
+): Promise<void> {
+  const channel = payload.channel?.id || payload.container?.channel_id;
+  const ts = payload.message?.ts || payload.container?.message_ts;
+  const id = payload.actions?.[0]?.value;
+  if (!channel || !ts || !id) throw new Error('Slack article message location is missing');
+  const open = { type: 'button', action_id: 'creddy_content_open', value: id, text: { type: 'plain_text', text: 'View full article', emoji: true } };
+  const management = action === 'delete'
+    ? { type: 'button', style: 'danger', action_id: 'creddy_website_delete', value: id, text: { type: 'plain_text', text: 'Undo publish', emoji: true } }
+    : { type: 'button', style: 'primary', action_id: 'creddy_website_repost', value: id, text: { type: 'plain_text', text: action === 'retry' ? 'Retry publish' : 'Repost article', emoji: true } };
+  await slackApi('chat.update', {
+    channel,
+    ts,
+    text,
+    blocks: [
+      ...(payload.message?.blocks ?? []).filter((block) => block.type !== 'actions' && block.block_id !== 'creddy_resolution_status'),
+      { type: 'section', block_id: 'creddy_resolution_status', text: { type: 'mrkdwn', text } },
+      { type: 'actions', elements: [management, open] },
+    ],
+  });
+}
+
 export async function handleSlackAction(payload: SlackActionPayload): Promise<void> {
   const action = payload.actions?.[0];
   const actor = payload.user?.username || payload.user?.name || payload.user?.id;
@@ -209,6 +247,30 @@ export async function handleSlackAction(payload: SlackActionPayload): Promise<vo
     const text = `:white_check_mark: Creddy post approved in the portal by ${actor}. Nothing was scheduled or published.`;
     await updateResolvedMessage(payload, text);
     console.log(`[Creddy Slack Socket] ${action.value} approved by ${actor}.`);
+    return;
+  }
+  if (action.action_id === 'creddy_website_approve' || action.action_id === 'creddy_website_repost') {
+    const published = await autoPublishWebsiteArticle({
+      root: resolveCreddyDataRoot(),
+      id: action.value,
+      websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
+      publish: () => publishApprovedWebsiteArticlesImmediately(),
+    });
+    const text = `:white_check_mark: Website article approved by ${actor} and published at <${published.liveUrl}|Open live article>. The slideshow remains unchanged.`;
+    await updateArticleMessage(payload, text, 'delete');
+    console.log(`[Creddy Slack Socket] ${action.value} website article reposted and CMS sync completed for ${actor}.`);
+    return;
+  }
+  if (action.action_id === 'creddy_website_delete') {
+    const deleted = await unpublishWebsiteArticle({
+      root: resolveCreddyDataRoot(),
+      id: action.value,
+      unpublishedBy: `Slack: ${actor}`,
+      unpublish: (slug) => unpublishWebsiteArticleImmediately({ slug }),
+    });
+    const text = `:leftwards_arrow_with_hook: Website publication undone by ${actor}. ${deleted.removedAssets} CMS image assets were removed. The slideshow remains unchanged.`;
+    await updateArticleMessage(payload, text, 'repost');
+    console.log(`[Creddy Slack Socket] ${action.value} website article deleted by ${actor}.`);
     return;
   }
   if (action.action_id === 'creddy_content_reject') {

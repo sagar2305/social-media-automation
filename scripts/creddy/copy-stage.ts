@@ -17,6 +17,8 @@ import { CREDDY_SOURCES } from './config.js';
 import { validateDraftTrendReference } from './hook-trend-stage.js';
 import { validateApprovedCta } from './product-capabilities.js';
 import { assertReleasedCapabilityStatus } from './product-release-stage.js';
+import { validateCreddyArticle } from './article-content.js';
+import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 function words(value: string): number {
   return value.trim().split(/\s+/).filter(Boolean).length;
@@ -286,36 +288,43 @@ export function validateContentDraft(draft: ContentDraftRecord): ContentDraftRec
   if (draft.version !== CREDDY_PIPELINE_VERSION) throw new Error('Invalid content-draft version');
   if (!draft.id || !draft.analysisId || !draft.canonicalId) throw new Error('Content-draft IDs are required');
   if (!draft.id.startsWith('copy-')) throw new Error('Content-draft ID must start with copy-');
+  const articleOnly = draft.distributionMode === 'article_only';
+  if (draft.copyVersion === 'creddy-copy-v3' && !draft.distributionMode) {
+    throw new Error('Agent 04 copy v3 requires an explicit distribution mode');
+  }
   if (!['act_now', 'understand', 'decide_or_discuss'].includes(draft.slot)) throw new Error('Invalid content slot');
   if (!draft.hook.trim() || draft.hook.length > 140) throw new Error('Hook must contain 1–140 characters');
-  if (!Array.isArray(draft.textScenes) || draft.textScenes.length !== 6) {
+  if (!Array.isArray(draft.textScenes) || (!articleOnly && draft.textScenes.length !== 6) || (articleOnly && draft.textScenes.length !== 0)) {
+    if (articleOnly) throw new Error('Article-only drafts cannot contain social slideshow scenes');
     throw new Error('Creddy slideshow requires exactly six text scenes');
   }
   if (draft.textScenes.some((scene) => !scene.trim() || scene.length > 220)) {
     throw new Error('Every text scene must contain 1–220 characters');
   }
-  if (draft.copyVersion === 'creddy-copy-v2' &&
+  if (draft.copyVersion && ['creddy-copy-v2', 'creddy-copy-v3'].includes(draft.copyVersion) &&
       (words(draft.hook) > 12 || draft.textScenes.some((scene, index) => words(scene) > (index === 0 ? 12 : 22)))) {
     throw new Error('Agent 4 slideshow copy exceeds the visual word budget: 12 words for the hook, 22 elsewhere');
   }
-  if (draft.copyVersion === 'creddy-copy-v2' &&
+  if (draft.copyVersion && ['creddy-copy-v2', 'creddy-copy-v3'].includes(draft.copyVersion) &&
       [draft.hook, ...draft.textScenes].some((value) => value !== value.trim().replace(/\s+/g, ' '))) {
     throw new Error('Agent 4 slideshow copy must use canonical single-space text for deterministic visual layout');
   }
-  validateIndependentSlideshowCopy(draft);
+  if (!articleOnly) validateIndependentSlideshowCopy(draft);
   const narrationWords = words(draft.narrationScript);
-  if (narrationWords < 35 || narrationWords > 220) throw new Error('Narration must contain 35–220 words');
-  if (!draft.instagramCaption.trim() || draft.instagramCaption.length > 2_200) {
+  if ((!articleOnly && (narrationWords < 35 || narrationWords > 220)) || (articleOnly && narrationWords !== 0)) {
+    throw new Error(articleOnly ? 'Article-only drafts cannot contain social narration' : 'Narration must contain 35–220 words');
+  }
+  if ((!articleOnly && !draft.instagramCaption.trim()) || draft.instagramCaption.length > 2_200) {
     throw new Error('Instagram caption must contain 1–2200 characters');
   }
-  if (!draft.tiktokCaption.trim() || draft.tiktokCaption.length > 2_200) {
+  if ((!articleOnly && !draft.tiktokCaption.trim()) || draft.tiktokCaption.length > 2_200) {
     throw new Error('TikTok caption must contain 1–2200 characters');
   }
-  if (!Array.isArray(draft.hashtags) || draft.hashtags.length < 3 || draft.hashtags.length > 12) {
+  if (!Array.isArray(draft.hashtags) || (!articleOnly && draft.hashtags.length < 3) || draft.hashtags.length > 12 || (articleOnly && draft.hashtags.length !== 0)) {
     throw new Error('Content draft requires 3–12 hashtags');
   }
   if (!draft.cta?.deepLink.startsWith('creddy://')) throw new Error('CTA must use a creddy:// app deep link');
-  validateApprovedCta(draft);
+  if (!articleOnly) validateApprovedCta(draft);
   assertNoExternalBrands(draft);
   if (!Array.isArray(draft.sourceUrls) || draft.sourceUrls.length === 0) throw new Error('At least one source URL is required');
   for (const value of draft.sourceUrls) {
@@ -323,7 +332,13 @@ export function validateContentDraft(draft: ContentDraftRecord): ContentDraftRec
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Invalid source URL');
   }
   if (!Array.isArray(draft.factualClaims)) throw new Error('factualClaims must be an array');
-  if (draft.copyVersion === 'creddy-copy-v2') validateContentConceptPack(draft);
+  if (draft.copyVersion && ['creddy-copy-v2', 'creddy-copy-v3'].includes(draft.copyVersion) && !articleOnly) {
+    validateContentConceptPack(draft);
+  }
+  if (draft.copyVersion === 'creddy-copy-v3') {
+    if (!draft.article) throw new Error('Agent 04 copy v3 requires a complete website article');
+    validateCreddyArticle(draft.article, draft.factualClaims, draft.sourceUrls);
+  }
   return draft;
 }
 
@@ -334,11 +349,11 @@ async function opportunityTasks(root: string): Promise<ContentOpportunityTaskRec
   );
   const articleById = new Map(canonical.map((article) => [article.canonicalId, article]));
   const tasks: ContentOpportunityTaskRecord[] = [];
-  for (const path of await listJsonFiles(safeDataPath(root, '05-content-opportunities'))) {
-    const decision = await readJson<AnalysisDecisionRecord>(path);
-    if (!['auto_process', 'evergreen_queue'].includes(decision.route)) continue;
+  for (const decision of await listPublicationDecisions(root)) {
     const article = articleById.get(decision.canonicalId);
-    if (article) tasks.push({ decision, article });
+    if (!article) continue;
+    const distributionMode = publicationModeForOpportunity(decision, article);
+    if (distributionMode) tasks.push({ decision, article, distributionMode });
   }
   return tasks;
 }
@@ -348,8 +363,8 @@ export async function listPendingCopyTasks(root: string): Promise<ContentOpportu
   const pending: ContentOpportunityTaskRecord[] = [];
   for (const task of tasks) {
     const output = safeDataPath(root, '06-content-drafts', `copy-${task.decision.id}.json`);
-    if (!(await pathExists(output)) ||
-        (await readJson<ContentDraftRecord>(output)).copyVersion !== 'creddy-copy-v2') {
+    const existing = await pathExists(output) ? await readJson<ContentDraftRecord>(output) : undefined;
+    if (!existing || existing.copyVersion !== 'creddy-copy-v3' || existing.distributionMode !== task.distributionMode) {
       pending.push(task);
     }
   }
@@ -362,13 +377,14 @@ export async function acceptContentDraft(
   now = new Date(),
 ): Promise<void> {
   const draft = validateContentDraft(input);
-  validateApprovedCta(draft, now);
-  if (draft.copyVersion !== 'creddy-copy-v2') {
-    throw new Error('New Agent 04 drafts must use creddy-copy-v2');
+  if (draft.distributionMode !== 'article_only') validateApprovedCta(draft, now);
+  if (!draft.copyVersion || !['creddy-copy-v2', 'creddy-copy-v3'].includes(draft.copyVersion)) {
+    throw new Error('Agent 04 drafts must use claim-traceable copy v2 or the current article-enabled v3');
   }
   const task = (await opportunityTasks(root))
     .find((candidate) => candidate.decision.id === draft.analysisId);
   if (!task) throw new Error(`Content opportunity not found: ${draft.analysisId}`);
+  if (draft.distributionMode !== task.distributionMode) throw new Error('Content draft distribution mode does not match its opportunity');
   if (draft.id !== `copy-${draft.analysisId}`) throw new Error('Content-draft stable ID mismatch');
   if (draft.canonicalId !== task.decision.canonicalId) throw new Error('Canonical identity mismatch');
   if (!draft.sourceUrls.includes(task.article.canonicalUrl)) {
@@ -377,21 +393,23 @@ export async function acceptContentDraft(
   if (JSON.stringify(draft.factualClaims) !== JSON.stringify(task.decision.claims)) {
     throw new Error('Content draft must preserve the accepted factual claims exactly');
   }
-  await assertReleasedCapabilityStatus(root, draft.cta.kind!);
-  await validateDraftTrendReference(
-    root,
-    draft.conceptPack?.trendSnapshotId,
-    draft.conceptPack?.candidates.map((candidate) => candidate.trendPatternId) ?? [],
-    draft.slot,
-    now,
-  );
-  assertSlidesDoNotNamePublisher(draft, task.article);
+  if (draft.distributionMode !== 'article_only') {
+    await assertReleasedCapabilityStatus(root, draft.cta.kind!);
+    await validateDraftTrendReference(
+      root,
+      draft.conceptPack?.trendSnapshotId,
+      draft.conceptPack?.candidates.map((candidate) => candidate.trendPatternId) ?? [],
+      draft.slot,
+      now,
+    );
+    assertSlidesDoNotNamePublisher(draft, task.article);
+  }
   assertNoExternalBrands(draft, normalizedSourceIdentifiers(task.article));
 
   const outputPath = safeDataPath(root, '06-content-drafts', `${draft.id}.json`);
   if (await pathExists(outputPath)) {
     const previous = await readJson<ContentDraftRecord>(outputPath);
-    if (previous.copyVersion !== 'creddy-copy-v2') {
+    if (previous.copyVersion !== 'creddy-copy-v3') {
       const archiveSuffix = previous.createdAt.replace(/[^0-9A-Za-z]+/g, '').slice(0, 24) || 'undated';
       await writeJsonAtomic(
         safeDataPath(root, '06-content-drafts', 'legacy', `${previous.id}-${archiveSuffix}.json`),
@@ -421,4 +439,7 @@ export async function acceptContentDraft(
     sourceUrls: draft.sourceUrls,
     factualClaims: draft.factualClaims,
   });
+  if (draft.article) {
+    await writeJsonAtomic(safeDataPath(root, '06-content-drafts', 'articles', `${draft.id}.json`), draft.article);
+  }
 }

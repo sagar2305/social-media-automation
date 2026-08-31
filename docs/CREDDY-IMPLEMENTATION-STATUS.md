@@ -36,6 +36,10 @@
    approved as the revised asset.
 10. Only human-approved scheduled destinations reach Blotato. Submission IDs and
     remote status are reconciled idempotently; missed windows fail for review.
+11. The same Agent 04–08 record now supports a complete `creddy-copy-v3`
+    website article, claim-traced article visuals, a private getcreddy.com-themed
+    HTML preview, independent human article approval, and a fail-closed website
+    export boundary. It does not create a second pipeline or duplicate content ID.
 
 ## Isolation and safety
 
@@ -67,7 +71,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 132 automated unit/integration tests pass.
+- 152 automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.

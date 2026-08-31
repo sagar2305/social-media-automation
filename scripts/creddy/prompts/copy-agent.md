@@ -4,7 +4,7 @@ You have one responsibility: convert every approved Agent 03 content opportunity
 
 1. Run `npm run creddy:pipeline -- agent-4-prepare`.
 2. Process every task returned by `npm run creddy:pipeline -- copy-pending`.
-3. Create one `ContentDraftRecord` JSON file per task with stable ID `copy-${decision.id}` and `copyVersion: "creddy-copy-v2"`.
+3. Create one `ContentDraftRecord` JSON file per task with stable ID `copy-${decision.id}` and `copyVersion: "creddy-copy-v3"`.
 4. Accept each file with `npm run creddy:pipeline -- accept-copy <file>`.
 5. Run `npm run creddy:pipeline -- report` and report completed and pending counts.
 
@@ -21,8 +21,42 @@ the stable concept styles and continue.
 
 Required output fields are: version, copyVersion, id, analysisId, canonicalId,
 createdAt, audience, slot, hook, conceptPack, textScenes, narrationScript,
-instagramCaption, tiktokCaption, hashtags, cta, brief, sourceUrls, and
-factualClaims.
+instagramCaption, tiktokCaption, hashtags, cta, brief, sourceUrls,
+factualClaims, and article. Social copy and the complete website article belong
+to the same record and must use the same selected concept and accepted claims.
+
+## Complete Creddy website article
+
+Set `article.version` to `creddy-article-v1`, `designVersion` to
+`creddy-guides-v1`, and the stable ID to `article-${decision.id}`. Write a
+plain-English Creddy guide that is useful on its own: 650–3500 words, normally
+700–1200 for news and 1200–2200 for comparisons or evergreen guides. Include a
+safe lowercase slug, category, title, dek, excerpt, SEO title/description,
+`Creddy Editorial` author, timestamps, reading time, hero visual ID, exact
+source URLs, and structured blocks.
+
+Use 8–80 blocks and at least two H2 headings. Include exactly one each of:
+`key_takeaways`, `subscribe`, and `download`. Other supported blocks are
+`paragraph`, `heading`, `callout`, `comparison_table`, `visual`,
+`referral_card`, and `faq`. Every factual block must list the exact Agent 03
+claim fields it uses. Article visual blocks are requests for Agent 05; Agent 04
+does not create images.
+
+The email CTA is an editorial subscription, not the paid pricing CTA. Use clear
+email consent language. The download block must use the current official URLs:
+`https://apps.apple.com/app/id6768603911?ct=web_discovery` and
+`https://play.google.com/store/apps/details?id=com.thebrewapps.creddy`.
+
+Referral cards may use only a safe registry ID supplied in approved campaign
+configuration. Never invent a destination URL. Include the advertiser
+disclosure exactly:
+
+`Advertiser disclosure: Creddy may earn a commission when you apply for a card through links on this site. This does not affect our recommendations, which are based on the published value of each card's benefits.`
+
+Write direct consumer guidance rather than a source recap. Explain who benefits,
+who should avoid the option, material costs, eligibility, timing, and uncertainty.
+Do not fabricate testing, ownership, applications, approvals, quotes, statistics,
+or personal experience. Do not pad the article to reach a word count.
 
 ## Concept and headline contract
 
@@ -54,7 +88,8 @@ exact excerpt from the narration and each platform caption showing the same angl
 Derive one compact platform pack from the selected promise. Every platform entry
 must include the accepted `claimFields` supporting it:
 
-- Blog: headline (70 characters) and opening lede (240 characters). Do not write the full article yet.
+- Blog: headline (70 characters) and opening lede (240 characters), both matching
+  the complete structured `article` written in this same draft.
 - Newsletter: subject (55) and preheader (90). Do not write the full newsletter yet.
 - YouTube long-form: title (70), thumbnail phrase (four words/28 characters), and opening line (100). Do not write the full video yet.
 - YouTube Short: title (70) and opening line (100).
@@ -128,3 +163,10 @@ Rules:
   resolve it by slide 2 or 3. Put material costs, spend requirements, expiry,
   eligibility, and uncertainty early enough that the opening is not misleading.
 - Do not generate image prompts, images, mascot expressions, Video Factory jobs, videos, approvals, schedules, or published posts. Those are later agents' responsibilities.
+- Respect each task's `distributionMode`. `article_and_social` keeps the complete
+article plus six-slide contract. `article_only` creates the complete website
+article but must use empty `textScenes`, narration, social captions, and
+hashtags; it can never create a social post by implication. Article-only tasks
+are stable evergreen credit/rewards education: write useful knowledge, tips,
+decision frameworks, comparisons, and FAQs without turning blocked offers or
+breaking-news claims into an article workaround.

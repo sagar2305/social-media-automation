@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { requireRole } from "@/lib/auth";
@@ -7,7 +7,7 @@ import { listCreddyBankItems } from "@/lib/creddy-file-store";
 import { listBlotatoAccounts, type BlotatoAccount } from "@/lib/blotato";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
-import { approveCreddyAction, refreshCreddyDeliveryStatusesAction, rejectCreddyAction } from "./actions";
+import { approveCreddyAction, deleteCreddyWebsiteArticleAction, refreshCreddyDeliveryStatusesAction, rejectCreddyAction, repostCreddyWebsiteArticleAction } from "./actions";
 import { CreddyCalendar } from "./creddy-calendar";
 import { SlideGallery } from "./slide-gallery";
 import { SlideshowPublishingPanel } from "./slideshow-publishing-panel";
@@ -34,13 +34,16 @@ const deliveryLabels = {
   failed: "Failed",
 } as const;
 
-export async function CreddyContentBankPage({ mediaType, selectedId, updated }: { mediaType: "slideshow" | "video"; selectedId?: string; updated?: string }) {
+export async function CreddyContentBankPage({ mediaType, selectedId, updated }: { mediaType: "slideshow" | "video" | "article"; selectedId?: string; updated?: string }) {
   await requireRole("viewer");
   const items = await listCreddyBankItems();
+  const usingCloudMirror = items.some((item) => item.cloudBacked);
   let blotatoAccounts: BlotatoAccount[] = [];
   let blotatoAccountError: string | undefined;
   const blotatoApiKey = process.env.BLOTATO_API_KEY;
-  if (!blotatoApiKey) {
+  if (mediaType === "article") {
+    // Website review never touches the social delivery provider.
+  } else if (!blotatoApiKey) {
     blotatoAccountError = "BLOTATO_API_KEY is not configured in the dashboard environment.";
   } else {
     try {
@@ -53,13 +56,18 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
   const scheduled = items.filter((item) => item.status === "scheduled");
   const pendingSlideshows = pending.filter((item) => item.mediaType === "slideshow");
   const pendingVideos = pending.filter((item) => item.mediaType === "video");
-  const selectedItem = selectedId ? items.find((item) => item.id === selectedId && item.mediaType === mediaType) : undefined;
+  const articleItems = items.filter((item) => item.article && item.articleReview);
+  const articlePublishingCount = articleItems.filter((item) => item.articleReview?.status === "publishing").length;
+  const articlePublishedCount = articleItems.filter((item) => item.articlePublication || item.articleReview?.status === "published").length;
+  const articleUnpublishedCount = articleItems.filter((item) => item.articleReview?.status === "unpublished").length;
+  const articleFailedCount = articleItems.filter((item) => item.articleReview?.status === "publish_failed").length;
+  const selectedItem = selectedId ? items.find((item) => item.id === selectedId && (mediaType === "article" ? Boolean(item.article) : item.mediaType === mediaType)) : undefined;
   const deliveryActivity = items.flatMap((item) => item.destinations.map((destination) => ({ item, destination })));
   const draftCount = deliveryActivity.filter(({ destination }) => ["draft_sent", "blotato_draft"].includes(destination.status)).length;
   const publishingCount = deliveryActivity.filter(({ destination }) => destination.status === "publishing" || destination.status === "submitted").length;
   const scheduledCount = deliveryActivity.filter(({ destination }) => destination.status === "scheduled" || destination.status === "pending").length;
   const publishedCount = deliveryActivity.filter(({ destination }) => destination.status === "published").length;
-  const visiblePending = mediaType === "slideshow" ? pendingSlideshows : pendingVideos;
+  const visiblePending = mediaType === "slideshow" ? pendingSlideshows : mediaType === "video" ? pendingVideos : articleItems;
   const visibleItems = selectedItem && !visiblePending.some((item) => item.id === selectedItem.id)
     ? [selectedItem, ...visiblePending]
     : visiblePending;
@@ -70,38 +78,62 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
       description: "Six-slide Instagram and TikTok carousel posts. Click any image to inspect it at full size.",
       items: visibleItems,
     },
-  ] : [
+  ] : mediaType === "video" ? [
     {
       key: "videos",
       title: "Videos",
       description: "Text + music and narrated Chatterbox video formats.",
       items: visibleItems,
     },
-  ];
+  ] : [{
+    key: "articles",
+    title: "Website articles",
+    description: "Open the complete HTML preview, follow the exact live slug, undo a website publication, or repost the saved article through Agent 8.",
+    items: visibleItems,
+  }];
 
   return (
     <div className="space-y-6">
       {updated === "slides-regenerated" && <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" /><div><strong>Slide revision saved.</strong><p className="mt-1 text-muted-foreground">All six images were regenerated and validated. The previous revision remains preserved locally.</p></div></div>}
+      {updated === "article-published" && <div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" /><div><strong>Article approved and published.</strong><p className="mt-1 text-muted-foreground">Agent 8 validated the article, uploaded its optimized images, and synced it to the Creddy website CMS.</p></div></div>}
+      {updated === "article-reposted" && <div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" /><div><strong>Article reposted.</strong><p className="mt-1 text-muted-foreground">The same article slug and its three approved images are live again. No slideshow or social status changed.</p></div></div>}
+      {updated === "article-unpublished" && <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-amber-700" /><div><strong>Website publication undone.</strong><p className="mt-1 text-muted-foreground">The live CMS row and its article images were removed. The saved article remains here and can be reposted to the same slug.</p></div></div>}
+      {updated === "article-publish-failed" && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm"><strong>Article was not published.</strong><p className="mt-1 text-muted-foreground">Check the server-side CMS configuration—especially SUPABASE_SERVICE_ROLE_KEY—then use Retry publish. No false success was recorded.</p></div>}
+      {updated === "article-approved" && <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" /><div><strong>Website article approved.</strong><p className="mt-1 text-muted-foreground">Agent 08 may now export this exact article version for the getcreddy.com publishing integration.</p></div></div>}
       <div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">Creddy · US market</Badge>
-          <Badge variant="secondary">Human approval required</Badge>
+          <Badge variant="secondary">{mediaType === "article" ? "Automatic website publishing" : "Human approval required"}</Badge>
         </div>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight">Creddy Content Bank</h1>
+        <h1 className="mt-3 text-4xl font-semibold tracking-tight">{mediaType === "article" ? "Creddy Articles" : "Creddy Content Bank"}</h1>
         <p className="mt-2 text-muted-foreground">{mediaType === "slideshow"
           ? "Review complete six-image slideshow posts for Instagram and TikTok."
-          : "Review text + music and narrated Chatterbox video formats."} Nothing publishes without human approval.</p>
+          : mediaType === "video"
+            ? "Review text + music and narrated Chatterbox video formats."
+            : "Open every generated article, inspect its complete preview and three approved images, and manage its live website publication. Articles publish automatically; slideshow and social approval remain separate."}</p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{visiblePending.length}</div><div className="text-muted-foreground">Awaiting review on this screen</div></CardContent></Card>
-        <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{draftCount}</div><div className="text-muted-foreground">Blotato / TikTok drafts</div></CardContent></Card>
-        <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{scheduledCount}</div><div className="text-muted-foreground">Scheduled</div></CardContent></Card>
-        <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{publishingCount}</div><div className="text-muted-foreground">Publishing</div></CardContent></Card>
-        <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{publishedCount}</div><div className="text-muted-foreground">Published</div></CardContent></Card>
-      </div>
+      {usingCloudMirror && <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><strong>Secure cloud mirror</strong><p className="mt-1 text-muted-foreground">Photos, slideshows, videos, captions, and status are mirrored from the automation Mac. Use Slack or the Mac portal for approval and publishing; this deployed view is review-only.</p></div>}
 
-      {deliveryActivity.length > 0 && (
+      {mediaType === "article" ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{articleItems.length}</div><div className="text-muted-foreground">Total articles</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{articlePublishedCount}</div><div className="text-muted-foreground">Published</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{articleUnpublishedCount}</div><div className="text-muted-foreground">Unpublished</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{articlePublishingCount}</div><div className="text-muted-foreground">Publishing</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{articleFailedCount}</div><div className="text-muted-foreground">Publish failed</div></CardContent></Card>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{visiblePending.length}</div><div className="text-muted-foreground">Awaiting review on this screen</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{draftCount}</div><div className="text-muted-foreground">Blotato / TikTok drafts</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{scheduledCount}</div><div className="text-muted-foreground">Scheduled</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{publishingCount}</div><div className="text-muted-foreground">Publishing</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-2xl font-semibold">{publishedCount}</div><div className="text-muted-foreground">Published</div></CardContent></Card>
+        </div>
+      )}
+
+      {mediaType !== "article" && deliveryActivity.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div>
@@ -142,10 +174,13 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
         <Link className={`rounded-lg px-4 py-2 text-sm font-medium ${mediaType === "video" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/70"}`} href="/creddy/content-bank/videos">
           Videos ({pendingVideos.length})
         </Link>
+        <Link className={`rounded-lg px-4 py-2 text-sm font-medium ${mediaType === "article" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/70"}`} href="/creddy/content-bank/articles">
+          Articles ({articleItems.length})
+        </Link>
       </div>
 
       {visibleItems.length === 0 ? (
-        <Card><CardContent className="py-14 text-center text-muted-foreground">No {mediaType === "slideshow" ? "slideshows or images" : "videos"} are waiting for approval.</CardContent></Card>
+        <Card><CardContent className="py-14 text-center text-muted-foreground">No {mediaType === "slideshow" ? "slideshows or images" : mediaType === "video" ? "videos" : "articles"} are available for review.</CardContent></Card>
       ) : contentSections.map((section) => (
         <section className="scroll-mt-6 space-y-4" id={section.key} key={section.key}>
           <div className="flex flex-col gap-1 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
@@ -153,7 +188,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
               <h2 className="text-2xl font-semibold tracking-tight">{section.title}</h2>
               <p className="text-sm text-muted-foreground">{section.description}</p>
             </div>
-            <Badge variant="outline">{section.items.length} awaiting review</Badge>
+            <Badge variant="outline">{section.items.length} {mediaType === "article" ? "available" : "awaiting review"}</Badge>
           </div>
           {section.items.length === 0 ? (
             <Card><CardContent className="py-10 text-center text-muted-foreground">No {section.title.toLowerCase()} are waiting for review.</CardContent></Card>
@@ -162,16 +197,70 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
           <CardHeader>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <CardTitle>{item.hook}</CardTitle>
+                <CardTitle>{mediaType === "article" && item.article ? item.article.title : item.hook}</CardTitle>
                 <div className="mt-1 text-xs text-muted-foreground">Revision {item.revision} · {new Date(item.createdAt).toLocaleString()}</div>
               </div>
               <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
-                <PostStatusBadge item={item} />
-                <div className="text-xs text-muted-foreground">{postStatusDetail(item)}</div>
+                {mediaType === "article" ? (
+                  <>
+                    <Badge variant={item.articleReview?.status === "publish_failed" ? "destructive" : item.articlePublication || item.articleReview?.status === "published" ? "default" : "secondary"}>
+                      {item.articlePublication || item.articleReview?.status === "published" ? "Published" : item.articleReview?.status === "unpublished" ? "Unpublished" : item.articleReview?.status === "publishing" ? "Publishing" : item.articleReview?.status === "publish_failed" ? "Publish failed" : item.articleReview?.status === "needs_assets" ? "Needs assets" : "Queued"}
+                    </Badge>
+                    <div className="text-xs text-muted-foreground">Website publication status</div>
+                  </>
+                ) : (
+                  <>
+                    <PostStatusBadge item={item} />
+                    <div className="text-xs text-muted-foreground">{postStatusDetail(item)}</div>
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {item.article && (
+              <div className="space-y-3 rounded-xl border border-[#d2992e]/30 bg-[#fbf2dd]/45 p-4">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-[#8b6723]">Creddy website article</div>
+                    <h3 className="mt-1 font-serif text-2xl font-semibold text-[#1e1a16]">
+                      {item.articlePublication
+                        ? <a className="underline-offset-4 hover:underline" href={item.articlePublication.url} rel="noreferrer" target="_blank">{item.article.title}</a>
+                        : item.article.title}
+                    </h3>
+                    <p className="mt-1 max-w-3xl text-sm text-[#6f6963]">{item.article.dek}</p>
+                    <p className="mt-2 max-w-3xl text-sm text-[#6f6963]">{item.article.excerpt}</p>
+                    <div className="mt-2 break-words text-xs text-[#7e7976]">
+                      {item.articlePublication
+                        ? <a className="font-medium underline underline-offset-2" href={item.articlePublication.url} rel="noreferrer" target="_blank">/blog/{item.article.slug}</a>
+                        : <span>/blog/{item.article.slug}</span>}
+                      {" · "}{item.article.category.replaceAll("_", " ")} · {item.article.readingMinutes} min read · {item.articleImageCount}/3 approved images
+                    </div>
+                  </div>
+                  <Badge variant={item.articleReview?.status === "needs_assets" ? "secondary" : "outline"}>
+                    {item.articlePublication || item.articleReview?.status === "published" ? "Published" : item.articleReview?.status === "unpublished" ? "Deleted from website" : item.articleReview?.status === "publishing" ? "Publishing" : item.articleReview?.status === "publish_failed" ? "Publish failed" : item.articleReview?.status === "approved" ? "Queued to publish" : item.articleReview?.status === "changes_requested" ? "Changes requested" : item.articleReview?.status === "needs_assets" ? "Needs article assets" : "Auto-publish queued"}
+                  </Badge>
+                </div>
+                {item.articleReview?.blockers?.map((blocker) => <p className="text-sm text-amber-800" key={blocker}>{blocker}</p>)}
+                {item.articleReview?.publishError && <p className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{item.articleReview.publishError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  {item.articlePreviewAvailable && <a className={buttonVariants({ variant: "outline" })} href={`/api/creddy/article/${encodeURIComponent(item.id)}`} rel="noreferrer" target="_blank">Open themed article preview</a>}
+                  {["publish_failed", "unpublished"].includes(item.articleReview?.status ?? "") && !item.articlePublication && !item.cloudBacked && <form action={repostCreddyWebsiteArticleAction}><input name="id" type="hidden" value={item.id} /><Button type="submit">{item.articleReview?.status === "publish_failed" ? "Retry publish" : "Repost article"}</Button></form>}
+                  {item.articlePublication && <a className={buttonVariants()} href={item.articlePublication.url} rel="noreferrer" target="_blank">Open live article</a>}
+                  {item.articlePublication && !item.cloudBacked && <form action={deleteCreddyWebsiteArticleAction}><input name="id" type="hidden" value={item.id} /><Button type="submit" variant="destructive">Undo publish</Button></form>}
+                  {["pending_review", "approved", "publishing"].includes(item.articleReview?.status ?? "") && !item.articlePublication && <Badge variant="secondary">Agent 8 automatic publishing</Badge>}
+                  <Badge variant="outline">Article auto-publish · slideshow approval stays separate</Badge>
+                </div>
+                {item.articlePublication && <p className="text-xs text-emerald-700">Published {new Date(item.articlePublication.publishedAt).toLocaleString()} · cache refresh: {item.articlePublication.revalidation.replaceAll("_", " ")}</p>}
+                {mediaType === "article" && <>
+                  <div className="overflow-hidden rounded-xl border bg-white">
+                    <iframe className="h-[760px] w-full max-w-full border-0 md:h-[900px]" loading="lazy" src={`/api/creddy/article/${encodeURIComponent(item.id)}`} title={`Complete preview: ${item.article.title}`} />
+                  </div>
+                  <details className="rounded-lg border bg-background p-3"><summary className="cursor-pointer font-medium">Sources</summary><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{item.sourceUrls.map((url) => <li className="break-all" key={url}><a className="underline" href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul></details>
+                </>}
+              </div>
+            )}
+            {mediaType !== "article" && <>
             {item.mediaType === "slideshow" ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -204,7 +293,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
                 <div className="flex flex-wrap gap-1">{item.hashtags.map((tag) => <Badge key={tag} variant="secondary">#{tag.replace(/^#/, "")}</Badge>)}</div>
               </div>
             </div>
-            {item.mediaType === "slideshow" && item.status !== "published" && item.status !== "rejected" && <SlideshowPublishingPanel
+            {item.mediaType === "slideshow" && !item.cloudBacked && item.status !== "published" && item.status !== "rejected" && <SlideshowPublishingPanel
               accountError={blotatoAccountError}
               accounts={blotatoAccounts}
               defaultScheduledFor={defaultSchedule(24)}
@@ -217,7 +306,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
             />}
             <details className="rounded-lg border p-3"><summary className="cursor-pointer font-medium">Brief, factual claims, and evidence</summary><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{item.brief}</p><div className="mt-3 font-medium">Factual claims</div><ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">{item.factualClaims.map((claim, index) => <li key={`${claim.field}-${index}`}>{claim.field}: {String(claim.value)} · confidence {claim.confidence}{claim.conflict ? ` · conflict: ${claim.conflict}` : ""}</li>)}</ul><div className="mt-3 font-medium">Sources</div><ul className="mt-1 list-disc pl-5 text-sm">{item.sourceUrls.map((url) => <li key={url}><a className="underline" href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul></details>
 
-            {item.mediaType === "video" ? <form action={approveCreddyAction} className="space-y-3 rounded-lg border p-4">
+            {item.mediaType === "video" && !item.cloudBacked ? <form action={approveCreddyAction} className="space-y-3 rounded-lg border p-4">
               <input type="hidden" name="id" value={item.id} />
               <div><div className="font-medium">Approve and schedule</div><p className="text-xs text-muted-foreground">Times use the Mac mini/dashboard timezone. Select only configured Blotato accounts.</p></div>
               <div className="grid gap-3 lg:grid-cols-2">
@@ -236,7 +325,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
               <Button type="submit">Approve selected destinations</Button>
             </form> : null}
 
-            {item.mediaType === "video" && item.status !== "published" && item.status !== "rejected" && (
+            {item.mediaType === "video" && !item.cloudBacked && item.status !== "published" && item.status !== "rejected" && (
               <form action={rejectCreddyAction} className="rounded-lg border border-destructive/25 bg-destructive/5 p-4">
                 <input name="id" type="hidden" value={item.id} />
                 <input name="return_to" type="hidden" value={`/creddy/content-bank/${mediaType === "slideshow" ? "slideshows" : "videos"}`} />
@@ -250,6 +339,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
                 <Button className="mt-2" type="submit" variant="destructive">Reject and move to Rejected</Button>
               </form>
             )}
+            </>}
 
           </CardContent>
         </Card>
@@ -257,7 +347,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
         </section>
       ))}
 
-      {scheduled.length > 0 && (
+      {mediaType !== "article" && scheduled.length > 0 && (
         <Card><CardHeader><CardTitle>Upcoming Creddy calendar</CardTitle></CardHeader><CardContent className="overflow-x-auto"><CreddyCalendar entries={scheduled.flatMap((item) => item.destinations.filter((destination) => destination.mode === "schedule" || destination.status === "pending" || destination.status === "scheduled").map((destination) => ({ id: item.id, hook: item.hook, ...destination })))} /></CardContent></Card>
       )}
     </div>

@@ -20,6 +20,7 @@ import {
   type VideoJobRecord,
 } from './pipeline-types.js';
 import type { VideoFactoryApi, VideoFactoryRemoteJob } from './video-factory-client.js';
+import type { CreddyArticleReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
 
 export interface VideoStageOptions {
   root: string;
@@ -39,6 +40,29 @@ const CREDDY_POSE_ALIASES: Record<string, string> = {
 
 function creddyPose(value: string | undefined, index: number): string {
   const fallbacks = ['surprised', 'thinking', 'guide', 'celebrate'];
+  const v4Number = value?.match(/^(\d{3})-/)?.[1];
+  if (v4Number) {
+    const number = Number(v4Number);
+    if (number === 1) return 'neutral';
+    if (number === 2) return 'waving';
+    if (number <= 8) return 'celebrate';
+    if (number <= 10) return 'surprised';
+    if (number === 11) return 'curious';
+    if (number <= 17) return 'thinking';
+    if (number <= 22) return 'worried';
+    if (number <= 30) return 'sad';
+    if (number <= 38) return 'concerned';
+    if (number <= 41) return 'sleepy';
+    if (number <= 46) return 'neutral';
+    if (number <= 50) return 'celebrate';
+    if (number <= 59) return 'neutral';
+    if (number <= 64) return 'guide';
+    if (number <= 72) return 'worried';
+    if (number <= 78) return 'thinking';
+    if (number <= 82) return 'starstruck';
+    if (number <= 85) return 'sleepy';
+    return 'celebrate';
+  }
   return CREDDY_POSE_ALIASES[value ?? ''] ?? value ?? fallbacks[index % fallbacks.length];
 }
 
@@ -217,6 +241,12 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
     const textMusic = group.find((job) => job.revision === targetRevision && job.format === 'text_music' && job.status === 'done');
     if (!narrated || !textMusic) continue;
     if (existing && !['changes_requested', 'rendering_revision'].includes(existing.status)) continue;
+    const content = await readJson<ContentPackageRecord>(
+      safeDataPath(root, '06-content-packages', `${contentPackageId}.json`),
+    );
+    const articleBlockers = content.article && content.articleReadiness !== 'ready_for_review'
+      ? ['One or more Agent 05 article visuals do not have approved asset files yet.']
+      : [];
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
@@ -226,6 +256,11 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
       status: 'pending_review',
       textMusicVideoPath: textMusic.outputPath,
       narratedVideoPath: narrated.outputPath,
+      articlePreviewPath: content.articlePreviewPath,
+      articleReview: content.article ? {
+        status: articleBlockers.length ? 'needs_assets' : 'pending_review',
+        blockers: articleBlockers,
+      } : undefined,
       revision: targetRevision,
       changeRequest: undefined,
       approvedBy: undefined,
@@ -237,6 +272,92 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
     };
     await writeJsonAtomic(destination, record);
     created += 1;
+  }
+  return created;
+}
+
+export async function runArticleContentBankHandoff(
+  root: string,
+  now = new Date(),
+  options: {
+    autoPublisher?: (id: string) => Promise<boolean>;
+    notifier?: (event: CreddyArticleReadySlackEvent) => Promise<CreddyContentReadySlackResult>;
+  } = {},
+): Promise<number> {
+  let created = 0;
+  const packagePaths = (await listJsonFiles(safeDataPath(root, '06-content-packages')))
+    .filter((path) => /\/production-[^/]+\.json$/.test(path) && !path.includes('/legacy/'));
+  for (const path of packagePaths) {
+    const content = await readJson<ContentPackageRecord>(path);
+    if (content.distributionMode !== 'article_only' || !content.article || !content.articlePreviewPath) continue;
+    const id = `article-${content.id}`;
+    const destination = safeDataPath(root, '09-pending-approval', `${id}.json`);
+    const existing = await pathExists(destination) ? await readJson<ContentBankRecord>(destination) : undefined;
+    if (existing && !['pending_review', 'changes_requested', 'rendering_revision'].includes(existing.status)) continue;
+    const blockers = content.articleReadiness === 'ready_for_review'
+      ? []
+      : ['One or more Agent 05 article visuals do not have approved asset files yet.'];
+    const record: ContentBankRecord = {
+      ...existing,
+      version: CREDDY_PIPELINE_VERSION,
+      id,
+      contentPackageId: content.id,
+      mediaType: 'article',
+      contentDraftId: content.contentDraftId,
+      visualPlanId: content.visualPlanId,
+      articlePreviewPath: content.articlePreviewPath,
+      articleReview: existing?.articleReview && existing.articleReview.status !== 'needs_assets'
+        ? existing.articleReview
+        : { status: blockers.length ? 'needs_assets' : 'pending_review', blockers },
+      createdAt: existing?.createdAt ?? now.toISOString(),
+      status: 'pending_review',
+      revision: existing?.revision ?? 1,
+      changeRequest: undefined,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      destinations: undefined,
+      rejectedBy: undefined,
+      rejectedAt: undefined,
+      rejectionReason: undefined,
+    };
+    await writeJsonAtomic(destination, record);
+    if (!blockers.length && options.autoPublisher && record.articleReview?.status !== 'unpublished') {
+      try { await options.autoPublisher(id); } catch { /* Durable publish_failed state is the observable result. */ }
+    }
+    if (!blockers.length && options.notifier && content.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))) {
+      const receiptPath = safeDataPath(root, 'reports', 'slack-article-ready', `${id}-revision-${record.revision}.json`);
+      if (!(await pathExists(receiptPath))) {
+        const latest = await readJson<ContentBankRecord>(destination);
+        const notification = await options.notifier({
+          id,
+          title: content.article.title,
+          dek: content.article.dek,
+          excerpt: content.article.excerpt,
+          category: content.article.category,
+          readingMinutes: content.article.readingMinutes,
+          sourceUrls: content.article.sourceUrls,
+          articleImagePaths: content.articleVisuals.assets.map((asset) => asset.assetPath!),
+          articlePreviewPath: content.articlePreviewPath,
+          publishStatus: latest.articleReview?.status === 'published' || latest.articleReview?.status === 'publish_failed' || latest.articleReview?.status === 'publishing' || latest.articleReview?.status === 'unpublished'
+            ? latest.articleReview.status
+            : undefined,
+          publishedUrl: latest.articleReview?.publishedUrl,
+          publishError: latest.articleReview?.publishError,
+        });
+        if (notification.sent) {
+          await writeJsonAtomic(receiptPath, {
+            version: 1,
+            id,
+            revision: record.revision,
+            sentAt: now.toISOString(),
+            channel: notification.channel,
+            messageTs: notification.messageTs,
+            fileIds: notification.fileIds ?? [],
+          });
+        }
+      }
+    }
+    created += existing ? 0 : 1;
   }
   return created;
 }
@@ -276,8 +397,8 @@ export async function approveContentBankItem(
     id: string;
     approvedBy: string;
     destinations: Array<{
-      format: 'text_music' | 'narrated';
-      platform: 'instagram' | 'tiktok';
+      format: 'text_music' | 'narrated' | 'article';
+      platform: 'instagram' | 'tiktok' | 'creddy_website';
       account: string;
       scheduledFor: string;
     }>;
@@ -289,6 +410,13 @@ export async function approveContentBankItem(
     throw new Error('At least one publishing destination is required');
   }
   const destinations = input.destinations.map((destination) => {
+    const isArticle = destination.format === 'article' || destination.platform === 'creddy_website';
+    if (isArticle && (destination.format !== 'article' || destination.platform !== 'creddy_website')) {
+      throw new Error('Website destinations must use article format on creddy_website');
+    }
+    if (!isArticle && !['instagram', 'tiktok'].includes(destination.platform)) {
+      throw new Error('Social video destinations must use Instagram or TikTok');
+    }
     if (!destination.account.trim()) throw new Error('Publishing account is required');
     const scheduled = new Date(destination.scheduledFor);
     if (!Number.isFinite(scheduled.getTime()) || scheduled <= now) {
@@ -307,11 +435,25 @@ export async function approveContentBankItem(
   if (pending.status !== 'pending_review' && pending.status !== 'changes_requested') {
     throw new Error(`Content item cannot be approved from status ${pending.status}`);
   }
+  const approvesArticle = destinations.some((destination) => destination.format === 'article');
+  if (approvesArticle) {
+    if (!pending.articleReview) throw new Error('Content item has no website article to approve');
+    if (pending.articleReview.status === 'needs_assets' || pending.articleReview.blockers?.length) {
+      throw new Error('Website article cannot be approved until all planned assets are ready');
+    }
+  }
   const approved: ContentBankRecord = {
     ...pending,
     status: 'approved',
     approvedBy: input.approvedBy,
     approvedAt: now.toISOString(),
+    articleReview: approvesArticle ? {
+      ...pending.articleReview!,
+      status: 'approved',
+      approvedBy: input.approvedBy,
+      approvedAt: now.toISOString(),
+      blockers: [],
+    } : pending.articleReview,
     destinations,
   };
   await writeJsonAtomic(safeDataPath(root, '10-approved', `${approved.id}.json`), approved);

@@ -27,6 +27,21 @@ export type CreddyContentReadySlackResult = {
   error?: string;
 };
 
+export type CreddyArticleReadySlackEvent = {
+  id: string;
+  title: string;
+  dek: string;
+  excerpt: string;
+  category: string;
+  readingMinutes: number;
+  sourceUrls: string[];
+  articleImagePaths: string[];
+  articlePreviewPath: string;
+  publishStatus?: 'published' | 'publish_failed' | 'publishing' | 'unpublished';
+  publishedUrl?: string;
+  publishError?: string;
+};
+
 type SlackBlock = Record<string, unknown>;
 
 function clean(value: string): string {
@@ -104,6 +119,171 @@ async function uploadSlidesToSlack(token: string, channel: string, paths: string
     initial_comment: ':frame_with_picture: All 6 rendered slides for the Creddy post below.',
   });
   return files.map((file) => file.id);
+}
+
+async function uploadArticleFilesToSlack(
+  token: string,
+  channel: string,
+  event: CreddyArticleReadySlackEvent,
+): Promise<string[]> {
+  const embeddedPreview = await selfContainedArticlePreview(event);
+  const entries = [{
+    bytes: embeddedPreview,
+    filename: `${event.id}-complete-preview.html`,
+    title: `Creddy article preview with embedded images: ${event.title}`,
+  }];
+  const files: Array<{ id: string; title: string }> = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    const bytes = entry.bytes;
+    const ticket = await slackApi<{ ok?: boolean; error?: string; upload_url?: string; file_id?: string }>(
+      'files.getUploadURLExternal', token,
+      { filename: entry.filename, length: bytes.byteLength },
+      'form',
+    );
+    if (!ticket.upload_url || !ticket.file_id) throw new Error('Slack did not return an article file upload ticket');
+    const response = await fetch(ticket.upload_url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: Buffer.from(bytes),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`Article review file ${index + 1} upload returned HTTP ${response.status}`);
+    files.push({ id: ticket.file_id, title: entry.title });
+  }
+  await slackApi('files.completeUploadExternal', token, {
+    files,
+    channel_id: channel,
+    initial_comment: ':newspaper: Complete website article preview for the review below. All approved images are embedded inside this HTML file.',
+  });
+  return files.map((file) => file.id);
+}
+
+export async function selfContainedArticlePreview(
+  event: CreddyArticleReadySlackEvent,
+): Promise<Uint8Array> {
+  let html = await readFile(event.articlePreviewPath, 'utf8');
+  for (const path of event.articleImagePaths) {
+    const filename = basename(path);
+    const extension = filename.toLowerCase().split('.').at(-1);
+    const mimeType = extension === 'png'
+      ? 'image/png'
+      : extension === 'jpg' || extension === 'jpeg'
+        ? 'image/jpeg'
+        : undefined;
+    if (!mimeType) throw new Error(`Unsupported Slack article image: ${filename}`);
+    const marker = `src="assets/${filename}"`;
+    if (!html.includes(marker)) throw new Error(`Article preview does not reference approved image: ${filename}`);
+    const dataUrl = `data:${mimeType};base64,${(await readFile(path)).toString('base64')}`;
+    html = html.replaceAll(marker, `src="${dataUrl}"`);
+  }
+  if (/src="assets\//.test(html)) {
+    throw new Error('Article preview still contains unresolved local image references');
+  }
+  return Buffer.from(html, 'utf8');
+}
+
+function slackSourceLinks(urls: string[]): string {
+  return urls.flatMap((value, index) => {
+    try {
+      const url = new URL(value);
+      return ['http:', 'https:'].includes(url.protocol) ? [`<${url.toString()}|Source ${index + 1}>`] : [];
+    } catch {
+      return [];
+    }
+  }).join('  •  ');
+}
+
+export function articleReadyReviewBlocks(event: CreddyArticleReadySlackEvent): SlackBlock[] {
+  const published = event.publishStatus === 'published' && event.publishedUrl;
+  const failed = event.publishStatus === 'publish_failed';
+  const actions: SlackBlock[] = [
+    ...(published ? [{
+      type: 'button', style: 'danger', action_id: 'creddy_website_delete', value: event.id,
+      text: { type: 'plain_text', text: 'Undo publish', emoji: true },
+      confirm: { title: { type: 'plain_text', text: 'Undo this website publication?' }, text: { type: 'mrkdwn', text: 'This removes the article and its CMS images from getcreddy.com. You can repost it later.' }, confirm: { type: 'plain_text', text: 'Undo publish' }, deny: { type: 'plain_text', text: 'Cancel' } },
+    }] : []),
+    ...(failed || event.publishStatus === 'unpublished' ? [{
+      type: 'button', style: 'primary', action_id: 'creddy_website_repost', value: event.id,
+      text: { type: 'plain_text', text: failed ? 'Retry publish' : 'Repost article', emoji: true },
+    }] : []),
+    { type: 'button', action_id: 'creddy_content_open', value: event.id, text: { type: 'plain_text', text: 'View full article', emoji: true } },
+  ];
+  return [
+    { type: 'header', text: { type: 'plain_text', text: published ? ':white_check_mark: Website article published' : failed ? ':warning: Website article publish failed' : ':newspaper: Website article processing', emoji: true } },
+    { type: 'section', text: { type: 'mrkdwn', text: `*${clean(event.title)}*\n${clean(event.dek)}` } },
+    { type: 'section', fields: [
+      { type: 'mrkdwn', text: `*Category*\n${clean(event.category.replaceAll('_', ' '))}` },
+      { type: 'mrkdwn', text: `*Reading time*\n${event.readingMinutes} min` },
+    ] },
+    { type: 'section', text: { type: 'mrkdwn', text: `*Summary*\n${clean(event.excerpt)}` } },
+    { type: 'section', text: { type: 'mrkdwn', text: `*Sources*\n${slackSourceLinks(event.sourceUrls) || 'No valid sources available.'}` } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: published
+      ? `:white_check_mark: Agent 8 published this automatically at <${event.publishedUrl}|getcreddy.com/blog>. Slideshow approval remains separate.`
+      : failed
+        ? `:warning: Automatic Agent 8 publishing failed. ${clean(event.publishError || 'Check protected CMS configuration, then use Retry publish.')}`
+        : ':hourglass_flowing_sand: Agent 8 automatic website publishing is in progress. Slideshow approval remains separate.' }] },
+    {
+      type: 'actions',
+      elements: actions,
+    },
+  ];
+}
+
+export async function notifyCreddyArticleReady(
+  event: CreddyArticleReadySlackEvent,
+): Promise<CreddyContentReadySlackResult> {
+  const token = process.env.SLACK_BOT_TOKEN?.trim();
+  const channel = process.env.SLACK_SOCIAL_UPDATES_CHANNEL_ID?.trim();
+  if (!token || !channel) return { sent: false, error: 'SLACK_BOT_TOKEN or SLACK_SOCIAL_UPDATES_CHANNEL_ID is missing' };
+  if (!event.articleImagePaths.length) return { sent: false, error: 'At least one article image is required' };
+  const published = event.publishStatus === 'published' && Boolean(event.publishedUrl);
+  try {
+    const fileIds = await uploadArticleFilesToSlack(token, channel, event);
+    const message = await slackApi<{ ok?: boolean; error?: string; ts?: string }>('chat.postMessage', token, {
+      channel,
+      text: published ? `Creddy website article published: ${event.title}` : `Creddy website article publishing status: ${event.title}`,
+      blocks: articleReadyReviewBlocks(event),
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+    return { sent: true, channel, messageTs: message.ts, fileIds };
+  } catch (error) {
+    const lastError = (error as Error).message;
+    console.error('[Creddy Slack] article review notification failed:', lastError);
+    return { sent: false, channel, error: lastError };
+  }
+}
+
+export async function notifyCreddyEmbeddedArticlePreview(
+  event: CreddyArticleReadySlackEvent,
+): Promise<CreddyContentReadySlackResult> {
+  const token = process.env.SLACK_BOT_TOKEN?.trim();
+  const channel = process.env.SLACK_SOCIAL_UPDATES_CHANNEL_ID?.trim();
+  if (!token || !channel) return { sent: false, error: 'SLACK_BOT_TOKEN or SLACK_SOCIAL_UPDATES_CHANNEL_ID is missing' };
+  try {
+    const bytes = await selfContainedArticlePreview(event);
+    const filename = `${event.id}-complete-preview.html`;
+    const ticket = await slackApi<{ ok?: boolean; error?: string; upload_url?: string; file_id?: string }>(
+      'files.getUploadURLExternal', token, { filename, length: bytes.byteLength }, 'form',
+    );
+    if (!ticket.upload_url || !ticket.file_id) throw new Error('Slack did not return an embedded preview upload ticket');
+    const upload = await fetch(ticket.upload_url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: Buffer.from(bytes),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!upload.ok) throw new Error(`Embedded preview upload returned HTTP ${upload.status}`);
+    await slackApi('files.completeUploadExternal', token, {
+      files: [{ id: ticket.file_id, title: `Complete Creddy article with embedded images: ${event.title}` }],
+      channel_id: channel,
+      initial_comment: `:newspaper: Updated self-contained HTML for *${clean(event.title)}*. Its approved images are embedded and will display when this file is downloaded and opened.`,
+    });
+    return { sent: true, channel, fileIds: [ticket.file_id] };
+  } catch (error) {
+    return { sent: false, channel, error: (error as Error).message };
+  }
 }
 
 export function contentReadyReviewBlocks(event: CreddyContentReadySlackEvent): SlackBlock[] {

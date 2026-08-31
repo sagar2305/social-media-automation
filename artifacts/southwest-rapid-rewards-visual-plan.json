@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "distributionMode": "article_only",
+  "id": "visual-copy-ranking-17297b0bc4c1ff3210886899",
+  "contentDraftId": "copy-ranking-17297b0bc4c1ff3210886899",
+  "analysisId": "ranking-17297b0bc4c1ff3210886899",
+  "canonicalId": "17297b0bc4c1ff3210886899",
+  "createdAt": "2026-08-25T10:05:00.000Z",
+  "format": "article",
+  "theme": "editorial",
+  "characterPack": "credit-card-rewards/creddy",
+  "cover": {
+    "headline": "How to Make Southwest Rapid Rewards Work for Your Travel",
+    "subheadline": "A trip-first framework for points, qualification progress, and benefits"
+  },
+  "scenes": [],
+  "visualBrief": "Premium Creddy editorial visuals using warm cream paper, restrained gold and coral accents, tactile travel-planning materials, natural window light, realistic imperfections, and clear negative space. No social scenes are planned.",
+  "safetyOverlays": [],
+  "sourceUrls": [
+    "https://frequentmiler.com/southwest-airlines-rapid-rewards-complete-guide"
+  ],
+  "factualClaims": [
+    {
+      "field": "program_scope",
+      "value": "The guide covers earning, award redemption, elite status, credit cards, seating benefits, and flight credits",
+      "sourceRecordIds": ["89bf46db829e2b93691b6334"],
+      "confidence": 79
+    },
+    {
+      "field": "companion_pass_threshold",
+      "value": "The guide states that earning 135,000 qualifying Rapid Rewards points in a calendar year earns Companion Pass",
+      "sourceRecordIds": ["89bf46db829e2b93691b6334"],
+      "confidence": 77
+    },
+    {
+      "field": "points_expiration",
+      "value": "The guide states Rapid Rewards points do not expire",
+      "sourceRecordIds": ["89bf46db829e2b93691b6334"],
+      "confidence": 77
+    }
+  ],
+  "articleVisuals": {
+    "version": "creddy-article-visuals-v1",
+    "designVersion": "creddy-guides-v1",
+    "assets": [
+      {
+        "id": "southwest-rewards-map",
+        "usage": "hero",
+        "articleBlockId": "hero-rewards-map",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "16:9",
+        "generationMode": "generate",
+        "prompt": "Premium editorial still life of a travel planning desk with an abstract route map, points tokens, a simple calendar, and benefit markers arranged on warm cream paper, restrained gold and coral accents, believable tactile materials, soft natural window light, subtle shadows, realistic imperfections, and generous negative space for surrounding HTML copy.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline branding, no bank-card designs, no app screens, no people, no duplicate objects, no distorted geometry, and no oversaturated lighting.",
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/southwest-rapid-rewards/southwest-rewards-map.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25; preview rendering verified.",
+        "altText": "Travel-planning materials connecting a route map, points, benefits, and a calendar",
+        "caption": "A trip-first map for organizing the moving parts of a Southwest rewards plan.",
+        "claimFields": ["program_scope"]
+      },
+      {
+        "id": "rapid-rewards-decision-map",
+        "usage": "comparison",
+        "articleBlockId": "decision-map-visual",
+        "assetType": "data_visualization",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Editorial overhead composition representing a four-step rewards decision with four distinct tactile stations: a destination map, balanced cash and points tokens, a benefits checklist, and a final decision marker, on warm off-white paper with restrained gold, charcoal, and coral details, clean visual hierarchy, natural imperfections, and open space around every object.",
+        "negativePrompt": "No text, no numbers, no logos, no watermarks, no airline marks, no fake credit cards, no app screenshots, no people, no duplicate objects, and no neon or plastic advertising style.",
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/southwest-rapid-rewards/rapid-rewards-decision-map.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25.",
+        "altText": "Four visual stations representing trip choice, price comparison, benefit review, and decision",
+        "caption": "Define the trip, compare prices, review benefits, and then decide.",
+        "claimFields": ["companion_pass_threshold"]
+      },
+      {
+        "id": "rapid-rewards-tracking-checklist",
+        "usage": "inline",
+        "articleBlockId": "tracking-visual",
+        "assetType": "editorial_illustration",
+        "aspectRatio": "4:3",
+        "generationMode": "generate",
+        "prompt": "Refined editorial still life of an unbranded rewards tracking system using blank ledger cards, subtle calendar tabs, points tokens, and a small destination marker, arranged with believable human imperfections on a warm cream desktop, restrained Creddy gold and coral palette, soft daylight, tactile paper grain, and useful negative space.",
+        "negativePrompt": "No text, no logos, no watermarks, no airline branding, no bank-card designs, no fake product UI, no people, no extra fingers, no duplicated stationery, and no oversaturated studio glow.",
+        "assetPath": "/Users/mohitkourav/Code/social-media-automation-article-pipeline/artifacts/article-images/southwest-rapid-rewards/rapid-rewards-tracking-checklist.png",
+        "provenance": "Generated with the built-in OpenAI image generation tool from the approved Agent 05 prompt on 2026-08-25.",
+        "altText": "Blank tracking cards for balances, targets, review dates, and an intended trip",
+        "caption": "Keep balances, targets, verification dates, and the next intended trip visible together.",
+        "claimFields": ["points_expiration"]
+      }
+    ]
+  }
+}

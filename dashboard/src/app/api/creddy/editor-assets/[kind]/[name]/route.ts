@@ -17,7 +17,7 @@ function approvedAsset(kind: string, name: string) {
   const base = resolve(repoRoot(), "assets", "creddy");
   if (kind === "expression" && name in CREDDY_EXPRESSION_FILES) {
     const file = CREDDY_EXPRESSION_FILES[name as keyof typeof CREDDY_EXPRESSION_FILES];
-    return { path: resolve(base, "slideshow-expressions-1080x1440", file), mime: "image/png" };
+    return { path: resolve(base, "slideshow-emotion-gestures-v4-1080x1440", file), mime: "image/png" };
   }
   if (kind === "phone" && name in CREDDY_PHONE_TEMPLATE_FILES) {
     const file = CREDDY_PHONE_TEMPLATE_FILES[name as keyof typeof CREDDY_PHONE_TEMPLATE_FILES];

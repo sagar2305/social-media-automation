@@ -23,11 +23,13 @@ and include it in `imagePaths`. This uses the signed-in Codex task and must not 
 Video Factory uses its approved local/template fallback. Do not copy long passages.
 
 For every script line, also return one `characterExpressions` value in the
-same order. Use only the real Creddy asset-pack poses: `neutral`, `waving`,
-`thinking`, `idea`, `worried`, `surprised`, `sleepy`, `starstruck`, `sad`,
-`wink`, `card`, `thumbs-up`, `guide`, `rewards`, or `celebrate`. Match the
-mascot pose to the scene; use `surprised` only for genuinely urgent updates,
-`worried` for negative changes/devaluations, and `guide` for instructional CTAs.
+same order. Use an exact three-digit expression name from the approved v4
+manifest at `assets/creddy/slideshow-emotion-gestures-v4-1080x1440/manifest.json`.
+Choose the closest emotion and intensity—not a random positive/negative pose.
+Use `065`–`072` for genuine caution or urgency, `073`–`078` for comparison and
+thinking, `079`–`082` for aspiration/rewards, and warm or celebratory `086`–`100`
+expressions for successful outcomes and CTAs. Agent 5 may refine this choice
+against the final visual scene while preserving the approved copy and facts.
 
 If a revision request exists, address only the requested factual, script, visual,
 or caption changes and preserve the revision trail. After normal opportunities,

@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import {
   CREDDY_BACKGROUND_STYLES,
   CREDDY_EXPRESSIONS,
+  CREDDY_LEGACY_EXPRESSION_ALIASES,
   CREDDY_PHONE_TEMPLATES,
   type CreddySlideEditor,
 } from "@/lib/creddy-slide-options";
@@ -76,6 +77,26 @@ type ContentBankFile = {
   slideshowManifestPath?: string;
   slideImagePaths?: string[];
   slideCount?: number;
+  articlePreviewPath?: string;
+  articleReview?: {
+    status: "needs_assets" | "pending_review" | "changes_requested" | "approved" | "publishing" | "published" | "publish_failed" | "unpublished";
+    approvedBy?: string;
+    approvedAt?: string;
+    approvedContentSha256?: string;
+    publishingStartedAt?: string;
+    publishAttemptedAt?: string;
+    publishAttempts?: number;
+    publishError?: string;
+    cmsIdentifier?: string;
+    publishedAt?: string;
+    publishedUrl?: string;
+    unpublishedBy?: string;
+    unpublishedAt?: string;
+    requestedBy?: string;
+    requestedAt?: string;
+    changeNotes?: string;
+    blockers?: string[];
+  };
   createdAt: string;
   updatedAt?: string;
   status: "pending_review" | "changes_requested" | "rendering_revision" | "approved" | "scheduled" | "published" | "rejected";
@@ -98,6 +119,18 @@ type ContentBankFile = {
   blotatoMediaUrls?: string[];
 };
 
+type ArticleFile = {
+  id: string;
+  slug: string;
+  category: string;
+  title: string;
+  dek: string;
+  excerpt: string;
+  readingMinutes: number;
+  blocks: unknown[];
+  referralDisclosure: string;
+};
+
 type ContentPackageFile = {
   id: string;
   hook: string;
@@ -108,6 +141,8 @@ type ContentPackageFile = {
   cta?: { label: string; deepLink: string; fallbackUrl?: string };
   brief: string;
   sourceUrls: string[];
+  article?: ArticleFile;
+  articleVisuals?: { assets?: Array<{ id: string; assetPath?: string; aspectRatio?: string; altText?: string; caption?: string }> };
   factualClaims?: Array<{
     field: string;
     value: string | number | boolean | null;
@@ -127,6 +162,7 @@ type ContentDraftFile = {
   cta?: ContentPackageFile["cta"];
   brief: string;
   sourceUrls: string[];
+  article?: ArticleFile;
   factualClaims?: ContentPackageFile["factualClaims"];
 };
 
@@ -148,6 +184,7 @@ type VisualPlanFile = {
     background?: { mode?: string; style?: string };
   }>;
   safetyOverlays?: string[];
+  articleVisuals?: { assets?: Array<{ id: string; assetPath?: string; aspectRatio?: string; altText?: string; caption?: string }> };
   [key: string]: unknown;
 };
 
@@ -178,6 +215,17 @@ export type CreddyBankItemDto = {
   rejectedAt?: string;
   rejectionReason?: string;
   slideEditor?: CreddySlideEditor;
+  article?: ArticleFile;
+  articlePreviewAvailable: boolean;
+  articleImageCount: number;
+  articleReview?: ContentBankFile["articleReview"];
+  articlePublication?: {
+    publishedAt: string;
+    url: string;
+    revalidation: "revalidated" | "not_configured" | "failed";
+  };
+  /** True when this DTO came from the deployed, read-only Supabase mirror. */
+  cloudBacked?: boolean;
 };
 
 function root(): string {
@@ -290,7 +338,7 @@ async function readSlideEditor(record: ContentBankFile): Promise<CreddySlideEdit
       supportText: planSupportText(plan, index),
       expression: CREDDY_EXPRESSIONS.includes(scene.expression as (typeof CREDDY_EXPRESSIONS)[number])
         ? scene.expression as (typeof CREDDY_EXPRESSIONS)[number]
-        : fallbackExpression,
+        : CREDDY_LEGACY_EXPRESSION_ALIASES[scene.expression] ?? fallbackExpression,
       backgroundStyle: CREDDY_BACKGROUND_STYLES.includes(scene.background?.style as (typeof CREDDY_BACKGROUND_STYLES)[number])
         ? scene.background!.style as (typeof CREDDY_BACKGROUND_STYLES)[number]
         : "spotlight",
@@ -314,6 +362,27 @@ async function toDto(record: ContentBankFile): Promise<CreddyBankItemDto> {
       );
   const isDraft = "textScenes" in content;
   const caption = isDraft ? content.instagramCaption : content.caption;
+  const articleImages = await articleImagePaths(record, content);
+  let articlePublication: CreddyBankItemDto["articlePublication"];
+  if (content.article?.slug && record.articleReview?.approvedAt) {
+    try {
+      const receipt = await readJson<{
+        approvedAt: string;
+        publishedAt: string;
+        revalidation: "revalidated" | "not_configured" | "failed";
+      }>(safePath("reports", "website-cms-published", `${content.article.slug}.json`));
+      if (receipt.approvedAt === record.articleReview.approvedAt) {
+        const baseUrl = (process.env.CREDDY_WEBSITE_BASE_URL?.trim() || "https://getcreddy.com").replace(/\/$/, "");
+        articlePublication = {
+          publishedAt: receipt.publishedAt,
+          url: `${baseUrl}/blog/${content.article.slug}`,
+          revalidation: receipt.revalidation,
+        };
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
   return {
     id: record.id,
     createdAt: record.createdAt,
@@ -341,7 +410,30 @@ async function toDto(record: ContentBankFile): Promise<CreddyBankItemDto> {
     rejectedAt: record.rejectedAt,
     rejectionReason: record.rejectionReason,
     slideEditor: await readSlideEditor(record),
+    article: content.article,
+    articlePreviewAvailable: Boolean(record.articlePreviewPath),
+    articleImageCount: articleImages.length,
+    articleReview: record.articleReview,
+    articlePublication,
   };
+}
+
+async function articleImagePaths(
+  record: ContentBankFile,
+  content?: ContentDraftFile | ContentPackageFile,
+): Promise<string[]> {
+  let assets: Array<{ assetPath?: string; aspectRatio?: string }> | undefined;
+  if (record.contentDraftId && record.visualPlanId) {
+    const plan = await readJson<VisualPlanFile>(safePath("06-visual-plans", `${validateId(record.visualPlanId)}.json`));
+    assets = plan.articleVisuals?.assets;
+  } else {
+    const source = content && "scriptLines" in content
+      ? content
+      : await readJson<ContentPackageFile>(safePath("06-content-packages", `${validateId(record.contentPackageId)}.json`));
+    assets = source.articleVisuals?.assets;
+  }
+  const paths = (assets ?? []).filter((asset) => asset.aspectRatio === "16:9" && asset.assetPath).map((asset) => asset.assetPath!);
+  return paths.length === 3 ? paths : [];
 }
 
 function validateEditableText(input: {
@@ -695,9 +787,13 @@ export async function listCreddyBankItems(): Promise<CreddyBankItemDto[]> {
     if (!existing || recordFreshness(record) > recordFreshness(existing)) byId.set(record.id, record);
   }
   const unique = [...byId.values()];
-  return Promise.all(
+  const localItems = await Promise.all(
     unique.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((record) => toDto(record)),
   );
+  if (localItems.length > 0) return localItems;
+
+  const { listCreddyCloudBankItems } = await import("@/lib/creddy-cloud-store");
+  return listCreddyCloudBankItems();
 }
 
 export async function writeCreddyLiveSyncReport(report: unknown): Promise<void> {
@@ -860,6 +956,46 @@ export async function getCreddyMediaPath(id: string, format: Format): Promise<{ 
   const extension = extname(path).toLowerCase();
   const mime = extension === ".webm" ? "video/webm" : extension === ".mov" ? "video/quicktime" : "video/mp4";
   return { path, mime };
+}
+
+export async function getCreddyArticlePreviewPath(id: string): Promise<string> {
+  const { record } = await findBankFile(id);
+  const path = record.articlePreviewPath;
+  if (!path || !isAbsolute(path)) throw new Error("Article preview is not available");
+  const allowed = safePath("06-content-packages", "articles");
+  const rel = relative(allowed, resolve(path));
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("Article preview path is outside production packages");
+  const info = await stat(path);
+  if (!info.isFile() || extname(path).toLowerCase() !== ".html") throw new Error("Article preview is invalid");
+  return path;
+}
+
+export async function getCreddyArticleImagePath(id: string, index: number): Promise<{ path: string; mime: string }> {
+  if (!Number.isInteger(index) || index < 0 || index > 2) throw new Error("Invalid article image index");
+  const { record } = await findBankFile(id);
+  const paths = await articleImagePaths(record);
+  const path = paths[index];
+  if (!path || !isAbsolute(path)) throw new Error("Article image is not available");
+  const rel = relative(root(), resolve(path));
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("Article image is outside the Creddy data root");
+  const info = await stat(path);
+  if (!info.isFile()) throw new Error("Article image is not a file");
+  const extension = extname(path).toLowerCase();
+  const mime = extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
+  return { path, mime };
+}
+
+export async function getCreddyArticlePreviewHtml(id: string): Promise<string> {
+  const path = await getCreddyArticlePreviewPath(id);
+  const { record } = await findBankFile(id);
+  const images = await articleImagePaths(record);
+  if (images.length !== 3) throw new Error("Article preview requires exactly three approved 16:9 images");
+  const byName = new Map(images.map((imagePath, index) => [imagePath.split("/").at(-1), index]));
+  const html = await readFile(path, "utf8");
+  return html.replace(/src=(["'])assets\/([^"']+)\1/g, (match, quote: string, name: string) => {
+    const index = byName.get(name);
+    return index === undefined ? match : `src=${quote}/api/creddy/article-image/${encodeURIComponent(id)}/${index}${quote}`;
+  });
 }
 
 export async function getCreddySlidePath(id: string, slide: number): Promise<{ path: string; mime: string }> {

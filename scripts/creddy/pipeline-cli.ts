@@ -1,6 +1,12 @@
 import dotenv from 'dotenv';
+import { resolveWebsiteCmsCredentials } from './instant-website-publish.js';
 
 import { recordAgent1Feedback } from './agent1-feedback.js';
+import {
+  importCodexArticleImage,
+  prepareCodexArticleImageRequests,
+  type CodexArticleImageResultManifest,
+} from './article-image-stage.js';
 import { recordAnalysisPerformanceFeedback } from './analysis-feedback.js';
 import {
   acceptAnalysisDecision,
@@ -45,13 +51,25 @@ import type {
 import { requireStableDashboardBaseUrl } from './public-dashboard.js';
 import { refreshCreddyProductReleaseStatus } from './product-release-stage.js';
 import { runPublishStage } from './publish-stage.js';
-import { listPendingProductionTasks, prepareProductionPackages } from './production-stage.js';
+import { listPendingProductionTasks, prepareProductionPackages, refreshArticlePreviews } from './production-stage.js';
 import { writeObservablePipelineReports } from './report-stage.js';
 import { runSlackReviewStage, SlackClient } from './slack-stage.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
+import { autoPublishWebsiteArticle } from './article-approval-service.js';
+import { publishApprovedWebsiteArticlesImmediately } from './instant-website-publish.js';
+import { notifyCreddyArticleReady } from './slack-notifications.js';
 import { VideoFactoryClient } from './video-factory-client.js';
-import { approveContentBankItem, rejectContentBankItem, runContentBankHandoff, runVideoStage } from './video-stage.js';
+import { approveContentBankItem, rejectContentBankItem, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
+import { exportApprovedWebsiteArticles } from './website-stage.js';
+import {
+  createCwebpWebsiteCmsAssetOptimizer,
+  createSupabaseWebsiteCmsClient,
+  createWebsiteRevalidator,
+  publishApprovedWebsiteExportToCms,
+  publishReadyWebsiteExportsToCms,
+} from './website-cms-stage.js';
+import { prepareApprovedWebsitePullRequest, syncApprovedWebsiteExport } from './website-sync-stage.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -99,6 +117,7 @@ async function status(root: string): Promise<Record<string, number>> {
     scheduled: ['11-scheduled'],
     published: ['12-published'],
     rejectedContent: ['13-rejected-content'],
+    websiteReady: ['14-website-ready'],
   } as const;
   const result: Record<string, number> = {};
   for (const [name, segments] of Object.entries(locations)) {
@@ -111,7 +130,7 @@ async function status(root: string): Promise<Record<string, number>> {
     } else {
       result[name] =
         name === 'contentPackages' || name === 'contentDrafts'
-          ? files.filter((path) => !/\/(scripts|captions|images|briefs)\//.test(path)).length
+          ? files.filter((path) => !/\/(scripts|captions|images|briefs|articles)\//.test(path)).length
           : files.length;
     }
   }
@@ -152,6 +171,10 @@ async function main(): Promise<void> {
   if (command === 'report') {
     await initializeCreddyDataRoot(root);
     console.log(JSON.stringify({ reports: await writeObservablePipelineReports(root) }, null, 2));
+    return;
+  }
+  if (command === 'article-previews-refresh') {
+    console.log(JSON.stringify(await refreshArticlePreviews(root), null, 2));
     return;
   }
   if (command === 'agent-1-feedback') {
@@ -407,6 +430,26 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ agent: 6, preparation, pendingCount: pending.length, reports }, null, 2));
     return;
   }
+  if (command === 'agent-6-codex-image-requests' || command === 'agent-6-article-images') {
+    const requests = await prepareCodexArticleImageRequests(root);
+    const reports = await writeObservablePipelineReports(root);
+    console.log(JSON.stringify({
+      agent: 6,
+      status: requests.requested > 0 ? 'awaiting_codex_imagegen' : 'no_pending_codex_images',
+      compatibilityAlias: command === 'agent-6-article-images',
+      requests,
+      reports,
+    }, null, 2));
+    return;
+  }
+  if (command === 'agent-6-accept-codex-image') {
+    const manifest = await readJson<CodexArticleImageResultManifest>(argument(3, 'Codex article image result manifest'));
+    const image = await importCodexArticleImage(root, manifest);
+    const preparation = await prepareProductionPackages(root);
+    const reports = await writeObservablePipelineReports(root);
+    console.log(JSON.stringify({ agent: 6, image, preparation, reports }, null, 2));
+    return;
+  }
   if (command === 'agent-6-render') {
     const preparation = await prepareProductionPackages(root);
     const musicPath = process.env.CREDDY_BACKGROUND_MUSIC_PATH?.trim();
@@ -424,7 +467,28 @@ async function main(): Promise<void> {
   }
   if (command === 'agent-7-bank') {
     const videoCreated = await runContentBankHandoff(root);
-    const slideshow = await runSlideshowContentBankHandoff(root);
+    const autoPublishArticle = async (id: string): Promise<boolean> => {
+      const scopedId = process.env.CREDDY_AGENT7_AUTO_PUBLISH_ID?.trim();
+      if (scopedId && scopedId !== id) return false;
+      await autoPublishWebsiteArticle({
+        root,
+        id,
+        websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
+        publish: () => publishApprovedWebsiteArticlesImmediately({ repositoryRoot: process.cwd() }),
+      });
+      return true;
+    };
+    const articleCreated = await runArticleContentBankHandoff(root, new Date(), {
+      autoPublisher: autoPublishArticle,
+      notifier: notifyCreddyArticleReady,
+    });
+    const slideshow = await runSlideshowContentBankHandoff(
+      root,
+      new Date(),
+      undefined,
+      undefined,
+      autoPublishArticle,
+    );
     const bank = await Promise.all(
       (await listJsonFiles(safeDataPath(root, '09-pending-approval')))
         .map((path) => readJson<ContentBankRecord>(path)),
@@ -437,9 +501,10 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({
       agent: 7,
       videoCreated,
+      articleCreated,
       slideshow,
       statusCounts,
-      policy: 'Human review only: Agent 7 never approves, schedules, or publishes.',
+      policy: 'Website articles auto-publish through Agent 8; slideshow and social approval remain separate and human-controlled.',
       reports,
     }, null, 2));
     return;
@@ -494,8 +559,8 @@ async function main(): Promise<void> {
       id: string;
       approvedBy: string;
       destinations: Array<{
-        format: 'text_music' | 'narrated';
-        platform: 'instagram' | 'tiktok';
+        format: 'text_music' | 'narrated' | 'article';
+        platform: 'instagram' | 'tiktok' | 'creddy_website';
         account: string;
         scheduledFor: string;
       }>;
@@ -528,6 +593,97 @@ async function main(): Promise<void> {
       publishing,
       policy: 'Publishes only human-approved scheduled destinations; never approves content.',
       reports,
+    }, null, 2));
+    return;
+  }
+  if (command === 'agent-8-website-export') {
+    const website = await exportApprovedWebsiteArticles(root, {
+      referralRegistryPath: process.env.CREDDY_REFERRAL_REGISTRY_PATH,
+    });
+    let cms: Awaited<ReturnType<typeof publishReadyWebsiteExportsToCms>> | undefined;
+    if (process.env.CREDDY_WEBSITE_CMS_PUBLISH_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true') {
+      const { url: supabaseUrl, serviceRoleKey } = resolveWebsiteCmsCredentials();
+      cms = await publishReadyWebsiteExportsToCms(root, website.outputPaths, {
+        allowCmsPublish: true,
+        client: createSupabaseWebsiteCmsClient(supabaseUrl, serviceRoleKey),
+        assetOptimizer: process.env.CREDDY_WEBSITE_ASSET_WEBP_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true'
+          ? createCwebpWebsiteCmsAssetOptimizer(Number(process.env.CREDDY_WEBSITE_ASSET_WEBP_QUALITY?.trim() || 88))
+          : undefined,
+        forceRepublish: process.env.CREDDY_WEBSITE_CMS_FORCE_REPUBLISH?.trim().toLocaleLowerCase('en-US') === 'true',
+        websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
+        revalidate: createWebsiteRevalidator({
+          websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
+          secret: process.env.CREDDY_WEBSITE_REVALIDATE_SECRET,
+        }),
+      });
+    }
+    const reports = await writeObservablePipelineReports(root);
+    console.log(JSON.stringify({
+      agent: 8,
+      website,
+      cms,
+      policy: cms
+        ? 'Published only explicitly Agent 7-approved website exports to the Creddy CMS; slideshow publishing remained separate.'
+        : 'Exported only human-approved, asset-complete articles. CMS publishing stayed disabled.',
+      reports,
+    }, null, 2));
+    return;
+  }
+  if (command === 'agent-8-website-sync') {
+    const websiteRepositoryPath = process.env.CREDDY_WEBSITE_REPOSITORY_PATH?.trim();
+    if (!websiteRepositoryPath) throw new Error('CREDDY_WEBSITE_REPOSITORY_PATH is required for website sync');
+    const sync = await syncApprovedWebsiteExport(
+      root,
+      argument(3, 'Agent 8 website export file'),
+      websiteRepositoryPath,
+    );
+    console.log(JSON.stringify({
+      agent: 8,
+      sync,
+      policy: 'Copies only an Agent 7-approved v2 export into the local website repository. It does not commit, push, publish, or deploy.',
+    }, null, 2));
+    return;
+  }
+  if (command === 'agent-8-website-cms-publish') {
+    const { url: supabaseUrl, serviceRoleKey } = resolveWebsiteCmsCredentials();
+    const cms = await publishApprovedWebsiteExportToCms(
+      root,
+      argument(3, 'Agent 8 website export file'),
+      {
+        allowCmsPublish: process.env.CREDDY_WEBSITE_CMS_PUBLISH_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true',
+        client: createSupabaseWebsiteCmsClient(supabaseUrl, serviceRoleKey),
+        assetOptimizer: process.env.CREDDY_WEBSITE_ASSET_WEBP_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true'
+          ? createCwebpWebsiteCmsAssetOptimizer(Number(process.env.CREDDY_WEBSITE_ASSET_WEBP_QUALITY?.trim() || 88))
+          : undefined,
+        websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
+        revalidate: createWebsiteRevalidator({
+          websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
+          secret: process.env.CREDDY_WEBSITE_REVALIDATE_SECRET,
+        }),
+      },
+    );
+    console.log(JSON.stringify({
+      agent: 8,
+      cms,
+      policy: 'Publishes only an Agent 7-approved export to the Creddy blog CMS. No Git branch, pull request, or Vercel deployment is created.',
+    }, null, 2));
+    return;
+  }
+  if (command === 'agent-8-website-pr') {
+    const websiteRepositoryPath = process.env.CREDDY_WEBSITE_REPOSITORY_PATH?.trim();
+    if (!websiteRepositoryPath) throw new Error('CREDDY_WEBSITE_REPOSITORY_PATH is required for website PR preparation');
+    const pullRequest = await prepareApprovedWebsitePullRequest(
+      root,
+      argument(3, 'Agent 8 website export file'),
+      websiteRepositoryPath,
+      {
+        allowExternalPullRequest: process.env.CREDDY_WEBSITE_PR_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true',
+      },
+    );
+    console.log(JSON.stringify({
+      agent: 8,
+      pullRequest,
+      policy: 'Creates a tested PR into development. Production deployment still requires human review and merge.',
     }, null, 2));
     return;
   }

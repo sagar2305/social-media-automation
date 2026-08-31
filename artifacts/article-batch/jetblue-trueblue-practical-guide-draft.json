@@ -1,0 +1,277 @@
+{
+  "version": 1,
+  "distributionMode": "article_only",
+  "copyVersion": "creddy-copy-v3",
+  "id": "copy-ranking-5befbe27eb8a94b98257e984",
+  "analysisId": "ranking-5befbe27eb8a94b98257e984",
+  "canonicalId": "5befbe27eb8a94b98257e984",
+  "createdAt": "2026-08-25T11:30:00.000Z",
+  "audience": "US travelers earning or redeeming JetBlue TrueBlue points",
+  "slot": "understand",
+  "hook": "How to Use JetBlue TrueBlue for Real Travel",
+  "textScenes": [],
+  "narrationScript": "",
+  "instagramCaption": "",
+  "tiktokCaption": "",
+  "hashtags": [],
+  "cta": {
+    "label": "Organize your rewards in Creddy",
+    "deepLink": "creddy://home"
+  },
+  "brief": "Evergreen, verification-aware article about JetBlue TrueBlue; no social post or slideshow output.",
+  "sourceUrls": [
+    "https://frequentmiler.com/jetblue-trueblue-guide"
+  ],
+  "factualClaims": [
+    {
+      "field": "program_scope",
+      "value": "The guide covers TrueBlue earning, redemption, Mosaic benefits, subscriptions, partnerships, and credit cards",
+      "sourceRecordIds": [
+        "de28720b68ef9174b3756e2f"
+      ],
+      "confidence": 79
+    },
+    {
+      "field": "award_flexibility",
+      "value": "The guide reports free changes and cancellations for most JetBlue points bookings except Blue Basic",
+      "sourceRecordIds": [
+        "de28720b68ef9174b3756e2f"
+      ],
+      "confidence": 77
+    },
+    {
+      "field": "2026_updates",
+      "value": "The guide says it incorporates 2026 Mosaic changes and updated airline partnerships",
+      "sourceRecordIds": [
+        "de28720b68ef9174b3756e2f"
+      ],
+      "confidence": 78
+    }
+  ],
+  "article": {
+    "version": "creddy-article-v1",
+    "designVersion": "creddy-guides-v1",
+    "id": "article-ranking-5befbe27eb8a94b98257e984",
+    "slug": "jetblue-trueblue-practical-guide",
+    "category": "points_and_miles",
+    "title": "How to Use JetBlue TrueBlue for Real Travel",
+    "dek": "A trip-first framework for earning points, comparing award bookings, understanding Mosaic benefits, and checking the rules that affect flexibility.",
+    "excerpt": "Use a trip-first, verification-aware framework to understand JetBlue TrueBlue, compare realistic value, and avoid acting on a headline alone.",
+    "seoTitle": "How to Use JetBlue TrueBlue for Real Travel — Creddy",
+    "seoDescription": "Learn how to evaluate rewards and card benefits with a real-trip value test, current-rule verification, practical comparisons, and a review checklist.",
+    "authorName": "Creddy Editorial",
+    "createdAt": "2026-08-25T11:30:00.000Z",
+    "updatedAt": "2026-08-25T11:30:00.000Z",
+    "readingMinutes": 7,
+    "heroVisualId": "jetblue-trueblue-practical-guide-hero",
+    "sourceUrls": [
+      "https://frequentmiler.com/jetblue-trueblue-guide"
+    ],
+    "referralDisclosure": "Advertiser disclosure: Creddy may earn a commission when you apply for a card through links on this site. This does not affect our recommendations, which are based on the published value of each card's benefits.",
+    "blocks": [
+      {
+        "id": "hero-visual",
+        "type": "visual",
+        "visualId": "jetblue-trueblue-practical-guide-hero",
+        "caption": "A trip-first planning view of JetBlue TrueBlue."
+      },
+      {
+        "id": "key-takeaways",
+        "type": "key_takeaways",
+        "title": "What matters before using JetBlue TrueBlue",
+        "items": [
+          "The accepted source covers earning, redemptions, Mosaic, subscriptions, partnerships, and cards; it also reports flexibility for most points bookings other than Blue Basic and notes 2026 updates.",
+          "Separate published program rules from the value you can realistically use.",
+          "Verify current official terms and live booking details immediately before acting."
+        ],
+        "claimFields": [
+          "program_scope",
+          "award_flexibility",
+          "2026_updates"
+        ]
+      },
+      {
+        "id": "start-with-real-trip",
+        "type": "heading",
+        "level": 2,
+        "text": "Start with one real trip"
+      },
+      {
+        "id": "start-with-real-trip-body",
+        "type": "paragraph",
+        "text": "Start with a trip you can describe in concrete terms: the travelers, likely dates, route or property, acceptable cash budget, and the flexibility you need. Then decide which part of JetBlue TrueBlue can help. The accepted source covers earning, redemptions, Mosaic, subscriptions, partnerships, and cards; it also reports flexibility for most points bookings other than Blue Basic and notes 2026 updates. Those facts are useful inputs, but they are not a personal recommendation. A broad program guide can make every feature look equally important even though most readers need only a small part of the system. Write down the outcome you want before looking at a points balance, status meter, or card benefit. Price the trip using live information and preserve a screenshot or note of the date checked. This creates a baseline that is grounded in a real booking rather than an abstract desire to maximize everything.",
+        "claimFields": [
+          "program_scope",
+          "award_flexibility",
+          "2026_updates"
+        ]
+      },
+      {
+        "id": "trip-first-tip",
+        "type": "callout",
+        "tone": "tip",
+        "title": "Use one realistic test case",
+        "body": "Compare the complete cash and rewards outcomes for the same dates, travelers, and conditions before changing spending or moving points.",
+        "claimFields": []
+      },
+      {
+        "id": "decision-visual",
+        "type": "visual",
+        "visualId": "jetblue-trueblue-practical-guide-decision",
+        "caption": "A practical decision view for JetBlue TrueBlue."
+      },
+      {
+        "id": "separate-rules-value",
+        "type": "heading",
+        "level": 2,
+        "text": "Separate rules from personal value"
+      },
+      {
+        "id": "separate-rules-value-body",
+        "type": "paragraph",
+        "text": "Published program rules and personal value answer different questions. The accepted evidence describes what the source reports; your decision depends on how those rules interact with your account and travel. Separate redeemable value, qualification progress, recurring benefits, one-time offers, and cash costs into different lines. Do not combine them into one optimistic total. A benefit should count only when you expect to use it naturally, under conditions you can meet, for a purchase or trip you would otherwise make. Treat uncertain availability as uncertain, and do not assign full value to a feature that requires changed behavior. This separation makes it easier to see whether which TrueBlue feature helps a trip you are genuinely likely to book.",
+        "claimFields": [
+          "program_scope",
+          "award_flexibility",
+          "2026_updates"
+        ]
+      },
+      {
+        "id": "use-conservative-test",
+        "type": "heading",
+        "level": 2,
+        "text": "Use a conservative value test"
+      },
+      {
+        "id": "use-conservative-test-body",
+        "type": "paragraph",
+        "text": "Use a conservative value test. First calculate the cash you would otherwise pay for the same trip or benefit. Then subtract unavoidable taxes, fees, annual costs, positioning travel, or extra purchases. Next account for flexibility: cancellation rules, transfer finality, expiration, availability, and the possibility that your plans change. Finally, compare the result with the best realistic alternative, including doing nothing. Avoid using a best-case redemption or a perfect benefit year as the default assumption. A smaller value you can repeat is more decision-useful than a large theoretical number. If the conclusion changes when one assumption moves slightly, mark the decision as sensitive and verify again immediately before acting.",
+        "claimFields": []
+      },
+      {
+        "id": "decision-table",
+        "type": "comparison_table",
+        "caption": "Four decisions to make with current evidence instead of assumptions.",
+        "columns": [
+          "Decision",
+          "Question",
+          "Check now"
+        ],
+        "rows": [
+          [
+            "Use the benefit",
+            "Would I make this purchase or trip anyway?",
+            "Eligibility, timing, and total cash cost"
+          ],
+          [
+            "Redeem or transfer",
+            "Is the exact booking available at an acceptable total price?",
+            "Live space, fees, cancellation, and transfer rules"
+          ],
+          [
+            "Pursue status",
+            "Will the resulting benefits improve trips already planned?",
+            "Current progress, threshold, deadline, and expected use"
+          ],
+          [
+            "Wait",
+            "Does keeping flexibility create a stronger option?",
+            "Alternative bookings, future plans, and opportunity cost"
+          ]
+        ],
+        "claimFields": []
+      },
+      {
+        "id": "verify-before-action",
+        "type": "heading",
+        "level": 2,
+        "text": "Verify the rule that can change the decision"
+      },
+      {
+        "id": "verify-before-action-body",
+        "type": "paragraph",
+        "text": "Before acting, verify live award pricing, fare-specific change and cancellation rules, current Mosaic terms, partner availability, and the total taxes and fees shown at checkout. This article uses a single accepted secondary source, so program-specific details should be checked against current official terms. Record what you verified, the date, and where it appeared. If a rule affects a transfer, application, cancellation, or large purchase, save the relevant official page before proceeding. Also check your own account because targeted eligibility and rollout timing may differ. When a source and an official page conflict, stop and resolve the difference rather than choosing the more attractive version. A short verification habit protects more value than chasing an extra fraction of a point while relying on an outdated rule.",
+        "claimFields": [
+          "program_scope",
+          "award_flexibility",
+          "2026_updates"
+        ]
+      },
+      {
+        "id": "verification-warning",
+        "type": "callout",
+        "tone": "warning",
+        "title": "Single-source evidence needs a final check",
+        "body": "Confirm every material program-specific detail in current official terms and in your own account before transferring points, applying, cancelling, or redirecting major spending.",
+        "claimFields": [
+          "program_scope",
+          "award_flexibility",
+          "2026_updates"
+        ]
+      },
+      {
+        "id": "tracker-visual",
+        "type": "visual",
+        "visualId": "jetblue-trueblue-practical-guide-tracker",
+        "caption": "A compact verification and follow-up system for JetBlue TrueBlue."
+      },
+      {
+        "id": "review-real-result",
+        "type": "heading",
+        "level": 2,
+        "text": "Review the result, not the promise"
+      },
+      {
+        "id": "review-real-result-body",
+        "type": "paragraph",
+        "text": "After the trip or statement closes, compare expected value with what actually happened. Note what posted correctly, which benefit required extra effort, what remained unused, and whether support or booking friction changed the result. Keep this review short and factual. The purpose is not to defend an earlier choice; it is to improve the next one. Revisit JetBlue TrueBlue only when a meaningful input changes: a real trip appears, official terms change, a renewal date approaches, or a balance becomes large enough to use. This cadence reduces promotion-driven decisions and keeps the rewards plan connected to ordinary finances and travel priorities.",
+        "claimFields": []
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "items": [
+          {
+            "question": "What does the accepted source establish about JetBlue TrueBlue?",
+            "answer": "The accepted source covers earning, redemptions, Mosaic, subscriptions, partnerships, and cards; it also reports flexibility for most points bookings other than Blue Basic and notes 2026 updates. Verify the current official terms because the pipeline currently has one accepted secondary source.",
+            "claimFields": [
+              "program_scope",
+              "award_flexibility",
+              "2026_updates"
+            ]
+          },
+          {
+            "question": "Should I value every listed benefit at face value?",
+            "answer": "No. Count only value you expect to use naturally after unavoidable cash costs, restrictions, and the value of alternatives.",
+            "claimFields": []
+          },
+          {
+            "question": "When should I verify the rules?",
+            "answer": "Verify immediately before a transfer, application, cancellation, large purchase, or booking because terms, availability, and account eligibility can change.",
+            "claimFields": []
+          },
+          {
+            "question": "What should I track afterward?",
+            "answer": "Record what posted, what you used, the cash you paid, any friction, and whether the outcome matched the reason you acted.",
+            "claimFields": []
+          }
+        ]
+      },
+      {
+        "id": "subscribe",
+        "type": "subscribe",
+        "title": "Get practical Creddy guides",
+        "body": "Receive clear credit-card, points, and benefits guidance built around decisions you can actually use.",
+        "consentLabel": "I agree to receive Creddy editorial emails and can unsubscribe at any time."
+      },
+      {
+        "id": "download",
+        "type": "download",
+        "title": "Keep your rewards plan visible",
+        "body": "Use Creddy to organize benefits, balances, verification dates, and the next decision connected to your travel.",
+        "iosUrl": "https://apps.apple.com/app/id6768603911?ct=web_discovery",
+        "androidUrl": "https://play.google.com/store/apps/details?id=com.thebrewapps.creddy"
+      }
+    ]
+  }
+}

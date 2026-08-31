@@ -35,6 +35,24 @@ type ContentBankRecord = Record<string, unknown> & {
     fromStatus: ContentStatus;
     toStatus: ContentStatus;
   }>;
+  articlePreviewPath?: string;
+  articleReview?: {
+    status: 'needs_assets' | 'pending_review' | 'changes_requested' | 'approved' | 'publishing' | 'published' | 'publish_failed';
+    approvedBy?: string;
+    approvedAt?: string;
+    approvedContentSha256?: string;
+    publishingStartedAt?: string;
+    publishAttemptedAt?: string;
+    publishAttempts?: number;
+    publishError?: string;
+    cmsIdentifier?: string;
+    publishedAt?: string;
+    publishedUrl?: string;
+    requestedBy?: string;
+    requestedAt?: string;
+    changeNotes?: string;
+    blockers?: string[];
+  };
 };
 
 type ContentDraftRecord = {
@@ -50,6 +68,15 @@ type ContentDraftRecord = {
   brief?: string;
   sourceUrls?: string[];
   factualClaims?: Array<{ field?: string; value?: unknown; confidence?: number }>;
+  article?: {
+    title: string;
+    dek: string;
+    excerpt: string;
+    category: string;
+    readingMinutes: number;
+    sourceUrls: string[];
+    blocks: unknown[];
+  };
 };
 
 export type CreddySlackFullReview = {
@@ -67,6 +94,9 @@ export type CreddySlackFullReview = {
   sourceUrls: string[];
   factualClaims: Array<{ field?: string; value?: unknown; confidence?: number }>;
   reviewHistory: NonNullable<ContentBankRecord['reviewHistory']>;
+  article?: ContentDraftRecord['article'];
+  articleReview?: ContentBankRecord['articleReview'];
+  articlePreviewAttached: boolean;
 };
 
 const DEFAULT_DATA_ROOT = '/Users/mohitkourav/Documents/ChatGPT/Social media automation data';
@@ -300,5 +330,8 @@ export async function loadCreddySlackFullReview(
     sourceUrls: draft.sourceUrls ?? [],
     factualClaims: draft.factualClaims ?? [],
     reviewHistory,
+    article: draft.article,
+    articleReview: record.articleReview,
+    articlePreviewAttached: Boolean(record.articlePreviewPath),
   };
 }
