@@ -358,6 +358,7 @@ export async function runAnalysisQueueStage(
           canonicalId: article.canonicalId,
           queuedAt: now.toISOString(),
           instructionsVersion: 'creddy-ranking-v3',
+          queueRunId: manifest.runId,
           article,
         };
         await writeJsonAtomic(pendingPath, task);
@@ -394,14 +395,36 @@ export async function acceptAnalysisDecision(
   root: string,
   unvalidated: AnalysisDecisionRecord,
 ): Promise<void> {
-  const decision = validateAnalysisDecision(unvalidated);
-  const taskPath = safeDataPath(root, '04-analysis-queue', 'pending', `${decision.canonicalId}.json`);
-  if (!(await pathExists(taskPath))) throw new Error(`Analysis task not found: ${decision.canonicalId}`);
+  const validated = validateAnalysisDecision(unvalidated);
+  const taskPath = safeDataPath(root, '04-analysis-queue', 'pending', `${validated.canonicalId}.json`);
+  if (!(await pathExists(taskPath))) throw new Error(`Analysis task not found: ${validated.canonicalId}`);
   const task = await readJson<AnalysisTaskRecord>(taskPath);
-  if (task.canonicalId !== decision.canonicalId) throw new Error('Analysis task identity mismatch');
-  if (decision.evidenceRecordIds.some((id) => !task.article.evidenceRecordIds.includes(id))) {
+  if (task.canonicalId !== validated.canonicalId) throw new Error('Analysis task identity mismatch');
+  if (validated.evidenceRecordIds.some((id) => !task.article.evidenceRecordIds.includes(id))) {
     throw new Error('Analysis references evidence outside the canonical article');
   }
+  if (task.correctionContext) {
+    const conflictingFields = task.correctionContext.priorOfficialVerification.claimOutcomes
+      .filter((outcome) => outcome.status === 'conflicting')
+      .map((outcome) => outcome.field);
+    if (conflictingFields.length === 0 || conflictingFields.some((field) => !validated.claims.some((claim) => claim.field === field))) {
+      throw new Error('Corrected analysis must retain and explicitly reassess every previously conflicting claim field');
+    }
+    if (validated.verificationState === 'ready') {
+      throw new Error('A corrected official conflict must return to official verification before it can be ready');
+    }
+    const analyzedAt = Date.parse(validated.analyzedAt);
+    const reopenedAt = Date.parse(task.correctionContext.reopenedAt);
+    if (!Number.isFinite(analyzedAt) || !Number.isFinite(reopenedAt) || analyzedAt <= reopenedAt) {
+      throw new Error('Corrected analysis must be produced after the audited conflict was reopened');
+    }
+  }
+  const decision: AnalysisDecisionRecord = {
+    ...validated,
+    analysisBatchId: task.queueRunId,
+    correctionContext: task.correctionContext,
+    verificationGate: undefined,
+  };
 
   await writeJsonAtomic(
     safeDataPath(root, '04-analysis-queue', 'completed', `${decision.canonicalId}.json`),

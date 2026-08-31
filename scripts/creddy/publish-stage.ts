@@ -17,6 +17,7 @@ import {
 } from './pipeline-types.js';
 import type { BlotatoApi } from './blotato-client.js';
 import { notifyCreddyPublished, type CreddyPublishedSlackEvent } from './slack-notifications.js';
+import { assertSocialVerificationSatisfied, assertVerificationGateIntegrity } from './publication-policy.js';
 
 export async function runPublishStage(
   root: string,
@@ -51,6 +52,11 @@ export async function runPublishStage(
         const content = await readJson<ContentPackageRecord>(
           safeDataPath(root, '06-content-packages', `${bank.contentPackageId}.json`),
         );
+        assertVerificationGateIntegrity(bank, content);
+        if (bank.destinations.some((destination) =>
+          destination.platform !== 'creddy_website' && destination.format !== 'article')) {
+          assertSocialVerificationSatisfied(bank.verificationGate, bank.revision);
+        }
         const publishedNotifications: CreddyPublishedSlackEvent[] = [];
         for (const destination of bank.destinations) {
           if (destination.status === 'published' || destination.status === 'failed') continue;

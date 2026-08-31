@@ -144,6 +144,12 @@ export async function acceptContentPackage(
   const opportunity = await readJson<AnalysisDecisionRecord>(opportunityPath);
   if (opportunity.route !== 'auto_process') throw new Error('Only auto_process items can generate content');
   if (opportunity.canonicalId !== content.canonicalId) throw new Error('Content canonical identity mismatch');
+  if (opportunity.analysisBatchId) {
+    if (content.analysisBatchId !== opportunity.analysisBatchId ||
+        JSON.stringify(content.verificationGate) !== JSON.stringify(opportunity.verificationGate)) {
+      throw new Error('Content package must preserve the current Agent 03 batch and verification gate');
+    }
+  }
   return writeContentAndJobs(root, content, 1);
 }
 
@@ -182,6 +188,14 @@ export async function acceptContentRevision(
   );
   if (original.analysisId !== content.analysisId || original.canonicalId !== content.canonicalId) {
     throw new Error('Revision cannot change analysis or canonical identity');
+  }
+  if ((bank.analysisBatchId || original.analysisBatchId) &&
+      (bank.analysisBatchId !== content.analysisBatchId || !content.verificationGate)) {
+    throw new Error('Revision is missing its current Agent 03 batch or verification gate');
+  }
+  if (original.analysisBatchId !== content.analysisBatchId ||
+      JSON.stringify(original.verificationGate) !== JSON.stringify(content.verificationGate)) {
+    throw new Error('Revision cannot change or remove the official-verification boundary');
   }
   const jobs = await writeContentAndJobs(root, content, bank.revision);
   await writeJsonAtomic(

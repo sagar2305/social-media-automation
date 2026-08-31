@@ -173,6 +173,73 @@ export interface AnalysisTaskRecord {
   canonicalId: string;
   queuedAt: string;
   instructionsVersion: 'creddy-analysis-v1' | 'creddy-ranking-v2' | 'creddy-ranking-v3';
+  /** Identifies the Agent 03 batch so only that run's diversified slate is
+   * selected for the bounded official-verification pass. */
+  queueRunId?: string;
+  /** Present only for an audited retry of a retained official conflict. The
+   * prior official evidence is context for correction, never an automatic
+   * replacement for a fresh official verification pass. */
+  correctionContext?: {
+    historyId: string;
+    reopenedBy: string;
+    reopenedAt: string;
+    reason: string;
+    originalAnalysisBatchId: string;
+    originalPortfolioRank: number;
+    priorOfficialVerification: CreddyOfficialVerificationRecord;
+  };
+  article: CanonicalNewsRecord;
+}
+
+export type CreddyOfficialVerificationStatus =
+  | 'verified'
+  | 'inconclusive'
+  | 'conflicting'
+  | 'unavailable';
+
+export interface CreddyOfficialEvidence {
+  url: string;
+  owner: string;
+  sourceType: 'issuer' | 'airline' | 'hotel' | 'loyalty_program' | 'airport' | 'government';
+}
+
+export interface CreddyOfficialClaimOutcome {
+  field: string;
+  status: 'verified' | 'unresolved' | 'conflicting' | 'not_found';
+  officialUrls: string[];
+  notes: string;
+}
+
+export interface CreddyOfficialVerificationRecord {
+  version: 1;
+  id: string;
+  decisionId: string;
+  canonicalId: string;
+  checkedAt: string;
+  status: CreddyOfficialVerificationStatus;
+  attemptedUrls: string[];
+  evidence: CreddyOfficialEvidence[];
+  claimOutcomes: CreddyOfficialClaimOutcome[];
+  remainingRequirements: string[];
+  failureReasons: string[];
+}
+
+export interface CreddyVerificationGate {
+  portfolioRank: number;
+  selectedAt: string;
+  official: CreddyOfficialVerificationRecord;
+  socialStatus: 'verified' | 'manual_confirmation_required' | 'conflicting';
+  factsVerifiedBy?: string;
+  factsVerifiedAt?: string;
+  factsVerificationRevision?: number;
+}
+
+export interface OfficialVerificationTaskRecord {
+  version: 1;
+  id: string;
+  portfolioRank: number;
+  selectedAt: string;
+  decision: AnalysisDecisionRecord;
   article: CanonicalNewsRecord;
 }
 
@@ -252,6 +319,13 @@ export interface AnalysisDecisionRecord {
   route: CreddyAnalysisRoute;
   rejectionReasons: string[];
   evidenceRecordIds: string[];
+  /** Added durably by accept-analysis; legacy decisions omit it. */
+  analysisBatchId?: string;
+  /** Copied immutably from an audited conflict-reanalysis task. */
+  correctionContext?: AnalysisTaskRecord['correctionContext'];
+  /** Present only after this decision was selected in the top-five slate and
+   * its bounded official verification attempt completed. */
+  verificationGate?: CreddyVerificationGate;
 }
 
 export interface AnalysisPerformanceFeedbackRecord {
@@ -273,6 +347,8 @@ export interface AnalysisPerformanceFeedbackRecord {
 
 export interface ContentPackageRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
+  analysisBatchId?: string;
   distributionMode?: CreddyDistributionMode;
   contentDraftId?: string;
   id: string;
@@ -308,6 +384,7 @@ export interface ContentPackageRecord {
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+  verificationGate?: CreddyVerificationGate;
   /** The website article travels with the same production package as social
    * assets. It is optional only for legacy packages. */
   article?: CreddyArticleDraft;
@@ -386,6 +463,8 @@ export interface CreddyArticleVisualPlan {
 
 export interface ContentDraftRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
+  analysisBatchId?: string;
   distributionMode?: CreddyDistributionMode;
   /** New Agent 04 drafts use the claim-traceable concept contract. Omitted only
    * on legacy drafts that remain readable by downstream stages. */
@@ -416,6 +495,7 @@ export interface ContentDraftRecord {
   brief: string;
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+  verificationGate?: CreddyVerificationGate;
   /** Agent 04 writes the complete Creddy guide in the same record as social
    * copy. Omitted only on legacy drafts retained for audit. */
   article?: CreddyArticleDraft;
@@ -516,6 +596,8 @@ export interface VisualScenePlan {
 
 export interface VisualPlanRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
+  analysisBatchId?: string;
   distributionMode?: CreddyDistributionMode;
   id: string;
   contentDraftId: string;
@@ -534,6 +616,7 @@ export interface VisualPlanRecord {
   safetyOverlays: string[];
   sourceUrls: string[];
   factualClaims: CreddyClaim[];
+  verificationGate?: CreddyVerificationGate;
   /** Agent 05 plans website and social visuals together. */
   articleVisuals?: CreddyArticleVisualPlan;
 }
@@ -560,6 +643,8 @@ export interface VideoJobRecord {
 
 export interface ContentBankRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
+  /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
+  analysisBatchId?: string;
   id: string;
   contentPackageId: string;
   mediaType?: 'video' | 'slideshow' | 'article';
@@ -594,6 +679,7 @@ export interface ContentBankRecord {
   textMusicVideoPath?: string;
   narratedVideoPath?: string;
   revision: number;
+  verificationGate?: CreddyVerificationGate;
   approvedBy?: string;
   approvedAt?: string;
   changeRequest?: {

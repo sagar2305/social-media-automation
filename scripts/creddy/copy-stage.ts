@@ -364,7 +364,10 @@ export async function listPendingCopyTasks(root: string): Promise<ContentOpportu
   for (const task of tasks) {
     const output = safeDataPath(root, '06-content-drafts', `copy-${task.decision.id}.json`);
     const existing = await pathExists(output) ? await readJson<ContentDraftRecord>(output) : undefined;
-    if (!existing || existing.copyVersion !== 'creddy-copy-v3' || existing.distributionMode !== task.distributionMode) {
+    if (!existing || existing.copyVersion !== 'creddy-copy-v3' || existing.distributionMode !== task.distributionMode ||
+        existing.analysisBatchId !== task.decision.analysisBatchId ||
+        JSON.stringify(existing.verificationGate) !== JSON.stringify(task.decision.verificationGate) ||
+        JSON.stringify(existing.factualClaims) !== JSON.stringify(task.decision.claims)) {
       pending.push(task);
     }
   }
@@ -387,12 +390,20 @@ export async function acceptContentDraft(
   if (draft.distributionMode !== task.distributionMode) throw new Error('Content draft distribution mode does not match its opportunity');
   if (draft.id !== `copy-${draft.analysisId}`) throw new Error('Content-draft stable ID mismatch');
   if (draft.canonicalId !== task.decision.canonicalId) throw new Error('Canonical identity mismatch');
+  if (draft.analysisBatchId && draft.analysisBatchId !== task.decision.analysisBatchId) {
+    throw new Error('Content draft cannot alter the Agent 03 batch identity');
+  }
+  draft.analysisBatchId = task.decision.analysisBatchId;
   if (!draft.sourceUrls.includes(task.article.canonicalUrl)) {
     throw new Error('Content draft must retain the canonical source URL');
   }
   if (JSON.stringify(draft.factualClaims) !== JSON.stringify(task.decision.claims)) {
     throw new Error('Content draft must preserve the accepted factual claims exactly');
   }
+  if (draft.verificationGate && JSON.stringify(draft.verificationGate) !== JSON.stringify(task.decision.verificationGate)) {
+    throw new Error('Content draft cannot alter the Agent 03 verification gate');
+  }
+  draft.verificationGate = task.decision.verificationGate;
   if (draft.distributionMode !== 'article_only') {
     await assertReleasedCapabilityStatus(root, draft.cta.kind!);
     await validateDraftTrendReference(
@@ -413,6 +424,13 @@ export async function acceptContentDraft(
       const archiveSuffix = previous.createdAt.replace(/[^0-9A-Za-z]+/g, '').slice(0, 24) || 'undated';
       await writeJsonAtomic(
         safeDataPath(root, '06-content-drafts', 'legacy', `${previous.id}-${archiveSuffix}.json`),
+        previous,
+      );
+    } else if (JSON.stringify(previous.verificationGate) !== JSON.stringify(draft.verificationGate) ||
+        JSON.stringify(previous.factualClaims) !== JSON.stringify(draft.factualClaims)) {
+      const archiveSuffix = now.toISOString().replace(/[^0-9A-Za-z]+/g, '').slice(0, 24);
+      await writeJsonAtomic(
+        safeDataPath(root, '06-content-drafts', 'revisions', `${previous.id}-${archiveSuffix}.json`),
         previous,
       );
     }

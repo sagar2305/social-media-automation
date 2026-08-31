@@ -7,6 +7,7 @@ import {
   loadCreddySlackFullReview,
   rejectCreddyContentFromSlack,
   undoCreddyContentDecisionFromSlack,
+  verifyFactsAndApproveCreddyContentFromSlack,
 } from './slack-content-store.js';
 import type { CreddySlackFullReview } from './slack-content-store.js';
 import { autoPublishWebsiteArticle, unpublishWebsiteArticle } from './article-approval-service.js';
@@ -97,6 +98,24 @@ export function fullReviewModal(payload: SlackActionPayload, details?: CreddySla
       blocks.push(section(`*CTA*\n${clean(details.cta.label ?? '')}${details.cta.deepLink ? ` → \`${clean(details.cta.deepLink)}\`` : ''}`));
     }
     if (claims) blocks.push(section(`*Verified factual claims*\n${claims}`));
+    if (details.verificationGate) {
+      const gate = details.verificationGate;
+      const unresolved = gate.official.claimOutcomes
+        .filter((outcome) => outcome.status !== 'verified')
+        .map((outcome) => `• ${clean(outcome.field)} — ${clean(outcome.status)}: ${clean(outcome.notes)}`)
+        .join('\n');
+      const attempted = sourceLinks(gate.official.attemptedUrls.slice(0, 12));
+      const failures = gate.official.failureReasons.slice(0, 8)
+        .map((reason) => `• ${clean(reason)}`)
+        .join('\n');
+      blocks.push(section(
+        `*Official verification*\nStatus: *${clean(gate.official.status)}*\nSocial gate: *${clean(gate.socialStatus.replaceAll('_', ' '))}*` +
+        `${gate.factsVerifiedBy ? `\nConfirmed by ${clean(gate.factsVerifiedBy)} at ${clean(gate.factsVerifiedAt ?? '')}` : ''}` +
+        `${unresolved ? `\n\n*Unresolved claims*\n${unresolved}` : ''}` +
+        `${attempted ? `\n\n*Official URLs attempted*\n${attempted}` : ''}` +
+        `${failures ? `\n\n*Verification failures*\n${failures}` : ''}`,
+      ));
+    }
     if (details.article) {
       blocks.push(
         { type: 'divider' },
@@ -247,6 +266,13 @@ export async function handleSlackAction(payload: SlackActionPayload): Promise<vo
     const text = `:white_check_mark: Creddy post approved in the portal by ${actor}. Nothing was scheduled or published.`;
     await updateResolvedMessage(payload, text);
     console.log(`[Creddy Slack Socket] ${action.value} approved by ${actor}.`);
+    return;
+  }
+  if (action.action_id === 'creddy_content_facts_verify') {
+    await verifyFactsAndApproveCreddyContentFromSlack({ id: action.value, approvedBy: `Slack: ${actor}` });
+    const text = `:white_check_mark: Facts verified and Creddy post approved by ${actor}. The audit record was saved. Nothing was scheduled or published.`;
+    await updateResolvedMessage(payload, text);
+    console.log(`[Creddy Slack Socket] ${action.value} facts verified and approved by ${actor}.`);
     return;
   }
   if (action.action_id === 'creddy_website_approve' || action.action_id === 'creddy_website_repost') {

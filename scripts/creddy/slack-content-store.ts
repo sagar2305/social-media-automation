@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import type { CreddyVerificationGate } from './pipeline-types.js';
+import {
+  assertSocialVerificationSatisfied,
+  markSocialFactsVerified,
+} from './publication-policy.js';
 
 type ContentStatus =
   | 'pending_review'
@@ -13,6 +18,10 @@ type ContentStatus =
 
 type ContentBankRecord = Record<string, unknown> & {
   id: string;
+  analysisBatchId?: string;
+  mediaType?: 'video' | 'slideshow' | 'article';
+  contentDraftId?: string;
+  contentPackageId?: string;
   createdAt: string;
   updatedAt?: string;
   status: ContentStatus;
@@ -36,6 +45,7 @@ type ContentBankRecord = Record<string, unknown> & {
     toStatus: ContentStatus;
   }>;
   articlePreviewPath?: string;
+  verificationGate?: CreddyVerificationGate;
   articleReview?: {
     status: 'needs_assets' | 'pending_review' | 'changes_requested' | 'approved' | 'publishing' | 'published' | 'publish_failed';
     approvedBy?: string;
@@ -57,6 +67,8 @@ type ContentBankRecord = Record<string, unknown> & {
 
 type ContentDraftRecord = {
   id: string;
+  analysisBatchId?: string;
+  verificationGate?: CreddyVerificationGate;
   hook: string;
   textScenes?: string[];
   scriptLines?: string[];
@@ -79,6 +91,27 @@ type ContentDraftRecord = {
   };
 };
 
+async function assertSlackVerificationIntegrity(root: string, record: ContentBankRecord): Promise<void> {
+  const sourceId = validateId(String(record.contentDraftId ?? record.contentPackageId ?? ''));
+  const directory = record.contentDraftId ? '06-content-drafts' : '06-content-packages';
+  const source = await readJson<ContentDraftRecord>(safePath(root, directory, `${sourceId}.json`));
+  if (!record.analysisBatchId && !source.analysisBatchId) return;
+  if (!record.analysisBatchId || record.analysisBatchId !== source.analysisBatchId) {
+    throw new Error('Current-workflow Slack review has a missing or mismatched Agent 03 batch identity');
+  }
+  if (!record.verificationGate || !source.verificationGate) {
+    throw new Error('Current-workflow Slack review is missing its official-verification gate');
+  }
+  const immutable = (gate: CreddyVerificationGate) => ({
+    portfolioRank: gate.portfolioRank,
+    selectedAt: gate.selectedAt,
+    official: gate.official,
+  });
+  if (JSON.stringify(immutable(record.verificationGate)) !== JSON.stringify(immutable(source.verificationGate))) {
+    throw new Error('Slack review and source content verification gates do not match');
+  }
+}
+
 export type CreddySlackFullReview = {
   id: string;
   status: ContentStatus;
@@ -97,6 +130,7 @@ export type CreddySlackFullReview = {
   article?: ContentDraftRecord['article'];
   articleReview?: ContentBankRecord['articleReview'];
   articlePreviewAttached: boolean;
+  verificationGate?: CreddyVerificationGate;
 };
 
 const DEFAULT_DATA_ROOT = '/Users/mohitkourav/Documents/ChatGPT/Social media automation data';
@@ -195,6 +229,8 @@ export async function approveCreddyContentFromSlack(input: {
   if (record.status !== 'pending_review' && record.status !== 'changes_requested') {
     throw new Error(`Cannot approve an item in ${record.status} state`);
   }
+  await assertSlackVerificationIntegrity(root, record);
+  assertSocialVerificationSatisfied(record.verificationGate, Number(record.revision ?? 1));
   const approved = {
     ...record,
     status: 'approved' as const,
@@ -204,6 +240,44 @@ export async function approveCreddyContentFromSlack(input: {
     reviewHistory: [
       ...existingReviewHistory(record),
       { action: 'approved' as const, actor: input.approvedBy, changedAt: now.toISOString(), fromStatus: record.status, toStatus: 'approved' as const },
+    ],
+  };
+  await writeJsonAtomic(path, approved);
+  await writeJsonAtomic(safePath(root, '09-pending-approval', `${record.id}.json`), approved);
+  await writeJsonAtomic(safePath(root, '10-approved', `${record.id}.json`), approved);
+}
+
+export async function verifyFactsAndApproveCreddyContentFromSlack(input: {
+  id: string;
+  approvedBy: string;
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+}, now = new Date()): Promise<void> {
+  const root = creddyRoot(input.env);
+  const { path, record } = await findRecord(root, input.id);
+  await assertSlackVerificationIntegrity(root, record);
+  if (record.status === 'approved' && record.verificationGate?.socialStatus === 'verified') {
+    try {
+      assertSocialVerificationSatisfied(record.verificationGate, Number(record.revision ?? 1));
+      return;
+    } catch {
+      // Repair a malformed or stale audited approval below.
+    }
+  }
+  if (record.status !== 'pending_review' && record.status !== 'changes_requested' && record.status !== 'approved') {
+    throw new Error(`Cannot verify and approve an item in ${record.status} state`);
+  }
+  const gate = markSocialFactsVerified(record.verificationGate, input.approvedBy, Number(record.revision ?? 1), now);
+  if (!gate) throw new Error('This content item has no official-verification review record');
+  const approved: ContentBankRecord = {
+    ...record,
+    verificationGate: gate,
+    status: 'approved',
+    approvedBy: input.approvedBy,
+    approvedAt: now.toISOString(),
+    destinations: [],
+    reviewHistory: [
+      ...existingReviewHistory(record),
+      { action: 'approved', actor: input.approvedBy, changedAt: now.toISOString(), fromStatus: record.status, toStatus: 'approved' },
     ],
   };
   await writeJsonAtomic(path, approved);
@@ -333,5 +407,6 @@ export async function loadCreddySlackFullReview(
     article: draft.article,
     articleReview: record.articleReview,
     articlePreviewAttached: Boolean(record.articlePreviewPath),
+    verificationGate: record.verificationGate,
   };
 }

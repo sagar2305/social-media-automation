@@ -19,6 +19,7 @@ import {
   type PipelineRunManifest,
   type VideoJobRecord,
 } from './pipeline-types.js';
+import { assertBankVerificationIntegrity, assertSocialVerificationSatisfied } from './publication-policy.js';
 import type { VideoFactoryApi, VideoFactoryRemoteJob } from './video-factory-client.js';
 import type { CreddyArticleReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
 
@@ -250,6 +251,7 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
+      analysisBatchId: content.analysisBatchId,
       id: contentPackageId,
       contentPackageId,
       createdAt: now.toISOString(),
@@ -257,6 +259,11 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
       textMusicVideoPath: textMusic.outputPath,
       narratedVideoPath: narrated.outputPath,
       articlePreviewPath: content.articlePreviewPath,
+      verificationGate: existing?.verificationGate?.factsVerifiedAt &&
+        existing.verificationGate.official.id === content.verificationGate?.official.id &&
+        existing.verificationGate.factsVerificationRevision === targetRevision
+        ? existing.verificationGate
+        : content.verificationGate,
       articleReview: content.article ? {
         status: articleBlockers.length ? 'needs_assets' : 'pending_review',
         blockers: articleBlockers,
@@ -300,12 +307,18 @@ export async function runArticleContentBankHandoff(
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
+      analysisBatchId: content.analysisBatchId,
       id,
       contentPackageId: content.id,
       mediaType: 'article',
       contentDraftId: content.contentDraftId,
       visualPlanId: content.visualPlanId,
       articlePreviewPath: content.articlePreviewPath,
+      verificationGate: existing?.verificationGate?.factsVerifiedAt &&
+        existing.verificationGate.official.id === content.verificationGate?.official.id &&
+        existing.verificationGate.factsVerificationRevision === existing.revision
+        ? existing.verificationGate
+        : content.verificationGate,
       articleReview: existing?.articleReview && existing.articleReview.status !== 'needs_assets'
         ? existing.articleReview
         : { status: blockers.length ? 'needs_assets' : 'pending_review', blockers },
@@ -436,6 +449,10 @@ export async function approveContentBankItem(
     throw new Error(`Content item cannot be approved from status ${pending.status}`);
   }
   const approvesArticle = destinations.some((destination) => destination.format === 'article');
+  if (destinations.some((destination) => destination.format !== 'article')) {
+    await assertBankVerificationIntegrity(root, pending);
+    assertSocialVerificationSatisfied(pending.verificationGate, pending.revision);
+  }
   if (approvesArticle) {
     if (!pending.articleReview) throw new Error('Content item has no website article to approve');
     if (pending.articleReview.status === 'needs_assets' || pending.articleReview.blockers?.length) {

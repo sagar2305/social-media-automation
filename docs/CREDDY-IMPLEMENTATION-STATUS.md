@@ -1,6 +1,6 @@
 # Creddy automation implementation status
 
-**Date:** 19 August 2026
+**Date:** 31 August 2026
 **Code status:** implemented and locally verified
 **Production status:** core pipeline active locally; publishing and external review remain gated
 
@@ -13,8 +13,10 @@
 4. Codex scheduled analysis uses the `creddy-ranking-v3` viral rubric, channel-fit
    predictions, freshness, product fit, importance, and confidence to calculate
    editorial priority. Editorial upside stays independent of evidence readiness;
-   the stage emits a diversified five-story slate and verification queue before
-   routing any fully supported record onward.
+   the stage persists a diversified five-story slate and runs an official-first,
+   claim-level verification pass only for those stories. Unavailable or inconclusive
+   checks continue privately through production; a known official contradiction
+   blocks both blog and social.
 5. Slack is allowed only for an important, material, message-changing conflict
    after verification is exhausted. Signed Process/Skip/Hold actions are audited
    and idempotent.
@@ -32,6 +34,9 @@
 8. Both completed formats enter the Creddy Content Bank. Authenticated staff can
    preview videos and evidence, approve destinations/times, request revisions, and
    drag pending posts across a seven-day calendar.
+   Blog release may proceed when verification is unavailable or inconclusive;
+   unresolved social requires a separate audited **Facts verified and approve**
+   action, which resets whenever the content revision changes.
 9. Revision requests create fresh versioned render jobs; old renders cannot be
    approved as the revised asset.
 10. Only human-approved scheduled destinations reach Blotato. Submission IDs and

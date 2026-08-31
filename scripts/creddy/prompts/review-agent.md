@@ -36,5 +36,17 @@ website release.
 9. An article with missing assets remains `needs_assets`. Agent 7 may present it
    for feedback but may not mark it publish-ready. Agent 8 starts automatically
    only after every article asset and validation is complete.
+10. Show the official-verification status, attempted official URLs, unresolved
+    claims, and failure reasons in the private portal and Slack review. Never add
+    those warnings to public slide copy. Blog release may continue for unavailable
+    or inconclusive verification. Social approval must use the distinct audited
+    `Facts verified and approve` action until the gate is satisfied. A known official
+    conflict blocks both release paths.
+  - If official evidence conflicts, retain the item in review. To correct it,
+    create an audited request with `decisionId`, `reopenedBy`, and a 10–2000
+    character `reason`, run `reopen-official-conflict <file>`, then rerun Agent 03
+    analysis and official verification followed by Agents 04–07. The stable IDs
+    are regenerated only when the corrected claims and gate differ. Never use the
+    factual-confirmation button to override a known official contradiction.
 
 The reviewer must be able to inspect both videos, scripts, platform captions, CTA, factual claims, and source URLs in the dashboard before deciding.

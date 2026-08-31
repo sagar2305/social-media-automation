@@ -59,7 +59,7 @@ export async function listProductionTasks(root: string): Promise<ProductionTaskR
   }));
   const draftPaths = topLevelJson(
     await listJsonFiles(safeDataPath(root, '06-content-drafts')),
-    /\/(scripts|captions|briefs|articles|legacy)\//,
+    /\/(scripts|captions|briefs|articles|legacy|revisions)\//,
   );
   const drafts = await Promise.all(draftPaths.map((path) => readJson<ContentDraftRecord>(path)));
   const draftById = new Map(drafts
@@ -83,7 +83,10 @@ export async function listPendingProductionTasks(root: string): Promise<Producti
     const id = `production-${task.draft.analysisId}`;
     const destination = safeDataPath(root, '06-content-packages', `${id}.json`);
     const existing = await pathExists(destination) ? await readJson<ContentPackageRecord>(destination) : undefined;
-    if (!existing || existing.distributionMode !== task.draft.distributionMode) pending.push(task);
+    if (!existing || existing.distributionMode !== task.draft.distributionMode ||
+        existing.analysisBatchId !== task.draft.analysisBatchId ||
+        JSON.stringify(existing.verificationGate) !== JSON.stringify(task.draft.verificationGate) ||
+        JSON.stringify(existing.factualClaims) !== JSON.stringify(task.draft.factualClaims)) pending.push(task);
   }
   return pending;
 }
@@ -151,8 +154,15 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
     || JSON.stringify(visualPlan.factualClaims) !== JSON.stringify(draft.factualClaims)) {
     throw new Error('Visual plan changed accepted evidence');
   }
+  if (JSON.stringify(visualPlan.verificationGate) !== JSON.stringify(draft.verificationGate)) {
+    throw new Error('Visual plan changed the official-verification gate');
+  }
+  if (visualPlan.analysisBatchId !== draft.analysisBatchId) {
+    throw new Error('Visual plan changed the Agent 03 batch identity');
+  }
   const content: ContentPackageRecord = {
     version: CREDDY_PIPELINE_VERSION,
+    analysisBatchId: draft.analysisBatchId,
     distributionMode: draft.distributionMode,
     contentDraftId: draft.id,
     id: `production-${draft.analysisId}`,
@@ -177,6 +187,7 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
     brief: `${draft.brief}\n\nVisual direction: ${visualPlan.visualBrief}\nSafety overlays: ${visualPlan.safetyOverlays.join('; ')}`,
     sourceUrls: draft.sourceUrls,
     factualClaims: draft.factualClaims,
+    verificationGate: draft.verificationGate,
     article: draft.article,
     articleVisuals: visualPlan.articleVisuals,
     articleReadiness: draft.article && visualPlan.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))

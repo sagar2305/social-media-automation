@@ -78,7 +78,7 @@ export function selectCreddyExpression(
 
 function contentDraftFiles(root: string): Promise<string[]> {
   return listJsonFiles(safeDataPath(root, '06-content-drafts')).then((files) =>
-    files.filter((path) => !/\/(scripts|captions|briefs|articles|legacy)\//.test(path)),
+    files.filter((path) => !/\/(scripts|captions|briefs|articles|legacy|revisions)\//.test(path)),
   );
 }
 
@@ -223,7 +223,11 @@ export async function listPendingVisualTasks(root: string): Promise<VisualPlanni
   const pending: VisualPlanningTaskRecord[] = [];
   for (const task of await visualTasks(root)) {
     const output = safeDataPath(root, '06-visual-plans', `visual-${task.draft.id}.json`);
-    if (!(await pathExists(output))) pending.push(task);
+    const existing = await pathExists(output) ? await readJson<VisualPlanRecord>(output) : undefined;
+    if (!existing || existing.analysisBatchId !== task.draft.analysisBatchId ||
+        JSON.stringify(existing.verificationGate) !== JSON.stringify(task.draft.verificationGate) ||
+        JSON.stringify(existing.factualClaims) !== JSON.stringify(task.draft.factualClaims) ||
+        existing.scenes.some((scene, index) => scene.text !== task.draft.textScenes[index])) pending.push(task);
   }
   return pending;
 }
@@ -237,6 +241,10 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
   if (plan.analysisId !== task.draft.analysisId || plan.canonicalId !== task.draft.canonicalId) {
     throw new Error('Visual-plan identity mismatch');
   }
+  if (plan.analysisBatchId && plan.analysisBatchId !== task.draft.analysisBatchId) {
+    throw new Error('Visual plan cannot alter the Agent 03 batch identity');
+  }
+  plan.analysisBatchId = task.draft.analysisBatchId;
   const expectedHeadline = task.draft.distributionMode === 'article_only'
     ? task.draft.article!.title
     : task.draft.hook;
@@ -255,6 +263,10 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
   if (JSON.stringify(plan.factualClaims) !== JSON.stringify(task.draft.factualClaims)) {
     throw new Error('Visual plan must preserve accepted factual claims exactly');
   }
+  if (plan.verificationGate && JSON.stringify(plan.verificationGate) !== JSON.stringify(task.draft.verificationGate)) {
+    throw new Error('Visual plan cannot alter the Agent 03 verification gate');
+  }
+  plan.verificationGate = task.draft.verificationGate;
   if (task.draft.copyVersion === 'creddy-copy-v3') {
     if (!task.draft.article || !plan.articleVisuals) {
       throw new Error('Agent 05 must plan article and social visuals in the same visual record');

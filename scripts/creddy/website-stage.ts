@@ -12,6 +12,7 @@ import type {
   CreddyArticleVisualPlan,
 } from './pipeline-types.js';
 import { computeArticleApprovalFingerprint } from './article-approval-integrity.js';
+import { assertArticleVerificationPublishable, assertBankVerificationIntegrity } from './publication-policy.js';
 
 type ReferralRegistry = {
   version: 1;
@@ -105,6 +106,8 @@ export async function exportApprovedWebsiteArticles(
       continue;
     }
     try {
+      await assertBankVerificationIntegrity(root, bank);
+      assertArticleVerificationPublishable(bank.verificationGate);
       if (!bank.articleReview.approvedBy?.trim() || !bank.articleReview.approvedAt?.trim()) {
         throw new Error('Approved article is missing Agent 7 approval identity or timestamp');
       }

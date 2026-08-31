@@ -43,6 +43,7 @@ import {
 } from './pipeline-store.js';
 import type {
   AnalysisDecisionRecord,
+  CreddyOfficialVerificationRecord,
   ContentBankRecord,
   ContentDraftRecord,
   ContentPackageRecord,
@@ -61,6 +62,12 @@ import { notifyCreddyArticleReady } from './slack-notifications.js';
 import { VideoFactoryClient } from './video-factory-client.js';
 import { approveContentBankItem, rejectContentBankItem, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
+import {
+  acceptOfficialVerification,
+  listPendingOfficialVerificationTasks,
+  prepareOfficialVerificationTasks,
+  reopenConflictingVerification,
+} from './official-verification-stage.js';
 import { exportApprovedWebsiteArticles } from './website-stage.js';
 import {
   createCwebpWebsiteCmsAssetOptimizer,
@@ -369,6 +376,32 @@ async function main(): Promise<void> {
     const decision = await readJson<AnalysisDecisionRecord>(argument(3, 'analysis result file'));
     await acceptAnalysisDecision(root, decision);
     console.log(JSON.stringify({ accepted: decision.id, route: decision.route }, null, 2));
+    return;
+  }
+  if (command === 'agent-3-verification-prepare') {
+    const selected = await prepareOfficialVerificationTasks(root);
+    const pending = await listPendingOfficialVerificationTasks(root);
+    console.log(JSON.stringify({ agent: 3, selectedCount: selected.length, pendingCount: pending.length, pending }, null, 2));
+    return;
+  }
+  if (command === 'official-verification-pending') {
+    console.log(JSON.stringify(await listPendingOfficialVerificationTasks(root), null, 2));
+    return;
+  }
+  if (command === 'accept-official-verification') {
+    const verification = await readJson<CreddyOfficialVerificationRecord>(
+      argument(3, 'official verification result file'),
+    );
+    const decision = await acceptOfficialVerification(root, verification);
+    console.log(JSON.stringify({ accepted: verification.id, status: verification.status, decisionId: decision.id }, null, 2));
+    return;
+  }
+  if (command === 'reopen-official-conflict') {
+    const request = await readJson<{ decisionId: string; reopenedBy: string; reason: string }>(
+      argument(3, 'conflict correction request file'),
+    );
+    const task = await reopenConflictingVerification(root, request);
+    console.log(JSON.stringify({ reopened: request.decisionId, analysisTaskId: task.id }, null, 2));
     return;
   }
   if (command === 'agent-4-prepare') {
