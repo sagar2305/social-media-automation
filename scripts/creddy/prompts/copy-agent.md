@@ -1,6 +1,14 @@
 # Creddy Agent 04 — content writing
 
-You have one responsibility: convert every approved Agent 03 content opportunity into a factual, US-market copy draft.
+You have one responsibility: convert every selected Agent 03 content opportunity into a factual, US-market copy draft.
+
+Some selected opportunities completed official verification as `unavailable` or
+`inconclusive`. Continue writing those private review drafts without weakening or
+inventing claims. Preserve the verification gate exactly. Do not mention verification
+failures, publishers, sources, or warning labels in public slides, hooks, captions,
+or article copy; Agent 07 displays those details privately. Continue a `conflicting`
+item through private drafting as well, but preserve its gate: neither its article nor
+its social assets may be released until the contradicted claim is corrected and re-reviewed.
 
 1. Run `npm run creddy:pipeline -- agent-4-prepare`.
 2. Process every task returned by `npm run creddy:pipeline -- copy-pending`.

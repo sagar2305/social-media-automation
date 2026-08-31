@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/auth";
 import {
   approveCreddyItem,
+  assertCreddySocialDeliveryReady,
   cacheCreddyBlotatoMedia,
   getCreddySlideshowSubmission,
   recordCreddyBlotatoDestination,
@@ -14,6 +15,7 @@ import {
   restoreRejectedCreddyItem,
   saveCreddyReviewDraft,
   updateCreddySlideshowDesign,
+  verifyCreddySocialFacts,
 } from "@/lib/creddy-file-store";
 import { notifyCreddySlack } from "@/lib/creddy-slack-notifications";
 import { syncCreddyBlotatoStatuses } from "@/lib/creddy-blotato-sync";
@@ -33,6 +35,14 @@ const platforms = ["instagram", "tiktok"] as const;
 function value(formData: FormData, key: string): string {
   const raw = formData.get(key);
   return typeof raw === "string" ? raw.trim() : "";
+}
+
+function safeReturnTo(value: string): string {
+  return new Set([
+    "/creddy/content-bank/slideshows",
+    "/creddy/content-bank/videos",
+    "/creddy/all-content/slideshows",
+  ]).has(value) ? value : "/creddy/content-bank/slideshows";
 }
 
 function slideshowEditorValues(formData: FormData) {
@@ -146,6 +156,7 @@ export async function submitCreddySlideshowAction(formData: FormData): Promise<v
 
   const actor = auth.user.email || auth.user.id;
   await saveCreddyReviewDraft({ ...editor, savedBy: actor });
+  await assertCreddySocialDeliveryReady(editor.id);
   const apiKey = process.env.BLOTATO_API_KEY;
   if (!apiKey) throw new Error("BLOTATO_API_KEY is not configured");
   const liveAccounts = await listBlotatoAccounts(apiKey);
@@ -299,6 +310,20 @@ export async function approveCreddyAction(formData: FormData): Promise<void> {
   revalidatePath("/creddy/content-bank");
   revalidatePath("/creddy/calendar");
   redirect("/creddy/content-bank?updated=approved");
+}
+
+export async function verifyCreddyFactsAction(formData: FormData): Promise<void> {
+  const auth = await assertRole("editor");
+  if (!auth.ok) throw new Error(auth.error);
+  const id = value(formData, "id");
+  await verifyCreddySocialFacts({
+    id,
+    verifiedBy: auth.user.email || auth.user.id,
+  });
+  revalidatePath("/creddy/content-bank");
+  revalidatePath("/creddy/all-content");
+  const returnTo = safeReturnTo(value(formData, "return_to"));
+  redirect(`${returnTo}?item=${encodeURIComponent(id)}&updated=facts-verified#${encodeURIComponent(id)}`);
 }
 
 export async function requestCreddyChangesAction(formData: FormData): Promise<void> {

@@ -286,6 +286,7 @@ export async function runSlideshowContentBankHandoff(
       const record: ContentBankRecord = {
         ...existing,
         version: CREDDY_PIPELINE_VERSION,
+        analysisBatchId: production?.analysisBatchId ?? draft.analysisBatchId,
         id,
         contentPackageId: contentDraftId,
         mediaType: 'slideshow',
@@ -295,6 +296,11 @@ export async function runSlideshowContentBankHandoff(
         slideImagePaths,
         slideCount: 6,
         articlePreviewPath: production?.articlePreviewPath,
+        verificationGate: existing?.verificationGate?.factsVerifiedAt &&
+          existing.verificationGate.official.id === (production?.verificationGate ?? draft.verificationGate)?.official.id &&
+          existing.verificationGate.factsVerificationRevision === existing.revision
+          ? existing.verificationGate
+          : production?.verificationGate ?? draft.verificationGate,
         articleReview: production?.article
           ? existing?.articleReview && existing.articleReview.status !== 'needs_assets'
             ? existing.articleReview
@@ -403,6 +409,7 @@ export async function runSlideshowContentBankHandoff(
           tiktokCaption: draft.tiktokCaption,
           hashtags: draft.hashtags,
           slideImagePaths,
+          verificationGate: record.verificationGate,
         });
         if (notification.sent) {
           await writeJsonAtomic(receiptPath, {

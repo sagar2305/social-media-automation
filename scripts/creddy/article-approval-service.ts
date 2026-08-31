@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { computeArticleApprovalFingerprint } from './article-approval-integrity.js';
 import { pathExists, readJson, safeDataPath, withStageLock, writeJsonAtomic } from './pipeline-store.js';
 import type { ContentBankRecord } from './pipeline-types.js';
+import { assertArticleVerificationPublishable, assertBankVerificationIntegrity } from './publication-policy.js';
 
 const BANK_DIRECTORIES = ['12-published', '11-scheduled', '10-approved', '09-pending-approval', '13-rejected-content'] as const;
 const WEBSITE_BASE_URL = 'https://getcreddy.com';
@@ -124,6 +125,8 @@ export async function approveAndPublishWebsiteArticle(input: {
   return withApprovalLock(input.root, async () => {
     const now = input.now ?? (() => new Date());
     let { path, record } = await findRecord(input.root, input.id);
+    await assertBankVerificationIntegrity(input.root, record);
+    assertArticleVerificationPublishable(record.verificationGate);
     validateArticleReview(input.root, record);
     await readFile(record.articlePreviewPath!);
     const slug = await articleSlug(input.root, record);

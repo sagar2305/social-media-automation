@@ -14,6 +14,13 @@ import {
   type CreddySlideEditor,
 } from "@/lib/creddy-slide-options";
 import { isSpecificPublicPostUrl } from "@/lib/creddy-publication";
+import {
+  assertVerificationRecordIntegrity,
+  assertSocialVerificationForRevision,
+  hasPublicCopyChanged,
+  resetFactsVerificationAfterPublicCopyEdit,
+  type VerificationGate,
+} from "@/lib/creddy-verification-policy";
 
 export {
   CREDDY_BACKGROUND_STYLES,
@@ -69,6 +76,7 @@ type ReviewDraft = {
 
 type ContentBankFile = {
   version: 1;
+  analysisBatchId?: string;
   id: string;
   contentPackageId: string;
   mediaType?: "video" | "slideshow";
@@ -78,6 +86,7 @@ type ContentBankFile = {
   slideImagePaths?: string[];
   slideCount?: number;
   articlePreviewPath?: string;
+  verificationGate?: VerificationGate;
   articleReview?: {
     status: "needs_assets" | "pending_review" | "changes_requested" | "approved" | "publishing" | "published" | "publish_failed" | "unpublished";
     approvedBy?: string;
@@ -132,6 +141,7 @@ type ArticleFile = {
 };
 
 type ContentPackageFile = {
+  analysisBatchId?: string;
   id: string;
   hook: string;
   scriptLines: string[];
@@ -150,9 +160,11 @@ type ContentPackageFile = {
     confidence: number;
     conflict?: string;
   }>;
+  verificationGate?: VerificationGate;
 };
 
 type ContentDraftFile = {
+  analysisBatchId?: string;
   id: string;
   hook: string;
   textScenes: string[];
@@ -164,6 +176,7 @@ type ContentDraftFile = {
   sourceUrls: string[];
   article?: ArticleFile;
   factualClaims?: ContentPackageFile["factualClaims"];
+  verificationGate?: VerificationGate;
 };
 
 type VisualPlanFile = {
@@ -206,6 +219,7 @@ export type CreddyBankItemDto = {
   brief: string;
   sourceUrls: string[];
   factualClaims: NonNullable<ContentPackageFile["factualClaims"]>;
+  verificationGate?: VerificationGate;
   hasTextMusicVideo: boolean;
   hasNarratedVideo: boolean;
   approvedBy?: string;
@@ -321,6 +335,66 @@ function hasActiveExternalDelivery(record: ContentBankFile): boolean {
   );
 }
 
+async function readContentForRecord(record: ContentBankFile): Promise<ContentDraftFile | ContentPackageFile> {
+  return record.mediaType === "slideshow"
+    ? readJson<ContentDraftFile>(safePath("06-content-drafts", `${validateId(record.contentDraftId ?? record.contentPackageId)}.json`))
+    : readJson<ContentPackageFile>(safePath("06-content-packages", `${validateId(record.contentPackageId)}.json`));
+}
+
+function assertVerificationIntegrity(record: ContentBankFile, content: ContentDraftFile | ContentPackageFile): void {
+  assertVerificationRecordIntegrity(record, content);
+}
+
+export async function assertCreddySocialDeliveryReady(id: string): Promise<void> {
+  const { record } = await findBankFile(id);
+  assertVerificationIntegrity(record, await readContentForRecord(record));
+  assertSocialVerificationForRevision(record.verificationGate, record.revision);
+}
+
+export async function verifyCreddySocialFacts(input: {
+  id: string;
+  verifiedBy: string;
+}, now = new Date()): Promise<void> {
+  const { path, record } = await findBankFile(input.id);
+  assertVerificationIntegrity(record, await readContentForRecord(record));
+  const gate = record.verificationGate;
+  if (!gate) throw new Error("This content item has no official-verification review record");
+  if (gate.socialStatus === "conflicting") {
+    throw new Error("Official evidence conflicts with a material claim. Factual confirmation cannot override it.");
+  }
+  if (gate.socialStatus === "verified" && record.status === "approved") {
+    try {
+      assertSocialVerificationForRevision(gate, record.revision);
+      return;
+    } catch {
+      // Repair a malformed or stale audited approval below.
+    }
+  }
+  if (record.status !== "pending_review" && record.status !== "changes_requested" && record.status !== "approved") {
+    throw new Error(`Cannot verify and approve an item in ${record.status} state`);
+  }
+  const verifiedBy = input.verifiedBy.trim();
+  if (!verifiedBy) throw new Error("Facts verifier identity is required");
+  const updated: ContentBankFile = {
+    ...record,
+    verificationGate: {
+      ...gate,
+      socialStatus: "verified",
+      factsVerifiedBy: verifiedBy,
+      factsVerifiedAt: now.toISOString(),
+      factsVerificationRevision: record.revision,
+    },
+    status: "approved",
+    approvedBy: verifiedBy,
+    approvedAt: now.toISOString(),
+    destinations: [],
+    updatedAt: now.toISOString(),
+  };
+  await writeJsonAtomic(path, updated);
+  await writeJsonAtomic(safePath("09-pending-approval", `${record.id}.json`), updated);
+  await writeJsonAtomic(safePath("10-approved", `${record.id}.json`), updated);
+}
+
 async function readSlideEditor(record: ContentBankFile): Promise<CreddySlideEditor | undefined> {
   if (record.mediaType !== "slideshow" || !record.visualPlanId) return undefined;
   const plan = await readJson<VisualPlanFile>(safePath("06-visual-plans", `${validateId(record.visualPlanId)}.json`));
@@ -401,6 +475,7 @@ async function toDto(record: ContentBankFile): Promise<CreddyBankItemDto> {
     brief: content.brief,
     sourceUrls: content.sourceUrls,
     factualClaims: content.factualClaims ?? [],
+    verificationGate: record.verificationGate ?? content.verificationGate,
     hasTextMusicVideo: Boolean(record.textMusicVideoPath),
     hasNarratedVideo: Boolean(record.narratedVideoPath),
     approvedBy: record.approvedBy,
@@ -470,9 +545,20 @@ export async function saveCreddyReviewDraft(input: {
   const contentPath = safePath("06-content-drafts", `${contentId}.json`);
   const content = await readJson<ContentDraftFile>(contentPath);
   const edited = validateEditableText(input);
+  const publicCopyChanged = hasPublicCopyChanged(content, edited);
+  if (publicCopyChanged && (record.status === "scheduled" || hasActiveExternalDelivery(record))) {
+    throw new Error("Cancel the external delivery and return this post to review before editing public copy");
+  }
   await writeJsonAtomic(contentPath, { ...content, ...edited });
-  await writeJsonAtomic(path, {
+  const updated: ContentBankFile = {
     ...record,
+    status: publicCopyChanged ? "pending_review" : record.status,
+    revision: publicCopyChanged ? record.revision + 1 : record.revision,
+    verificationGate: publicCopyChanged ? resetFactsVerificationAfterPublicCopyEdit(record.verificationGate) : record.verificationGate,
+    approvedBy: publicCopyChanged ? undefined : record.approvedBy,
+    approvedAt: publicCopyChanged ? undefined : record.approvedAt,
+    destinations: publicCopyChanged ? [] : record.destinations,
+    updatedAt: now.toISOString(),
     reviewDraft: {
       savedBy: input.savedBy,
       savedAt: now.toISOString(),
@@ -480,7 +566,9 @@ export async function saveCreddyReviewDraft(input: {
       accountIds: input.accountIds,
       scheduledFor: input.scheduledFor,
     },
-  });
+  };
+  await writeJsonAtomic(path, updated);
+  if (publicCopyChanged) await writeJsonAtomic(safePath("09-pending-approval", `${record.id}.json`), updated);
 }
 
 export async function updateCreddySlideshowDesign(input: {
@@ -604,6 +692,7 @@ export async function updateCreddySlideshowDesign(input: {
     ...record,
     status: "pending_review",
     revision: record.revision + 1,
+    verificationGate: resetFactsVerificationAfterPublicCopyEdit(record.verificationGate),
     approvedBy: undefined,
     approvedAt: undefined,
     destinations: [],
@@ -678,6 +767,7 @@ export async function recordCreddyBlotatoDestination(input: {
   approvedBy: string;
   destination: CreddyDestination;
 }): Promise<void> {
+  await assertCreddySocialDeliveryReady(input.id);
   const { path, record } = await findBankFile(input.id);
   const key = `${input.destination.platform}:${input.destination.account}:${input.destination.format}`;
   const destinations = (record.destinations ?? []).filter((destination) =>
@@ -805,6 +895,7 @@ export async function approveCreddyItem(input: {
   approvedBy: string;
   destinations: Array<Omit<CreddyDestination, "status">>;
 }, now = new Date()): Promise<void> {
+  await assertCreddySocialDeliveryReady(input.id);
   const { record } = await findBankFile(input.id);
   if (record.status !== "pending_review" && record.status !== "changes_requested") {
     throw new Error(`Cannot approve an item in ${record.status} state`);
@@ -841,6 +932,7 @@ export async function approveCreddyItemFromSlack(input: {
   id: string;
   approvedBy: string;
 }, now = new Date()): Promise<void> {
+  await assertCreddySocialDeliveryReady(input.id);
   const { path, record } = await findBankFile(input.id);
   if (record.status !== "pending_review" && record.status !== "changes_requested") {
     throw new Error(`Cannot approve an item in ${record.status} state`);
@@ -872,6 +964,7 @@ export async function requestCreddyChanges(input: {
     ...record,
     status: "changes_requested",
     revision: record.revision + 1,
+    verificationGate: resetFactsVerificationAfterPublicCopyEdit(record.verificationGate),
     changeRequest: { requestedBy: input.requestedBy, requestedAt: new Date().toISOString(), notes },
   });
 }

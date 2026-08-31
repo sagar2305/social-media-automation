@@ -402,7 +402,15 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     (b.productFitScore ?? -1) - (a.productFitScore ?? -1) ||
     (b.popularityScore ?? -1) - (a.popularityScore ?? -1) ||
     b.importanceScore - a.importanceScore || b.confidenceScore - a.confidenceScore);
-  const portfolio = selectEditorialPortfolio(decisions, 5);
+  const batchIds = [...new Set(decisions.flatMap((item) => item.analysisBatchId ? [item.analysisBatchId] : []))];
+  const latestBatchId = batchIds.sort((left, right) => {
+    const newest = (batchId: string) => Math.max(...decisions.filter((item) => item.analysisBatchId === batchId).map((item) => Date.parse(item.analyzedAt)));
+    return newest(right) - newest(left);
+  })[0];
+  const portfolio = selectEditorialPortfolio(
+    latestBatchId ? decisions.filter((item) => item.analysisBatchId === latestBatchId) : decisions,
+    5,
+  );
   const verificationQueue = decisions.filter((item) =>
     item.rubricVersion === 'creddy-ranking-v3' &&
     item.verificationState !== 'ready' &&
@@ -420,14 +428,20 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     counts[item.route] = (counts[item.route] ?? 0) + 1;
     return counts;
   }, {});
+  const officialCounts = decisions.reduce<Record<string, number>>((counts, item) => {
+    const status = item.verificationGate?.official.status ?? 'not_selected_or_pending';
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
   const rankingLines = [
     '# Agent 03 — Ranking, popularity, confidence, and routing', '',
     `Generated: ${new Date().toISOString()}`,
     `Active canonical inputs: ${canonical.length}; completed rankings: ${decisions.length}; pending rankings: ${pendingAnalysis.length}`,
     `Routes: ${Object.entries(routeCounts).map(([route, count]) => `${route}=${count}`).join(', ') || 'none'}`,
+    `Official verification: ${Object.entries(officialCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
     '',
     '> Viral potential and channel scores are editorial predictions, not measured views. Legacy rows show `n/a` until ranking v3 re-analysis.',
-    '> Editorial priority is independent of verification readiness. Nothing enters production until its operational route is ready.',
+    '> Agent 03 attempts official verification only for the persisted diversified top-five slate. Every completed result continues privately to Agents 04–07; known official conflicts remain visible in final review and block both blog and social release.',
     '> Slack review is allowed only for a high-importance material conflict that changes the message after verification is exhausted.',
     '',
     '| Rank | Headline | Priority | Viral | Product fit | Freshness | Confidence | Hook | Best channel | Verification | Route |',
@@ -439,11 +453,11 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     `## Recommended five-story slate (${portfolio.length})`,
     '',
-    '> This is the highest-upside diversified editorial slate. Items that still require verification remain blocked from production.',
+    '> This is the highest-upside diversified editorial slate. A completed official attempt unlocks private production; unresolved social content still requires an audited factual confirmation.',
     '',
-    '| Slate | Headline | Category | Priority | Viral | Hook | Verification | Operational route |',
-    '|---:|---|---|---:|---:|---|---|---|',
-    ...portfolio.map((item, index) => `| ${index + 1} | ${cell(item.headline)} | ${cell(item.portfolioCategory)} | ${item.editorialPriorityScore} | ${item.viralPotential?.score} | ${cell(item.hookType)} | ${cell(item.verificationState)} | ${cell(item.route)} |`),
+    '| Slate | Headline | Category | Priority | Viral | Hook | Official result | Social gate | Operational route |',
+    '|---:|---|---|---:|---:|---|---|---|---|',
+    ...portfolio.map((item, index) => `| ${index + 1} | ${cell(item.headline)} | ${cell(item.portfolioCategory)} | ${item.editorialPriorityScore} | ${item.viralPotential?.score} | ${cell(item.hookType)} | ${cell(item.verificationGate?.official.status ?? 'pending')} | ${cell(item.verificationGate?.socialStatus ?? 'pending')} | ${cell(item.route)} |`),
     '',
     `## Verification queue (${verificationQueue.length})`,
     '',
@@ -707,6 +721,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     '> Agent 07 creates a review item only when matching text + music and narrated videos are complete for the same revision.',
     '> Approval, rejection, change requests, destination selection, and scheduling are human dashboard actions. Agent 07 never performs them automatically.',
+    '> Blog release may continue after unavailable or inconclusive verification. Social delivery requires official success or the audited Facts verified and approve action. A known official conflict blocks both.',
     '> Dashboard: /creddy/content-bank',
     '',
     '| Content | Revision | Text + music | Narrated | Review status | Instagram caption | TikTok caption | CTA | Claims | Sources |',

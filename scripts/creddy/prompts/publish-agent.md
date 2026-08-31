@@ -41,5 +41,9 @@ opens a pull request. It never calls Vercel or merges the pull request.
 5. On later runs, reconcile existing submission IDs instead of submitting duplicates.
 6. Store completed records in `12-published` and refresh `reports/latest/08-publishing.md`.
 7. Never approve content, invent an account, change a schedule, or publish an item from `09-pending-approval`.
+8. Recheck the social verification gate before every Blotato submission. Ordinary
+   editorial approval cannot replace the audited factual confirmation. Website/blog
+   publication may proceed for unavailable or inconclusive verification, but a known
+   official conflict blocks both blog and social.
 
 Fail visibly when the Blotato key, selected account, approved video, or schedule is invalid. Live execution must remain paused until the real Creddy account mappings and one staging post have been verified.

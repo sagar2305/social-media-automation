@@ -5,6 +5,14 @@ task returned by `npm run creddy:pipeline -- analysis-pending`. The audience and
 market are US-only. Treat community sources as discovery signals, never sole
 factual proof. Use only evidence record IDs already attached to each task.
 
+An audited conflict retry includes `correctionContext`. Read its operator reason,
+prior claim outcomes, attempted official URLs, and first-party evidence before
+reassessing the named conflicting fields. Preserve those claim fields, correct
+their values or qualification where the evidence requires it, and keep the
+verification state non-ready so the isolated correction batch receives a fresh
+official check. Prior evidence is correction context, not proof of a new check:
+never copy it forward as a fresh result or add its URLs to `evidenceRecordIds`.
+
 For each task, create one `AnalysisDecisionRecord` JSON file in a temporary working
 directory and pass it to `npm run creddy:pipeline -- accept-analysis <file>`. Use
 the stable ID `ranking-${canonicalId}`. Never edit source records.
@@ -17,10 +25,9 @@ rubrics below to each record's actual claims, sources, dates, US relevance, and
 Creddy usefulness. The route counts must emerge from those individual decisions,
 not from a desired output count.
 
-When a potentially strong item is routed to `reverify`, preserve it for the batch
-controller and state the exact primary or independent evidence needed. Do not
-lower the confidence threshold merely to meet a production target; the controller
-must obtain and attach better evidence before the item is reranked.
+When a potentially strong item is routed to `reverify`, preserve it and state the
+exact primary or independent evidence needed. Do not lower the confidence threshold
+merely to meet a production target.
 
 Reject general shopping, fuel, banking, wallet, or cashback promotions that are
 not directly about a credit-card benefit, transferable points/miles, award travel,
@@ -94,12 +101,32 @@ or evidence. Link each factual claim to one or more attached evidence record IDs
 If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
+After accepting every ranking, run `npm run creddy:pipeline -- agent-3-verification-prepare`.
+This persists the diversified top-five slate and returns only its pending official-
+verification tasks. For every task, search official first-party issuer, airline,
+hotel, loyalty-program, airport, or government pages. A second points publisher is
+not official evidence. Produce one `CreddyOfficialVerificationRecord` with stable ID
+`official-verification-${decision.id}`, one outcome for every claim, every attempted
+official URL, first-party owner/type for evidence, remaining requirements, and safe
+failure reasons. Accept it with
+`npm run creddy:pipeline -- accept-official-verification <file>`.
+
+Use `verified` only when every material claim is confirmed. Use `unavailable` for
+timeouts, 404s, access failures, or no official page; `inconclusive` when official
+material does not resolve every claim; and `conflicting` when an official source
+materially contradicts the content. A per-item verification failure must never stop
+the batch. Do not add a sixth story, and never treat a configured publisher,
+community post, or creator as an official source.
+
 Finish with `npm run creddy:pipeline -- report`. Report route counts, top-ranked
 items, the diversified five-story editorial slate, the priority-ordered
 verification queue, pending count, failures, and the exact ranking report path.
-The slate may include verification-blocked candidates, but they must never enter
-production until ready. Prefer category diversity and no more than two items from
-one category or primary program. Do not generate
+Unavailable, inconclusive, and conflicting selected stories continue to private
+production and final review. Unresolved social delivery remains locked until the
+audited Facts verified and approve action; a known conflict cannot be overridden
+and blocks both release paths until the claim is corrected and re-reviewed.
+Prefer category diversity and no more than two items from one category or primary
+program. Do not generate
 scripts, captions, images, videos, approvals, schedules, or posts.
 
 When the operator later supplies editorial corrections or observed performance,

@@ -7,7 +7,7 @@ import { listCreddyBankItems } from "@/lib/creddy-file-store";
 import { listBlotatoAccounts, type BlotatoAccount } from "@/lib/blotato";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
-import { approveCreddyAction, deleteCreddyWebsiteArticleAction, refreshCreddyDeliveryStatusesAction, rejectCreddyAction, repostCreddyWebsiteArticleAction } from "./actions";
+import { approveCreddyAction, deleteCreddyWebsiteArticleAction, refreshCreddyDeliveryStatusesAction, rejectCreddyAction, repostCreddyWebsiteArticleAction, verifyCreddyFactsAction } from "./actions";
 import { CreddyCalendar } from "./creddy-calendar";
 import { SlideGallery } from "./slide-gallery";
 import { SlideshowPublishingPanel } from "./slideshow-publishing-panel";
@@ -95,6 +95,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
   return (
     <div className="space-y-6">
       {updated === "slides-regenerated" && <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" /><div><strong>Slide revision saved.</strong><p className="mt-1 text-muted-foreground">All six images were regenerated and validated. The previous revision remains preserved locally.</p></div></div>}
+      {updated === "facts-verified" && <div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" /><div><strong>Facts verified and post approved.</strong><p className="mt-1 text-muted-foreground">Your identity, time, and content revision were recorded. You may now schedule or deliver the social post.</p></div></div>}
       {updated === "article-published" && <div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" /><div><strong>Article approved and published.</strong><p className="mt-1 text-muted-foreground">Agent 8 validated the article, uploaded its optimized images, and synced it to the Creddy website CMS.</p></div></div>}
       {updated === "article-reposted" && <div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" /><div><strong>Article reposted.</strong><p className="mt-1 text-muted-foreground">The same article slug and its three approved images are live again. No slideshow or social status changed.</p></div></div>}
       {updated === "article-unpublished" && <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-amber-700" /><div><strong>Website publication undone.</strong><p className="mt-1 text-muted-foreground">The live CMS row and its article images were removed. The saved article remains here and can be reposted to the same slug.</p></div></div>}
@@ -218,6 +219,15 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {item.verificationGate && <div className={`rounded-lg border p-4 ${item.verificationGate.socialStatus === "conflicting" ? "border-destructive/40 bg-destructive/5" : item.verificationGate.socialStatus === "manual_confirmation_required" ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}>
+              <div className="flex flex-wrap items-center gap-2"><strong>Official verification</strong><Badge variant={item.verificationGate.socialStatus === "conflicting" ? "destructive" : "outline"}>{item.verificationGate.official.status.replaceAll("_", " ")}</Badge><Badge variant="secondary">Slate #{item.verificationGate.portfolioRank}</Badge></div>
+              {item.verificationGate.official.claimOutcomes.filter((claim) => claim.status !== "verified").map((claim) => <p className="mt-2 text-sm" key={claim.field}><strong>{claim.field}:</strong> {claim.status.replaceAll("_", " ")} — {claim.notes}</p>)}
+              {item.verificationGate.official.failureReasons.map((reason) => <p className="mt-1 text-sm" key={reason}>{reason}</p>)}
+              {item.verificationGate.official.attemptedUrls.length > 0 && <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium">Official URLs attempted</summary><ul className="mt-1 list-disc pl-5">{item.verificationGate.official.attemptedUrls.map((url) => <li className="break-all" key={url}><a className="underline" href={url} rel="noreferrer" target="_blank">{url}</a></li>)}</ul></details>}
+              {item.verificationGate.socialStatus === "manual_confirmation_required" && !item.cloudBacked && <form action={verifyCreddyFactsAction} className="mt-3"><input name="id" type="hidden" value={item.id} /><input name="return_to" type="hidden" value={`/creddy/content-bank/${mediaType === "slideshow" ? "slideshows" : "videos"}`} /><Button type="submit">Facts verified and approve</Button><p className="mt-1 text-xs text-muted-foreground">Records your identity, time, revision, and approval. It does not schedule or publish the post.</p></form>}
+              {item.verificationGate.factsVerifiedBy && <p className="mt-2 text-xs text-muted-foreground">Facts confirmed by {item.verificationGate.factsVerifiedBy} at {new Date(item.verificationGate.factsVerifiedAt!).toLocaleString()}.</p>}
+              {item.verificationGate.socialStatus === "conflicting" && <p className="mt-2 text-sm font-medium">Correct the conflicting claim and create a new revision before blog or social release.</p>}
+            </div>}
             {item.article && (
               <div className="space-y-3 rounded-xl border border-[#d2992e]/30 bg-[#fbf2dd]/45 p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -293,7 +303,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
                 <div className="flex flex-wrap gap-1">{item.hashtags.map((tag) => <Badge key={tag} variant="secondary">#{tag.replace(/^#/, "")}</Badge>)}</div>
               </div>
             </div>
-            {item.mediaType === "slideshow" && !item.cloudBacked && item.status !== "published" && item.status !== "rejected" && <SlideshowPublishingPanel
+            {item.mediaType === "slideshow" && (!item.verificationGate || item.verificationGate.socialStatus === "verified") && !item.cloudBacked && item.status !== "published" && item.status !== "rejected" && <SlideshowPublishingPanel
               accountError={blotatoAccountError}
               accounts={blotatoAccounts}
               defaultScheduledFor={defaultSchedule(24)}
@@ -306,7 +316,7 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
             />}
             <details className="rounded-lg border p-3"><summary className="cursor-pointer font-medium">Brief, factual claims, and evidence</summary><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{item.brief}</p><div className="mt-3 font-medium">Factual claims</div><ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">{item.factualClaims.map((claim, index) => <li key={`${claim.field}-${index}`}>{claim.field}: {String(claim.value)} · confidence {claim.confidence}{claim.conflict ? ` · conflict: ${claim.conflict}` : ""}</li>)}</ul><div className="mt-3 font-medium">Sources</div><ul className="mt-1 list-disc pl-5 text-sm">{item.sourceUrls.map((url) => <li key={url}><a className="underline" href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul></details>
 
-            {item.mediaType === "video" && !item.cloudBacked ? <form action={approveCreddyAction} className="space-y-3 rounded-lg border p-4">
+            {item.mediaType === "video" && (!item.verificationGate || item.verificationGate.socialStatus === "verified") && !item.cloudBacked ? <form action={approveCreddyAction} className="space-y-3 rounded-lg border p-4">
               <input type="hidden" name="id" value={item.id} />
               <div><div className="font-medium">Approve and schedule</div><p className="text-xs text-muted-foreground">Times use the Mac mini/dashboard timezone. Select only configured Blotato accounts.</p></div>
               <div className="grid gap-3 lg:grid-cols-2">

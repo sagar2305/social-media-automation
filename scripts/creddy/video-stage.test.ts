@@ -276,6 +276,21 @@ test('requested changes create fresh revision render jobs before returning to re
     revision: 2,
     changeRequest: { requestedBy: 'editor', requestedAt: new Date().toISOString(), notes: 'Correct the hook.' },
   });
+  await assert.rejects(() => acceptContentRevision(root, {
+    ...content,
+    verificationGate: {
+      portfolioRank: 1,
+      selectedAt: '2026-08-31T10:00:00.000Z',
+      socialStatus: 'verified',
+      official: {
+        version: 1, id: 'tampered-verification', decisionId: content.analysisId,
+        canonicalId: content.canonicalId, checkedAt: '2026-08-31T10:01:00.000Z', status: 'verified',
+        attemptedUrls: ['https://delta.com/terms'],
+        evidence: [{ url: 'https://delta.com/terms', owner: 'Delta Air Lines', sourceType: 'airline' }],
+        claimOutcomes: [], remainingRequirements: [], failureReasons: [],
+      },
+    },
+  }), /cannot change or remove the official-verification boundary/);
   await acceptContentRevision(root, {
     ...content,
     hook: 'Corrected hook',

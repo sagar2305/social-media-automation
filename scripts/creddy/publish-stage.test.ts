@@ -161,3 +161,37 @@ test('Agent 8 refuses scheduled records without explicit human approval', async 
   assert.equal(manifest.failedCount, 1);
   assert.match(manifest.errors[0], /missing human approval/);
 });
+
+test('Agent 8 independently refuses unresolved social verification even on an approved scheduled record', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-publish-verification-'));
+  await initializeCreddyDataRoot(root);
+  const content: ContentPackageRecord = {
+    version: CREDDY_PIPELINE_VERSION, id: 'content-verification', analysisId: 'analysis-verification',
+    canonicalId: 'canonical-verification', createdAt: '2026-08-31T12:00:00Z', audience: 'US users',
+    slot: 'act_now', hook: 'Verification pending', scriptLines: ['Review this first.'], caption: 'Review this first.',
+    hashtags: [], cta: { label: 'Open Creddy', deepLink: 'creddy://home' }, imagePrompts: [], brief: 'Brief',
+    sourceUrls: ['https://example.com'], factualClaims: [],
+  };
+  const bank: ContentBankRecord = {
+    version: CREDDY_PIPELINE_VERSION, id: content.id, contentPackageId: content.id,
+    createdAt: '2026-08-31T12:10:00Z', status: 'scheduled', revision: 1,
+    approvedBy: 'editor@example.com', approvedAt: '2026-08-31T12:20:00Z',
+    verificationGate: {
+      portfolioRank: 1, selectedAt: '2026-08-31T12:00:00Z', socialStatus: 'manual_confirmation_required',
+      official: {
+        version: 1, id: 'official-verification-analysis-verification', decisionId: 'analysis-verification',
+        canonicalId: 'canonical-verification', checkedAt: '2026-08-31T12:05:00Z', status: 'unavailable',
+        attemptedUrls: ['https://exampleairline.com/terms'], evidence: [], claimOutcomes: [],
+        remainingRequirements: ['Confirm facts manually.'], failureReasons: ['Official page unavailable.'],
+      },
+    },
+    destinations: [{ format: 'text_music', platform: 'instagram', account: 'creddy-news', scheduledFor: '2026-08-31T13:10:00Z', status: 'pending' }],
+  };
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', `${content.id}.json`), content);
+  await writeJsonAtomic(safeDataPath(root, '11-scheduled', `${bank.id}.json`), bank);
+  const client = new FakeBlotato();
+  const manifest = await runPublishStage(root, client, new Date('2026-08-31T13:00:00Z'), 15);
+  assert.equal(client.scheduled.length, 0);
+  assert.equal(manifest.failedCount, 1);
+  assert.match(manifest.errors[0], /Facts verified and approve/);
+});

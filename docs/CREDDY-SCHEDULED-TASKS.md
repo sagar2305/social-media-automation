@@ -7,12 +7,18 @@ external APIs and use their own keys.
 
 1. **Agent 01 — Collect** — twice daily for 18 enabled sources and six of 12 rotating focused topic searches per editorial window. Run it with `npm run creddy:pipeline -- agent-1`; the command collects and writes both latest and immutable run-scoped reports before returning.
 2. **Agent 02 — Clean, verify, and deduplicate** — applies US/travel-rewards safeguards, removes boilerplate and duplicates, and preserves evidence.
-3. **Agent 03 — Rank and route** — applies the `creddy-ranking-v3` viral rubric, predicts channel fit, and calculates editorial priority independently of verification readiness. It emits a diversified five-story slate, an ordered verification queue, and a deterministic operational route; unverified stories never enter production.
+3. **Agent 03 — Rank, select, and officially verify** — applies the `creddy-ranking-v3` viral rubric, predicts channel fit, persists a diversified five-story slate, and performs a bounded official-first verification pass only for that slate. Every result is recorded per item and never stops private production: unavailable/inconclusive stories carry a social factual-approval gate, while known conflicts remain visible in final review and block both release paths until corrected.
 4. **Agent 04 — Select the concept and write content** — generates four claim-traceable angles, selects one consumer-advocate promise, and writes one unified package: complete structured website article, headline adaptations, six-slide copy, narration, captions, CTA, sources, and production brief.
 5. **Agent 05 — Plan visuals** — chooses the supported social theme, scenes, and mascot expressions plus 3–8 claim-traced 16:9 website article assets using `creddy-abstract-editorial-v1`, without changing accepted copy or claims.
 6. **Agent 06 — Assemble production** — builds the themed private article preview and renders exactly one text+music and one narrated video per package. Article asset gaps remain explicit without duplicating valid social jobs.
-7. **Agent 07 — Fill the Content Bank** — keeps article and social formats on the same stable content identity, creates human-review records, and sends each new six-slide review to Slack exactly once. Website and social approvals are independent human actions.
+7. **Agent 07 — Fill the Content Bank** — keeps article and social formats on the same stable content identity, creates human-review records, and sends each new six-slide review to Slack exactly once. Website and social approvals are independent: blog may continue after unavailable/inconclusive verification, while unresolved social requires the audited **Facts verified and approve** action.
 8. **Agent 08 — Publish/export** — polls only human-approved social schedule entries for Blotato and separately exports asset-complete, human-approved website articles for the disabled getcreddy.com integration boundary.
+
+Known official conflicts remain retained, not discarded. An editor can create an
+audited correction request and run `npm run creddy:pipeline -- reopen-official-conflict <file>`.
+That requeues the same canonical item for Agent 03 correction and official
+reverification; changed claims and gates then deterministically requeue Agents
+04–07 before either release path can reopen.
 
 Agent 7's routine review notification uses the configured Slack Socket Mode app.
 Every new review includes all six slides and human decision controls. A separate
@@ -25,7 +31,7 @@ conflicts before production.
 |---:|---|---|
 | 01 | 08:00 and 18:00 | `01-discovery-and-collection.md` plus raw/discovery files |
 | 02 | 08:20 and 18:20 | `02-filtering-and-deduplication.md` |
-| 03 | 08:35 and 18:35 | `03-ranking-and-routing.md` with every score, hook, channel prediction, verification need, and diversified slate |
+| 03 | 08:35 and 18:35 | `03-ranking-and-routing.md` with every score, hook, channel prediction, persisted diversified slate, official result, and social gate |
 | 04 | 09:30 and 19:30 | `04-content-writing.md` with four concept candidates, selection reasons, headline pack, copy, and claim-safety status |
 | 05 | 10:00 and 20:00 | `05-visual-planning.md` |
 | 06 | 10:30, 11:30, 12:30 and 20:30, 21:30, 22:30 | `06-video-production.md`; repeated runs reconcile asynchronous renders idempotently |

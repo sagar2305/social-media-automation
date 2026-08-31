@@ -1,5 +1,6 @@
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
+import type { CreddyVerificationGate } from './pipeline-types.js';
 
 export type CreddyPublishedSlackEvent = {
   id: string;
@@ -17,6 +18,7 @@ export type CreddyContentReadySlackEvent = {
   tiktokCaption: string;
   hashtags: string[];
   slideImagePaths: string[];
+  verificationGate?: CreddyVerificationGate;
 };
 
 export type CreddyContentReadySlackResult = {
@@ -289,14 +291,24 @@ export async function notifyCreddyEmbeddedArticlePreview(
 export function contentReadyReviewBlocks(event: CreddyContentReadySlackEvent): SlackBlock[] {
   const hashtags = event.hashtags.map((tag) => tag.startsWith('#') ? tag : `#${tag}`).join(' ');
   const copy = `*Instagram caption*\n${clean(event.instagramCaption)}\n\n*TikTok caption*\n${clean(event.tiktokCaption)}\n\n*Hashtags*\n${clean(hashtags)}`;
+  const manualFacts = event.verificationGate?.socialStatus === 'manual_confirmation_required';
+  const conflict = event.verificationGate?.socialStatus === 'conflicting';
+  const verificationContext = event.verificationGate
+    ? conflict
+      ? ':no_entry: Official evidence conflicts with a material claim. Correct the content before approval.'
+      : manualFacts
+        ? `:warning: Official verification was ${event.verificationGate.official.status}. Review the evidence, then use *Facts verified and approve*.`
+        : ':white_check_mark: Official factual verification passed.'
+    : undefined;
   return [
     { type: 'header', text: { type: 'plain_text', text: ':sparkles: Agent 7: post ready for review', emoji: true } },
     { type: 'section', text: { type: 'mrkdwn', text: `*${clean(event.hook)}*\nAll six rendered slides are attached in Slack. Review the exact copy below.` } },
     { type: 'section', text: { type: 'mrkdwn', text: copy.slice(0, 2900) } },
+    ...(verificationContext ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: verificationContext }] }] : []),
     {
       type: 'actions',
       elements: [
-        { type: 'button', style: 'primary', action_id: 'creddy_content_approve', value: event.id, text: { type: 'plain_text', text: '✓ Approve in portal', emoji: true }, confirm: { title: { type: 'plain_text', text: 'Approve this post?' }, text: { type: 'mrkdwn', text: 'This marks the post approved in Creddy. It will *not* publish or schedule anything.' }, confirm: { type: 'plain_text', text: 'Approve' }, deny: { type: 'plain_text', text: 'Cancel' } } },
+        ...(!conflict ? [{ type: 'button', style: 'primary', action_id: manualFacts ? 'creddy_content_facts_verify' : 'creddy_content_approve', value: event.id, text: { type: 'plain_text', text: manualFacts ? '✓ Facts verified and approve' : '✓ Approve in portal', emoji: true }, confirm: { title: { type: 'plain_text', text: manualFacts ? 'Confirm facts and approve?' : 'Approve this post?' }, text: { type: 'mrkdwn', text: manualFacts ? 'I reviewed the unresolved claims and source evidence. Record my identity and approval. This will not schedule or publish anything.' : 'This marks the post approved in Creddy. It will *not* publish or schedule anything.' }, confirm: { type: 'plain_text', text: manualFacts ? 'Facts verified' : 'Approve' }, deny: { type: 'plain_text', text: 'Cancel' } } }] : []),
         { type: 'button', style: 'danger', action_id: 'creddy_content_reject', value: event.id, text: { type: 'plain_text', text: 'Reject', emoji: true }, confirm: { title: { type: 'plain_text', text: 'Reject this post?' }, text: { type: 'mrkdwn', text: 'This moves the post to Rejected in Creddy. You can undo it later from the portal.' }, confirm: { type: 'plain_text', text: 'Reject' }, deny: { type: 'plain_text', text: 'Cancel' } } },
         { type: 'button', action_id: 'creddy_content_open', value: event.id, text: { type: 'plain_text', text: 'View full review in Slack', emoji: true } },
       ],
