@@ -15,13 +15,19 @@ export function newsSourceKey(value: string): string {
 export type ApprovedNewsImage = { url: string; rights: 'licensed' | 'owned' | 'publisher_permission'; attribution: string };
 export function prepareAppNews(decision: AnalysisDecisionRecord, article: CanonicalNewsRecord, evidence: RawArticleRecord[], now = Date.now(), approvedImage?: ApprovedNewsImage) {
   const categories: Record<string, NewsCategory> = { card_offer: 'Credit cards', loyalty_news: 'Loyalty', redemption: 'Points & miles', travel_development: 'Travel rewards', evergreen_education: 'Credit cards' };
+  const sourceDate = article.publishedAt ?? article.providerMetadata?.['article:published_time'] ?? article.providerMetadata?.datePublished;
   const content: NewsContent = { headline: decision.newsBrief?.headline ?? decision.headline,
     summary: decision.newsBrief?.summary ?? decision.summary,
     category: decision.newsBrief?.category ?? categories[decision.portfolioCategory ?? ''] ?? 'Credit cards',
     publisher: article.sourceName, source_url: article.canonicalUrl,
-    image_url: null, published_at: Date.parse(article.publishedAt ?? '') };
+    image_url: null, published_at: typeof sourceDate === 'string' ? Date.parse(sourceDate) : NaN };
   const errors: string[] = [];
   try { validateAnalysisDecision(decision); } catch { errors.push('Analysis did not pass the current evidence/routing contract.'); }
+  const currentGate = decision as AnalysisDecisionRecord & { analysisBatchId?: string; verificationGate?: { official: { status: string } } };
+  if (currentGate.verificationGate?.official.status === 'conflicting'
+    || (currentGate.analysisBatchId && currentGate.verificationGate?.official.status !== 'verified')) {
+    errors.push('Current batched news requires completed official verification without conflict.');
+  }
   if (decision.canonicalId !== article.canonicalId) errors.push('Source identity mismatch.');
   if (!['auto_process', 'evergreen_queue'].includes(decision.route) || decision.verificationState !== 'ready'
     || decision.rubricVersion !== 'creddy-ranking-v3' || decision.materialConflict || decision.confidenceScore < 80) errors.push('Verified, conflict-free news is required.');

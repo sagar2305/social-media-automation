@@ -78,6 +78,21 @@ test('source normalization removes only tracking and fragment, not article query
   assert.equal(newsSourceKey('https://example.com/story/?utm_source=x&id=2#hi'), 'https://example.com/story?id=2');
   assert.notEqual(newsSourceKey('https://example.com/story?id=2'), newsSourceKey('https://example.com/story?id=3'));
 });
+test('publisher publication metadata supports collected articles without inventing dates', () => {
+  const { article, decision, now } = fixtures();
+  article.providerMetadata['article:published_time'] = article.publishedAt;
+  article.publishedAt = undefined;
+  assert.equal(prepareAppNews(decision, article, [article], now).error, null);
+  delete article.providerMetadata['article:published_time'];
+  article.providerMetadata['article:modified_time'] = new Date(now).toISOString();
+  assert.match(prepareAppNews(decision, article, [article], now).error!, /72 hours/);
+});
+test('new batched decisions cannot bypass the shared official verification boundary', () => {
+  const { article, decision, now } = fixtures();
+  assert.match(prepareAppNews({ ...decision, ...{analysisBatchId:'batch-new'} }, article, [article], now).error!, /official verification/);
+  const conflicting = { ...decision, verificationGate:{official:{status:'conflicting'}} } as unknown as AnalysisDecisionRecord;
+  assert.match(prepareAppNews(conflicting, article, [article], now).error!, /official verification/);
+});
 test('news text and URLs are bounded and safe', () => {
   assert.throws(() => validateNewsPatch({ headline: 'short', summary: 'x'.repeat(100), category: 'Credit cards' }));
   for (const url of ['javascript:alert(1)', 'https://127.0.0.1/a', 'https://user:pass@example.com/a', 'http://example.com/a']) assert.equal(publicHttps(url), false);
