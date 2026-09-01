@@ -8,7 +8,7 @@ import { prepareAppNews, newsSourceKey, runAppNewsStage } from './news-stage.js'
 import { CREDDY_PIPELINE_VERSION, type AnalysisDecisionRecord, type CanonicalNewsRecord } from '../creddy/pipeline-types.js';
 import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
 import { NewsService } from '../../shared/creddy-news/creddy-news-service.js';
-import { authorizeNewsSlack, handleNewsSlack, newsMessage, newsSlackAcknowledgement, notifyNews, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
+import { authorizeNewsSlack, handleNewsSlack, newsMessage, newsSlackAcknowledgement, notifyNews, notifyWithheldNewsDigest, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
 import { publicHttps, validateNewsPatch, type NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
 
 function fixtures() {
@@ -141,6 +141,20 @@ test('notification failures are durable, existing receipts update instead of rep
   assert.equal((outcomes[0] as { ts: string }).ts, '1.2');
   await assert.rejects(notifyNews(service, current.id, env, async () => { throw new Error('Test delivery failure'); }));
   assert.equal((outcomes[1] as { error: string }).error, 'Test delivery failure');
+});
+test('withheld News uses one bounded idempotent hourly digest', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const result = await notifyWithheldNewsDigest(
+    Array.from({ length: 7 }, (_, index) => ({ headline: `Candidate ${index}`, reason: 'Official verification is incomplete.' })),
+    '2026-09-01T12',
+    'http://127.0.0.1:3000',
+    env,
+    async (method, body) => { assert.equal(method, 'chat.postMessage'); calls.push(body); return { ts: '2.3' }; },
+  );
+  assert.equal(result.ts, '2.3');
+  assert.equal(calls.length, 1);
+  assert.match(JSON.stringify(calls[0]), /2 additional withheld candidate/);
+  assert.match(JSON.stringify(calls[0]), /client_msg_id/);
 });
 test('disabled cycle performs no work', async () => {
   assert.equal((await runAppNewsStage('/not/a/data/root', { env: {} })).disabled, true);

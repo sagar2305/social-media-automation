@@ -1,5 +1,9 @@
 # Social Media Content OS and Shared Video Factory
 
+> Scheduling update (1 September 2026): historical multi-task and twice-daily
+> sections below are superseded by `docs/CREDDY-SCHEDULED-TASKS.md`. The approved
+> topology is one hourly Codex orchestrator with an internal daily selection gate.
+
 ## Master Implementation Plan
 
 **Initial product:** Creddy

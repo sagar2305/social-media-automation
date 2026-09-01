@@ -225,6 +225,7 @@ export async function listPendingVisualTasks(root: string): Promise<VisualPlanni
     const output = safeDataPath(root, '06-visual-plans', `visual-${task.draft.id}.json`);
     const existing = await pathExists(output) ? await readJson<VisualPlanRecord>(output) : undefined;
     if (!existing || existing.analysisBatchId !== task.draft.analysisBatchId ||
+        JSON.stringify(existing.productionAuthorization) !== JSON.stringify(task.draft.productionAuthorization) ||
         JSON.stringify(existing.verificationGate) !== JSON.stringify(task.draft.verificationGate) ||
         JSON.stringify(existing.factualClaims) !== JSON.stringify(task.draft.factualClaims) ||
         existing.scenes.some((scene, index) => scene.text !== task.draft.textScenes[index])) pending.push(task);
@@ -245,6 +246,10 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
     throw new Error('Visual plan cannot alter the Agent 03 batch identity');
   }
   plan.analysisBatchId = task.draft.analysisBatchId;
+  if (plan.productionAuthorization && JSON.stringify(plan.productionAuthorization) !== JSON.stringify(task.draft.productionAuthorization)) {
+    throw new Error('Visual plan cannot alter the production authorization');
+  }
+  plan.productionAuthorization = task.draft.productionAuthorization;
   const expectedHeadline = task.draft.distributionMode === 'article_only'
     ? task.draft.article!.title
     : task.draft.hook;

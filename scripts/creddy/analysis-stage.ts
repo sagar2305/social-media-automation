@@ -1,4 +1,5 @@
 import { CREDDY_CAMPAIGN_SLUG } from './config.js';
+import { createHash } from 'node:crypto';
 import { mkdir, rename, unlink } from 'node:fs/promises';
 import {
   createRunId,
@@ -49,6 +50,16 @@ export const CREDDY_RANKING_V3_WEIGHTS = {
   freshness: 0.15,
   confidence: 0.10,
 } as const;
+
+export function analysisInputFingerprint(article: CanonicalNewsRecord): string {
+  return createHash('sha256').update(JSON.stringify({
+    canonicalId: article.canonicalId,
+    canonicalUrl: article.canonicalUrl,
+    contentHash: article.contentHash,
+    titleFingerprint: article.titleFingerprint,
+    evidenceRecordIds: [...article.evidenceRecordIds].sort(),
+  })).digest('hex');
+}
 
 export function calculateViralPotentialScore(
   viral: NonNullable<AnalysisDecisionRecord['viralPotential']>,
@@ -339,7 +350,24 @@ export async function runAnalysisQueueStage(
       ) {
         await rename(path, safeDataPath(legacyDir, `${completed.canonicalId}.json`));
       } else if (activeCanonicalIds.has(completed.canonicalId) && passesCurrentPolicy) {
-        await persistAnalysisRoute(root, completed);
+        const article = canonicalRecords.find((item) => item.canonicalId === completed.canonicalId)!;
+        const currentInputHash = analysisInputFingerprint(article);
+        if (!completed.analysisInputHash || completed.analysisInputHash !== currentInputHash) {
+          const priorHash = completed.analysisInputHash?.slice(0, 12) ?? 'pre-rolling';
+          await rename(path, safeDataPath(legacyDir, `${completed.canonicalId}-${priorHash}.json`));
+          await unlink(safeDataPath(root, '05-content-opportunities', `${completed.id}.json`)).catch(() => undefined);
+          await unlink(safeDataPath(root, '05-content-opportunities', 'evergreen', `${completed.id}.json`)).catch(() => undefined);
+          for (const officialPath of await listJsonFiles(safeDataPath(root, '04-official-verification', 'pending'))) {
+            const officialTask = await readJson<{ id: string; decision: AnalysisDecisionRecord }>(officialPath);
+            if (officialTask.decision.canonicalId !== completed.canonicalId) continue;
+            await rename(
+              officialPath,
+              safeDataPath(root, '04-official-verification', 'history', `stale-${officialTask.id}.json`),
+            );
+          }
+        } else {
+          await persistAnalysisRoute(root, completed);
+        }
       }
     }
 
@@ -377,9 +405,15 @@ export async function runAnalysisQueueStage(
 
 async function persistAnalysisRoute(root: string, decision: AnalysisDecisionRecord): Promise<void> {
   if (decision.route === 'auto_process') {
-    await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', `${decision.id}.json`), decision);
+    // Current ranking-v3 decisions require an explicit rolling-queue
+    // production authorization. Legacy decisions retain their old behavior.
+    if (!decision.analysisBatchId) {
+      await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', `${decision.id}.json`), decision);
+    }
   } else if (decision.route === 'evergreen_queue') {
-    await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', `${decision.id}.json`), decision);
+    if (!decision.analysisBatchId) {
+      await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', `${decision.id}.json`), decision);
+    }
   } else if (decision.route === 'reverify') {
     await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'reverify', `${decision.id}.json`), decision);
   } else if (decision.route === 'defer') {
@@ -422,6 +456,7 @@ export async function acceptAnalysisDecision(
   const decision: AnalysisDecisionRecord = {
     ...validated,
     analysisBatchId: task.queueRunId,
+    analysisInputHash: analysisInputFingerprint(task.article),
     correctionContext: task.correctionContext,
     verificationGate: undefined,
   };

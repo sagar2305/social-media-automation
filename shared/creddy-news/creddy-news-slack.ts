@@ -98,6 +98,37 @@ export async function notifyNews(service: NewsService, id: string, env = process
     throw error;
   }
 }
+
+export async function notifyWithheldNewsDigest(
+  items: Array<{ headline: string; reason: string }>,
+  digestKey: string,
+  dashboardUrl: string | undefined,
+  env = process.env,
+  call = api(env),
+): Promise<{ sent: boolean; ts?: string }> {
+  if (items.length === 0) return { sent: false };
+  const channel = env.CREDDY_NEWS_SLACK_CHANNEL_ID;
+  if (!channel || !env.CREDDY_NEWS_SLACK_TEAM_ID) throw new Error('Configure the News Slack channel and workspace.');
+  const lines = items.slice(0, 5).map((item, index) =>
+    `${index + 1}. *${item.headline.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}*\n${item.reason.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}`,
+  );
+  if (items.length > 5) lines.push(`_${items.length - 5} additional withheld candidate(s) remain in the dashboard._`);
+  if (dashboardUrl) lines.push(`<${dashboardUrl.replace(/\/$/, '')}/creddy/news|Open Creddy News manager>`);
+  const digestHash = createHash('sha256').update(`creddy-news-withheld:${digestKey}`).digest('hex');
+  const clientId = `${digestHash.slice(0, 8)}-${digestHash.slice(8, 12)}-4${digestHash.slice(13, 16)}-8${digestHash.slice(17, 20)}-${digestHash.slice(20, 32)}`;
+  const response = await call('chat.postMessage', {
+    channel,
+    client_msg_id: clientId,
+    text: `${items.length} Creddy News candidate(s) withheld`,
+    blocks: [
+      { type: 'header', text: text('Creddy News · Withheld this hour') },
+      { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n\n').slice(0, 2900) } },
+    ],
+    unfurl_links: false,
+    unfurl_media: false,
+  });
+  return { sent: true, ts: typeof response.ts === 'string' ? response.ts : undefined };
+}
 function patchFrom(payload: NewsSlackPayload): NewsPatch {
   const values = payload.view?.state?.values ?? {};
   return { headline: values.headline?.value?.value ?? '', summary: values.summary?.value?.value ?? '',

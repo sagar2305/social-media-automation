@@ -6,6 +6,11 @@ package matching the `ContentPackageRecord` interface in
 `scripts/creddy/pipeline-types.ts`, then validate and enqueue it with
 `npm run creddy:pipeline -- accept-content <file>`.
 
+Every current-workflow input must include `productionAuthorization`. Preserve it
+unchanged in every generated record. Refuse an input whose authorization is
+missing, expired, or does not match the canonical ID, decision ID, and analysis
+input hash. A ranking alone is never permission to create copy or assets.
+
 Create concise vertical-video copy for two outputs from the same package: animated
 text with licensed background music, and narrated Chatterbox voice-over. Preserve
 all factual qualifiers, dates, amounts, eligibility, and uncertainty from the
@@ -36,5 +41,7 @@ or caption changes and preserve the revision trail. After normal opportunities,
 also process every entry from `npm run creddy:pipeline -- revision-pending` and
 submit its corrected package through
 `npm run creddy:pipeline -- accept-revision <file>`. Revised packages create new
-versioned render jobs; never reuse the old videos. Never publish or schedule;
-human approval in the dashboard is mandatory.
+versioned render jobs; never reuse the old videos. Never publish or schedule from
+this agent. Normal work requires human review. A downstream worker may deliver a
+fully verified breaking item only when its preserved authorization explicitly says
+`approvalMode: "auto_urgent"` and the separate delivery gate is enabled.

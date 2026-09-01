@@ -222,7 +222,7 @@ test('analysis batch audit enforces the five-post production target', () => {
   assert.equal(audit.meetsMinimum, false);
 });
 
-test('analysis queue and accepted decision create a content opportunity', async () => {
+test('analysis queue and accepted decision remain inert until rolling authorization', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-analysis-'));
   await initializeCreddyDataRoot(root);
   await writeJsonAtomic(
@@ -238,11 +238,11 @@ test('analysis queue and accepted decision create a content opportunity', async 
   );
   assert.equal(
     (await listJsonFiles(safeDataPath(root, '05-content-opportunities'))).length,
-    1,
+    0,
   );
 });
 
-test('evergreen decisions enter the dedicated opportunity queue', async () => {
+test('current evergreen decisions remain in the rolling pool until authorization', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-evergreen-'));
   await initializeCreddyDataRoot(root);
   await writeJsonAtomic(
@@ -255,7 +255,7 @@ test('evergreen decisions enter the dedicated opportunity queue', async () => {
   await acceptAnalysisDecision(root, evergreen);
   assert.equal(
     (await listJsonFiles(safeDataPath(root, '05-content-opportunities', 'evergreen'))).length,
-    1,
+    0,
   );
 });
 

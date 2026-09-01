@@ -85,6 +85,7 @@ export async function listPendingProductionTasks(root: string): Promise<Producti
     const existing = await pathExists(destination) ? await readJson<ContentPackageRecord>(destination) : undefined;
     if (!existing || existing.distributionMode !== task.draft.distributionMode ||
         existing.analysisBatchId !== task.draft.analysisBatchId ||
+        JSON.stringify(existing.productionAuthorization) !== JSON.stringify(task.draft.productionAuthorization) ||
         JSON.stringify(existing.verificationGate) !== JSON.stringify(task.draft.verificationGate) ||
         JSON.stringify(existing.factualClaims) !== JSON.stringify(task.draft.factualClaims)) pending.push(task);
   }
@@ -160,10 +161,14 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
   if (visualPlan.analysisBatchId !== draft.analysisBatchId) {
     throw new Error('Visual plan changed the Agent 03 batch identity');
   }
+  if (JSON.stringify(visualPlan.productionAuthorization) !== JSON.stringify(draft.productionAuthorization)) {
+    throw new Error('Visual plan changed the production authorization');
+  }
   const content: ContentPackageRecord = {
     version: CREDDY_PIPELINE_VERSION,
     analysisBatchId: draft.analysisBatchId,
     distributionMode: draft.distributionMode,
+    productionAuthorization: draft.productionAuthorization,
     contentDraftId: draft.id,
     id: `production-${draft.analysisId}`,
     analysisId: draft.analysisId,

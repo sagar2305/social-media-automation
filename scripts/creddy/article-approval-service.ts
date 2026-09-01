@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { computeArticleApprovalFingerprint } from './article-approval-integrity.js';
 import { pathExists, readJson, safeDataPath, withStageLock, writeJsonAtomic } from './pipeline-store.js';
 import type { ContentBankRecord } from './pipeline-types.js';
-import { assertArticleVerificationPublishable, assertBankVerificationIntegrity } from './publication-policy.js';
+import { assertArticleVerificationPublishable, assertAutoUrgentAuthorizationCurrent, assertBankVerificationIntegrity, assertProductionAuthorizationCurrent } from './publication-policy.js';
 
 const BANK_DIRECTORIES = ['12-published', '11-scheduled', '10-approved', '09-pending-approval', '13-rejected-content'] as const;
 const WEBSITE_BASE_URL = 'https://getcreddy.com';
@@ -151,16 +151,19 @@ export async function approveAndPublishWebsiteArticle(input: {
     }
 
     let approvalRecorded = false;
+    const approvalMode = record.productionAuthorization?.approvalMode === 'auto_urgent' ? 'auto_urgent' as const : 'human_review' as const;
+    const approvalActor = approvalMode === 'auto_urgent' ? 'policy:auto_urgent' : (input.approvedBy.trim() || 'human-reviewer');
     if (record.articleReview!.status === 'pending_review' || record.articleReview!.status === 'changes_requested') {
       const approvedAt = now().toISOString();
       const approvedContentSha256 = await computeArticleApprovalFingerprint(input.root, record);
       record = {
         ...record,
         updatedAt: approvedAt,
+        approvalMode,
         articleReview: {
           ...record.articleReview!,
           status: 'approved',
-          approvedBy: input.approvedBy.trim() || 'human-reviewer',
+          approvedBy: approvalActor,
           approvedAt,
           approvedContentSha256,
           blockers: [],
@@ -200,10 +203,11 @@ export async function approveAndPublishWebsiteArticle(input: {
         record = {
           ...record,
           updatedAt: refreshedAt,
+          approvalMode,
           articleReview: {
             ...record.articleReview!,
             status: 'approved',
-            approvedBy: input.approvedBy.trim() || 'Agent 7 automatic website release',
+            approvedBy: approvalActor,
             approvedAt: refreshedAt,
             approvedContentSha256: currentFingerprint,
             publishingStartedAt: undefined,
@@ -253,6 +257,10 @@ export async function approveAndPublishWebsiteArticle(input: {
     await writeReviewRecord(input.root, path, publishing);
 
     try {
+      await assertProductionAuthorizationCurrent(input.root, publishing, now());
+      if (publishing.approvalMode === 'auto_urgent' || publishing.productionAuthorization?.approvalMode === 'auto_urgent') {
+        await assertAutoUrgentAuthorizationCurrent(input.root, publishing, now());
+      }
       const result = await input.publish();
       if (result.failures.length) throw new Error('Agent 8 CMS publication failed');
       const publishedReceipt = await successfulReceipt(input.root, slug, publishing.articleReview!.approvedAt);

@@ -321,11 +321,50 @@ export interface AnalysisDecisionRecord {
   evidenceRecordIds: string[];
   /** Added durably by accept-analysis; legacy decisions omit it. */
   analysisBatchId?: string;
+  /** Stable hash of the canonical article and evidence revision ranked by
+   * Agent 03. A changed hash requeues only this canonical item. */
+  analysisInputHash?: string;
+  /** Explicit time horizon used by the rolling editorial queue. New ranking-v3
+   * decisions should provide it; legacy records are classified conservatively. */
+  freshnessClass?: 'breaking' | 'time_sensitive' | 'timely' | 'evergreen';
+  /** First trustworthy occurrence of the material event, distinct from when a
+   * publisher page was fetched. Required for unattended breaking delivery. */
+  eventOccurredAt?: string;
+  /** Concrete material change. Generic commentary can never use the urgent
+   * unattended publication lane. */
+  materialEventType?:
+    | 'issuer_or_program_change'
+    | 'offer_change'
+    | 'deadline'
+    | 'devaluation'
+    | 'outage'
+    | 'benefit_or_eligibility_change'
+    | 'other_actionable_change';
+  /** Present only after the rolling selector explicitly permits Agent 04 to
+   * create content. Rankings alone never authorize expensive production. */
+  productionAuthorization?: CreddyProductionAuthorization;
   /** Copied immutably from an audited conflict-reanalysis task. */
   correctionContext?: AnalysisTaskRecord['correctionContext'];
   /** Present only after this decision was selected in the top-five slate and
    * its bounded official verification attempt completed. */
   verificationGate?: CreddyVerificationGate;
+}
+
+export interface CreddyProductionAuthorization {
+  version: 1;
+  id: string;
+  canonicalId: string;
+  decisionId: string;
+  analysisInputHash: string;
+  decisionHash: string;
+  officialVerificationHash: string;
+  selectedAt: string;
+  expiresAt?: string;
+  lane: 'urgent' | 'daily';
+  distributionMode: CreddyDistributionMode;
+  reason: string;
+  approvalMode: 'auto_urgent' | 'human_review';
+  selectionRunId: string;
 }
 
 export interface AnalysisPerformanceFeedbackRecord {
@@ -350,6 +389,7 @@ export interface ContentPackageRecord {
   /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
   analysisBatchId?: string;
   distributionMode?: CreddyDistributionMode;
+  productionAuthorization?: CreddyProductionAuthorization;
   contentDraftId?: string;
   id: string;
   analysisId: string;
@@ -466,6 +506,7 @@ export interface ContentDraftRecord {
   /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
   analysisBatchId?: string;
   distributionMode?: CreddyDistributionMode;
+  productionAuthorization?: CreddyProductionAuthorization;
   /** New Agent 04 drafts use the claim-traceable concept contract. Omitted only
    * on legacy drafts that remain readable by downstream stages. */
   copyVersion?: 'creddy-copy-v2' | 'creddy-copy-v3';
@@ -599,6 +640,7 @@ export interface VisualPlanRecord {
   /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
   analysisBatchId?: string;
   distributionMode?: CreddyDistributionMode;
+  productionAuthorization?: CreddyProductionAuthorization;
   id: string;
   contentDraftId: string;
   analysisId: string;
@@ -645,6 +687,7 @@ export interface ContentBankRecord {
   version: typeof CREDDY_PIPELINE_VERSION;
   /** Binds current-workflow output to its Agent 03 batch. Missing only on legacy records. */
   analysisBatchId?: string;
+  productionAuthorization?: CreddyProductionAuthorization;
   id: string;
   contentPackageId: string;
   mediaType?: 'video' | 'slideshow' | 'article';
@@ -689,6 +732,9 @@ export interface ContentBankRecord {
   verificationGate?: CreddyVerificationGate;
   approvedBy?: string;
   approvedAt?: string;
+  /** Distinguishes an audited unattended breaking-news policy decision from a
+   * human approval. Never synthesize a human actor for auto_urgent. */
+  approvalMode?: 'auto_urgent' | 'human_review';
   changeRequest?: {
     requestedBy: string;
     requestedAt: string;

@@ -11,7 +11,7 @@ import {
   reopenConflictingVerification,
   validateOfficialVerification,
 } from './official-verification-stage.js';
-import { acceptAnalysisDecision, calculateEditorialPriorityScore } from './analysis-stage.js';
+import { acceptAnalysisDecision, analysisInputFingerprint, calculateEditorialPriorityScore } from './analysis-stage.js';
 import {
   assertArticleVerificationPublishable,
   assertSocialVerificationSatisfied,
@@ -62,7 +62,7 @@ function decision(index: number): AnalysisDecisionRecord {
     version: CREDDY_PIPELINE_VERSION,
     id: `ranking-canonical-${index}`,
     canonicalId: `canonical-${index}`,
-    analysisBatchId: 'batch-current',
+    analysisBatchId: 'batch-current', analysisInputHash: analysisInputFingerprint(article(index)),
     analyzedAt: `2026-08-31T12:0${index}:00.000Z`,
     market: 'US',
     headline: `Material points story ${index}`,
@@ -140,7 +140,7 @@ test('Agent 03 persists official-verification tasks only for the diversified top
   assert.equal((await listPendingOfficialVerificationTasks(root)).length, 5);
 });
 
-test('unavailable official verification continues to private production but gates social delivery', async () => {
+test('unavailable official verification stays inert until rolling selection and gates social delivery', async () => {
   const root = join(await mkdtemp(join(tmpdir(), 'creddy-official-')), 'creddy');
   await initializeCreddyDataRoot(root);
   await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json'), article(0));
@@ -148,7 +148,7 @@ test('unavailable official verification continues to private production but gate
   const [task] = await prepareOfficialVerificationTasks(root);
   const accepted = await acceptOfficialVerification(root, result(task!, 'unavailable'));
   assert.equal(accepted.verificationGate?.socialStatus, 'manual_confirmation_required');
-  assert.equal(publicationModeForOpportunity(accepted, article(0)), 'article_and_social');
+  assert.equal(publicationModeForOpportunity(accepted, article(0)), undefined);
   assert.doesNotThrow(() => assertArticleVerificationPublishable(accepted.verificationGate));
   assert.throws(() => assertSocialVerificationSatisfied(accepted.verificationGate), /Facts verified and approve/);
   const confirmed = markSocialFactsVerified(accepted.verificationGate, 'editor@example.com', 1, new Date('2026-08-31T13:00:00.000Z'));
@@ -157,14 +157,29 @@ test('unavailable official verification continues to private production but gate
   assert.doesNotThrow(() => assertSocialVerificationSatisfied(confirmed, 1));
 });
 
-test('known official conflict blocks both blog and social and cannot be manually overridden', () => {
+test('stale official task cannot overwrite a newer Agent 03 decision', async () => {
+  const root = join(await mkdtemp(join(tmpdir(), 'creddy-official-stale-')), 'creddy');
+  await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json'), article(0));
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json'), decision(0));
+  const [task] = await prepareOfficialVerificationTasks(root);
+  const current = decision(0);
+  current.summary = 'A newer independently ranked interpretation.';
+  current.analyzedAt = '2026-08-31T13:00:00.000Z';
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json'), current);
+  await assert.rejects(acceptOfficialVerification(root, result(task!, 'verified')), /task is stale/);
+  assert.equal((await readJson<AnalysisDecisionRecord>(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json'))).summary, current.summary);
+  assert.equal(await pathExists(safeDataPath(root, '04-official-verification', 'history', `stale-${task!.id}.json`)), true);
+});
+
+test('known official conflict remains unauthorized and blocks both blog and social', () => {
   const task: OfficialVerificationTaskRecord = {
     version: 1, id: 'official-verification-ranking-canonical-0', portfolioRank: 1,
     selectedAt: '2026-08-31T12:20:00.000Z', decision: decision(0), article: article(0),
   };
   const official = validateOfficialVerification(result(task, 'conflicting'), task);
   const gate = { portfolioRank: 1, selectedAt: task.selectedAt, official, socialStatus: 'conflicting' as const };
-  assert.equal(publicationModeForOpportunity({ ...task.decision, verificationGate: gate }, task.article), 'article_and_social');
+  assert.equal(publicationModeForOpportunity({ ...task.decision, verificationGate: gate }, task.article), undefined);
   assert.throws(() => assertArticleVerificationPublishable(gate), /conflicts/);
   assert.throws(() => assertSocialVerificationSatisfied(gate), /conflicts/);
   assert.throws(() => markSocialFactsVerified(gate, 'editor@example.com', 1), /cannot override/);

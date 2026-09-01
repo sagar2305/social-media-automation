@@ -48,7 +48,7 @@ export interface FirecrawlClientOptions {
 }
 
 export interface ScrapePageOptions {
-  /** Cache only rapid retries; twice-daily discovery must not accept 2-day data. */
+  /** Cache only rapid retries; hourly discovery must not accept 2-day data. */
   maxAgeMs?: number;
 }
 

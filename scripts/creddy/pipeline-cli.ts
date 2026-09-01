@@ -61,6 +61,8 @@ import { publishApprovedWebsiteArticlesImmediately } from './instant-website-pub
 import { notifyCreddyArticleReady } from './slack-notifications.js';
 import { VideoFactoryClient } from './video-factory-client.js';
 import { approveContentBankItem, rejectContentBankItem, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
+import { autoApproveAndSubmitUrgentSocial } from './urgent-auto-delivery.js';
+import { assertAutoUrgentAuthorizationCurrent } from './publication-policy.js';
 import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
 import {
   acceptOfficialVerification,
@@ -68,6 +70,14 @@ import {
   prepareOfficialVerificationTasks,
   reopenConflictingVerification,
 } from './official-verification-stage.js';
+import {
+  beginHourlyRun,
+  finishHourlyRun,
+  heartbeatHourlyRun,
+  runHourlyDiscovery,
+  runHourlyRouting,
+} from './hourly-orchestrator.js';
+import { rollingEditorialStatus } from './rolling-editorial.js';
 import { exportApprovedWebsiteArticles } from './website-stage.js';
 import {
   createCwebpWebsiteCmsAssetOptimizer,
@@ -248,6 +258,55 @@ async function main(): Promise<void> {
 
   requireEnabled();
   await initializeCreddyDataRoot(root);
+
+  if (command === 'hourly-prepare') {
+    const lease = await beginHourlyRun(root);
+    if (!lease) {
+      console.log(JSON.stringify({ started: false, reason: 'hourly_run_already_active' }, null, 2));
+      return;
+    }
+    try {
+      const key = process.env.FIRECRAWL_API_KEY?.trim();
+      if (!key) throw new Error('FIRECRAWL_API_KEY is required for hourly discovery');
+      const discovery = await runHourlyDiscovery({
+        root,
+        client: new FirecrawlClient({ apiKey: key }),
+        runId: lease.runId,
+        maxLinksPerSource: positiveInteger(process.env.CREDDY_MAX_LINKS_PER_SOURCE, CREDDY_DISCOVERY_PROFILE.maxLinksPerSourceDefault, 'CREDDY_MAX_LINKS_PER_SOURCE'),
+        maxArticleScrapes: positiveInteger(process.env.CREDDY_MAX_ARTICLE_SCRAPES, CREDDY_DISCOVERY_PROFILE.productionScrapeLimit, 'CREDDY_MAX_ARTICLE_SCRAPES'),
+        recheckAfterHours: positiveNumber(process.env.CREDDY_RECHECK_HOURS, CREDDY_DISCOVERY_PROFILE.freshnessHours, 'CREDDY_RECHECK_HOURS'),
+      });
+      console.log(JSON.stringify({ started: true, runId: lease.runId, discovery }, null, 2));
+    } catch (error) {
+      await finishHourlyRun(root, lease.runId, (error as Error).message);
+      throw error;
+    }
+    return;
+  }
+  if (command === 'hourly-heartbeat') {
+    console.log(JSON.stringify(await heartbeatHourlyRun(root, argument(3, 'hourly run id')), null, 2));
+    return;
+  }
+  if (command === 'hourly-route') {
+    console.log(JSON.stringify(await runHourlyRouting({ root, runId: argument(3, 'hourly run id') }), null, 2));
+    return;
+  }
+  if (command === 'hourly-finish') {
+    console.log(JSON.stringify(await finishHourlyRun(root, argument(3, 'hourly run id')), null, 2));
+    return;
+  }
+  if (command === 'hourly-fail') {
+    console.log(JSON.stringify(await finishHourlyRun(
+      root,
+      argument(3, 'hourly run id'),
+      process.argv.slice(4).join(' ').trim() || 'Hourly orchestrator failed; inspect the durable run report.',
+    ), null, 2));
+    return;
+  }
+  if (command === 'rolling-status') {
+    console.log(JSON.stringify(await rollingEditorialStatus(root), null, 2));
+    return;
+  }
 
   if (command === 'collect' || command === 'agent-1') {
     const key = process.env.FIRECRAWL_API_KEY?.trim();
@@ -503,6 +562,12 @@ async function main(): Promise<void> {
     const autoPublishArticle = async (id: string): Promise<boolean> => {
       const scopedId = process.env.CREDDY_AGENT7_AUTO_PUBLISH_ID?.trim();
       if (scopedId && scopedId !== id) return false;
+      const bankPath = safeDataPath(root, '09-pending-approval', `${id}.json`);
+      const bank = await readJson<ContentBankRecord>(bankPath);
+      if (bank.productionAuthorization?.approvalMode === 'auto_urgent') {
+        if (process.env.CREDDY_URGENT_BLOG_AUTOPUBLISH_ENABLED?.trim().toLowerCase() !== 'true') return false;
+        await assertAutoUrgentAuthorizationCurrent(root, bank);
+      }
       await autoPublishWebsiteArticle({
         root,
         id,
@@ -522,6 +587,7 @@ async function main(): Promise<void> {
       undefined,
       autoPublishArticle,
     );
+    const urgentSocial = await autoApproveAndSubmitUrgentSocial({ root });
     const bank = await Promise.all(
       (await listJsonFiles(safeDataPath(root, '09-pending-approval')))
         .map((path) => readJson<ContentBankRecord>(path)),
@@ -536,8 +602,9 @@ async function main(): Promise<void> {
       videoCreated,
       articleCreated,
       slideshow,
+      urgentSocial,
       statusCounts,
-      policy: 'Website articles auto-publish through Agent 8; slideshow and social approval remain separate and human-controlled.',
+      policy: 'Normal social remains human-controlled. Fully verified breaking items may auto-publish blog/social only through explicit auto_urgent authorization and fail-closed feature flags.',
       reports,
     }, null, 2));
     return;

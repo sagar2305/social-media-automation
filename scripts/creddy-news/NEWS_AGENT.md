@@ -1,6 +1,8 @@
 # Creddy App News Agent
 
-You operate only the standalone `creddy-app-news` workflow. Never invoke
+You operate only the standalone `creddy-app-news` **repair/backfill** workflow. It
+must not be used as a recurring schedule when the shared hourly Creddy workflow
+is enabled. Never invoke
 `creddy:pipeline`, Agent 4-8, website article publication, slideshow rendering,
 social approval, Blotato, or Video Factory. The News Agent has its own data root
 and may share only the configured Supabase project and Slack destination.

@@ -264,6 +264,7 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
       analysisBatchId: content.analysisBatchId,
+      productionAuthorization: content.productionAuthorization,
       id: contentPackageId,
       contentPackageId,
       createdAt: now.toISOString(),
@@ -341,6 +342,7 @@ export async function runArticleContentBankHandoff(
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
       analysisBatchId: content.analysisBatchId,
+      productionAuthorization: content.productionAuthorization,
       id,
       contentPackageId: content.id,
       mediaType: 'article',
@@ -461,6 +463,7 @@ export async function approveContentBankItem(
   input: {
     id: string;
     approvedBy: string;
+    approvalMode?: 'auto_urgent' | 'human_review';
     destinations: Array<{
       format: 'text_music' | 'narrated' | 'article';
       platform: 'instagram' | 'tiktok' | 'creddy_website';
@@ -500,6 +503,17 @@ export async function approveContentBankItem(
   if (pending.status !== 'pending_review' && pending.status !== 'changes_requested') {
     throw new Error(`Content item cannot be approved from status ${pending.status}`);
   }
+  const approvalMode = input.approvalMode ?? 'human_review';
+  if (approvalMode === 'auto_urgent') {
+    const authorization = pending.productionAuthorization;
+    const checkedAt = Date.parse(pending.verificationGate?.official.checkedAt ?? '');
+    if (input.approvedBy !== 'policy:auto_urgent' || authorization?.approvalMode !== 'auto_urgent' ||
+        authorization.expiresAt === undefined || Date.parse(authorization.expiresAt) <= now.getTime() ||
+        pending.verificationGate?.official.status !== 'verified' || !Number.isFinite(checkedAt) ||
+        now.getTime() - checkedAt > 30 * 60 * 1000) {
+      throw new Error('Urgent automatic approval is missing a current verified policy authorization');
+    }
+  }
   const approvesArticle = destinations.some((destination) => destination.format === 'article');
   if (destinations.some((destination) => destination.format !== 'article')) {
     await assertBankVerificationIntegrity(root, pending);
@@ -516,6 +530,7 @@ export async function approveContentBankItem(
     status: 'approved',
     approvedBy: input.approvedBy,
     approvedAt: now.toISOString(),
+    approvalMode,
     articleReview: approvesArticle ? {
       ...pending.articleReview!,
       status: 'approved',
