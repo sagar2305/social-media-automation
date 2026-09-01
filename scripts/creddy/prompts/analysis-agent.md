@@ -38,6 +38,17 @@ Create ranking-v3 decisions with `rubricVersion: "creddy-ranking-v3"`. Keep
 editorial potential independent from verification readiness: an exciting story
 may rank highly while its operational `route` remains `reverify`.
 
+Also classify the rolling time horizon with `freshnessClass`: `breaking`,
+`time_sensitive`, `timely`, or `evergreen`. Set `eventOccurredAt` to the earliest
+trustworthy timestamp for the material event, not the scrape time. For a breaking
+candidate, set `materialEventType` to one concrete material change. Never label a
+roundup, opinion, rumor, routine reminder, or merely popular story as breaking.
+If the event time cannot be established, use `timely` or `evergreen`; do not
+invent a timestamp. Every `breaking` decision must include an
+`event_occurred_at` claim whose ISO timestamp exactly matches `eventOccurredAt`;
+unattended urgent delivery remains impossible unless the official checker
+verifies that exact claim against recorded first-party evidence.
+
 Use these deterministic 0–100 rubrics and explain every material score:
 
 - Product fit: direct card/points/award/loyalty relevance 35; actionable value
@@ -82,9 +93,10 @@ Set `verificationState` to `ready`, `official_source_needed`,
 Routing rules:
 
 - `auto_process`: product fit >= 70, importance >= 70, confidence >= 80, timely,
-  and no material conflict. This enters the next content agent automatically.
+  and no material conflict. This makes the item eligible for the rolling editor;
+  it does not authorize asset creation.
 - `evergreen_queue`: product fit >= 70 and confidence >= 70, useful but not urgent
-  enough for auto-process. This enters the evergreen content queue.
+  enough for auto-process. This enters the rolling evergreen candidate pool.
 - `reverify`: potentially important, but a resolvable factual field lacks enough
   evidence. State exactly what must be verified.
 - `defer`: relevant but premature, stale, or not yet actionable. State the trigger
@@ -101,13 +113,13 @@ or evidence. Link each factual claim to one or more attached evidence record IDs
 If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
-After accepting every ranking, run `npm run creddy:pipeline -- agent-3-verification-prepare`.
-This persists the automatic diversified top-five slate, or the batch-scoped human
-editorial slate when one has been recorded, and returns only its pending official-
-verification tasks. For every task, search official first-party issuer, airline,
+In the hourly workflow, do not run the legacy batch top-five selector. The
+orchestrator creates a priority-ordered verification slate across the rolling
+pool: urgent first, then app News, then the persisted daily selection. For every
+pending task, search official first-party issuer, airline,
 hotel, loyalty-program, airport, or government pages. A second points publisher is
-not official evidence. Produce one `CreddyOfficialVerificationRecord` with stable ID
-`official-verification-${decision.id}`, one outcome for every claim, every attempted
+not official evidence. Produce one `CreddyOfficialVerificationRecord` using the
+task's exact `id`, one outcome for every claim, every attempted
 official URL, first-party owner/type for evidence, remaining requirements, and safe
 failure reasons. Accept it with
 `npm run creddy:pipeline -- accept-official-verification <file>`.
@@ -116,18 +128,19 @@ Use `verified` only when every material claim is confirmed. Use `unavailable` fo
 timeouts, 404s, access failures, or no official page; `inconclusive` when official
 material does not resolve every claim; and `conflicting` when an official source
 materially contradicts the content. A per-item verification failure must never stop
-the batch. Do not add a sixth story, and never treat a configured publisher,
+the batch. Never treat a configured publisher,
 community post, or creator as an official source.
 
 Finish with `npm run creddy:pipeline -- report`. Report route counts, top-ranked
-items, the diversified five-story editorial slate, the priority-ordered
+items, the rolling daily slate (zero to five), the priority-ordered
 verification queue, pending count, failures, and the exact ranking report path.
 Unavailable, inconclusive, and conflicting selected stories continue to private
 production and final review. Unresolved social delivery remains locked until the
 audited Facts verified and approve action; a known conflict cannot be overridden
 and blocks both release paths until the claim is corrected and re-reviewed.
-Prefer category diversity and no more than two items from one category or primary
-program. Do not generate
+The rolling selector, not Agent 03, applies the daily diversity cap. A completed
+ranking remains inert until the selector writes an explicit authorization bound
+to the analysis-input, decision, and official-verification hashes. Do not generate
 scripts, captions, images, videos, approvals, schedules, or posts.
 
 When the operator later supplies editorial corrections or observed performance,

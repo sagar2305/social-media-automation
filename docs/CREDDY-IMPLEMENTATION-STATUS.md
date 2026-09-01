@@ -1,8 +1,8 @@
 # Creddy automation implementation status
 
-**Date:** 31 August 2026
-**Code status:** implemented and locally verified
-**Production status:** core pipeline active locally; publishing and external review remain gated
+**Date:** 1 September 2026
+**Code status:** rolling hourly orchestration implemented; activation remains gated
+**Production status:** existing local services remain active; the new hourly schedule is not created by this change
 
 ## Implemented flow
 
@@ -10,11 +10,14 @@
 2. Immutable raw files are partitioned by date/run in the dedicated data project.
 3. OR-keyword filtering, context checks, article-body cleaning, exact and conservative
    near-title duplicate detection, and supporting-evidence grouping produce canonical news records.
-4. Codex scheduled analysis uses the `creddy-ranking-v3` viral rubric, channel-fit
+4. Hourly Codex analysis uses the `creddy-ranking-v3` viral rubric, channel-fit
    predictions, freshness, product fit, importance, and confidence to calculate
    editorial priority. Editorial upside stays independent of evidence readiness;
-   the stage persists a diversified five-story slate and runs an official-first,
-   claim-level verification pass only for those stories. Unavailable or inconclusive
+   the stage maintains a rolling queue and persists up to five diversified daily
+   stories on the first run after 06:00 America/New_York. A ranking cannot reach
+   Agent 04 until an explicit hash-bound production authorization exists. The
+   bounded hourly official-first pass prioritizes urgent, app News, then daily
+   candidates. Unavailable or inconclusive
    checks continue privately through production; a known official contradiction
    blocks both blog and social.
 5. Slack is allowed only for an important, material, message-changing conflict
@@ -39,7 +42,9 @@
    action, which resets whenever the content revision changes.
 9. Revision requests create fresh versioned render jobs; old renders cannot be
    approved as the revised asset.
-10. Only human-approved scheduled destinations reach Blotato. Submission IDs and
+10. Normal scheduled destinations require human approval. A strictly bounded,
+    fully official-verified breaking item may use an audited `auto_urgent`
+    authorization when its separate fail-closed flag is enabled. Submission IDs and
     remote status are reconciled idempotently; missed windows fail for review.
 11. The same Agent 04–08 record now supports a complete `creddy-copy-v3`
     website article, claim-traced article visuals, a private getcreddy.com-themed
@@ -61,13 +66,13 @@
 - Live local Video Factory verification was completed. Publishing remains gated,
   so no Blotato post was created by this template/voice test.
 
-## Scheduled tasks
+## Scheduled task
 
-Eight separate, timezone-anchored Codex automation cards were prepared in paused
-state: collection; filtering; dedupe/queue; Codex analysis; rare Slack delivery;
-Codex content/image packaging; Video Factory/render-bank polling; and approved
-publishing. The app requires the operator to accept the displayed cards. Keep all
-of them paused until the activation checklist is complete.
+The replacement design uses one hourly Codex task for the entire workflow. The
+daily selection gate is internal and timezone-aware; app News is a projection of
+the shared ledger rather than a second recurring collector. The task must not be
+created or activated until this code is merged and the activation checklist is
+approved. See `docs/CREDDY-SCHEDULED-TASKS.md` for the exact sequence.
 
 The two Codex reasoning stages use signed-in Codex task usage, not OpenAI API
 billing. `OPENAI_API_KEY` is needed only if the team deliberately switches
@@ -104,8 +109,8 @@ changed.
 4. Exact Creddy Instagram account mapping in Blotato.
 5. A created and connected Creddy TikTok account plus its Blotato mapping.
 6. Approved iOS App Store URL, Google Play URL, and final Creddy deep-link routes.
-7. Approval of the eight displayed Codex automation cards and local filesystem
-   access to both the code project and the dedicated data project on the Mac mini.
+7. Approval of the single hourly Codex automation and local filesystem access to
+   both the code project and the dedicated data project on the Mac mini.
 8. A single staging render and private/test publish. Only after it is reviewed
    should `CREDDY_PIPELINE_ENABLED` be changed to `true` and schedules resumed.
 

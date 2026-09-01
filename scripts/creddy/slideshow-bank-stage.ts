@@ -312,6 +312,7 @@ export async function runSlideshowContentBankHandoff(
         ...existing,
         version: CREDDY_PIPELINE_VERSION,
         analysisBatchId: production?.analysisBatchId ?? draft.analysisBatchId,
+        productionAuthorization: production?.productionAuthorization ?? draft.productionAuthorization,
         id,
         contentPackageId: contentDraftId,
         mediaType: 'slideshow',

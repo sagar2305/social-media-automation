@@ -47,12 +47,30 @@ export function prepareAppNews(decision: AnalysisDecisionRecord, article: Canoni
     claims: decision.claims, imageRights: content.image_url ? image : null } };
 }
 
-/** Publishes only from the standalone News Agent data root. */
-export async function runAppNewsStage(root: string, options: { env?: NodeJS.ProcessEnv; service?: NewsService; notify?: typeof notifyNews; canonicalIds?: string[] } = {}) {
+/** Publishes a caller-provided projection from either the shared ledger or the
+ * isolated repair/backfill root. It never chooses candidates implicitly when
+ * `canonicalIds` is supplied by the hourly orchestrator. */
+export async function runAppNewsStage(root: string, options: {
+  env?: NodeJS.ProcessEnv;
+  service?: NewsService;
+  notify?: typeof notifyNews;
+  canonicalIds?: string[];
+  notifyMode?: 'all' | 'published_only' | 'none';
+} = {}) {
   const env = options.env ?? process.env;
-  if (env.CREDDY_NEWS_ENABLED !== 'true') return { disabled: true, published: 0, notPublished: 0, deleted: 0, failures: [] };
+  if (env.CREDDY_NEWS_ENABLED !== 'true') return {
+    disabled: true, published: 0, notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [],
+  };
   const service = options.service ?? configuredNewsService(env);
-  const result = { disabled: false, published: 0, notPublished: 0, deleted: 0, failures: [] as Array<{ id: string; reason: string }> };
+  const result = {
+    disabled: false,
+    published: 0,
+    notPublished: 0,
+    deleted: 0,
+    publishedIds: [] as string[],
+    withheld: [] as Array<{ id: string; headline: string; reason: string }>,
+    failures: [] as Array<{ id: string; reason: string }>,
+  };
   const canonicals = new Map<string, CanonicalNewsRecord>();
   for (const path of await listJsonFiles(safeDataPath(root, '03-canonical-news', 'approved'))) {
     const item = await readJson<CanonicalNewsRecord>(path);
@@ -75,10 +93,16 @@ export async function runAppNewsStage(root: string, options: { env?: NodeJS.Proc
       const prepared = prepareAppNews(decision, article, decision.evidenceRecordIds.flatMap(id => raw.has(id) ? [raw.get(id)!] : []), Date.now(), images[sourceKey]);
       if (!Number.isFinite(prepared.content.published_at)) prepared.content.published_at = 0;
       const item = await service.ingest({ id, sourceKey, ...prepared });
-      if (item.status === 'published') result.published++;
+      if (item.status === 'published') { result.published++; result.publishedIds.push(decision.canonicalId); }
       else if (item.status === 'deleted') result.deleted++;
-      else result.notPublished++;
-      await (options.notify ?? notifyNews)(service, item.id, env);
+      else {
+        result.notPublished++;
+        result.withheld.push({ id: decision.canonicalId, headline: item.content.headline, reason: item.validation_error ?? 'Did not pass final News eligibility.' });
+      }
+      const notifyMode = options.notifyMode ?? 'all';
+      if (notifyMode === 'all' || (notifyMode === 'published_only' && item.status === 'published')) {
+        await (options.notify ?? notifyNews)(service, item.id, env);
+      }
     } catch (error) { result.failures.push({ id: decision.canonicalId, reason: (error as Error).message }); }
   }
   await writeJsonAtomic(safeDataPath(root, 'reports', 'latest', 'app-news.json'), result);

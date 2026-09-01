@@ -7,6 +7,7 @@ import type {
   CreddyVerificationGate,
 } from './pipeline-types.js';
 import { listJsonFiles, readJson, safeDataPath } from './pipeline-store.js';
+import { decisionFingerprint, officialVerificationFingerprint } from './rolling-editorial.js';
 
 const VOLATILE_ARTICLE_LANGUAGE = /\b(?:adds?|added|bonus|offer|highest[- ]ever|limited[- ]time|ends?|expires?|through\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|launch(?:es|ed)?|new\s+(?:card|benefit|route)|devaluation|promo|status match|buy\s+\w+\s+(?:points|miles))\b/i;
 
@@ -79,8 +80,64 @@ export async function assertBankVerificationIntegrity(root: string, bank: Conten
   const sourcePath = bank.contentDraftId
     ? safeDataPath(root, '06-content-drafts', `${bank.contentDraftId}.json`)
     : safeDataPath(root, '06-content-packages', `${bank.contentPackageId}.json`);
-  const source = await readJson<Pick<ContentPackageRecord, 'analysisBatchId' | 'verificationGate'>>(sourcePath);
+  const source = await readJson<Pick<ContentPackageRecord, 'analysisBatchId' | 'verificationGate' | 'productionAuthorization'>>(sourcePath);
   assertVerificationGateIntegrity(bank, source);
+  if (bank.analysisBatchId && JSON.stringify(bank.productionAuthorization) !== JSON.stringify(source.productionAuthorization)) {
+    throw new Error('Current-workflow bank and production package authorizations do not match');
+  }
+}
+
+export async function assertProductionAuthorizationCurrent(
+  root: string,
+  bank: ContentBankRecord,
+  now = new Date(),
+): Promise<void> {
+  if (!bank.analysisBatchId) return;
+  const authorization = bank.productionAuthorization;
+  if (!authorization) throw new Error('Current-workflow delivery is missing its production authorization');
+  const decision = await readJson<AnalysisDecisionRecord>(
+    safeDataPath(root, '04-analysis-queue', 'completed', `${authorization.canonicalId}.json`),
+  );
+  if (decision.productionAuthorization?.id !== authorization.id ||
+      JSON.stringify(decision.productionAuthorization) !== JSON.stringify(authorization) ||
+      publicationModeForOpportunity(decision, { canonicalId: decision.canonicalId } as CanonicalNewsRecord, now) === undefined) {
+    throw new Error('Production authorization is stale or no longer matches the current Agent 03 decision');
+  }
+  await assertBankVerificationIntegrity(root, bank);
+}
+
+/** Revalidates the complete unattended breaking-news authorization immediately
+ * before an external mutation. This must be called by every delivery path, not
+ * only by the worker that initially moved the item into the schedule. */
+export async function assertAutoUrgentAuthorizationCurrent(
+  root: string,
+  bank: ContentBankRecord,
+  now = new Date(),
+): Promise<void> {
+  const authorization = bank.productionAuthorization;
+  if (authorization?.approvalMode !== 'auto_urgent' || authorization.lane !== 'urgent') {
+    throw new Error('Content is not authorized for unattended urgent delivery');
+  }
+  const expiresAt = Date.parse(authorization.expiresAt ?? '');
+  if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+    throw new Error('Urgent delivery authorization expired before external mutation');
+  }
+  await assertProductionAuthorizationCurrent(root, bank, now);
+  const decision = await readJson<AnalysisDecisionRecord>(
+    safeDataPath(root, '04-analysis-queue', 'completed', `${authorization.canonicalId}.json`),
+  );
+  if (decision.id !== authorization.decisionId || decision.analysisInputHash !== authorization.analysisInputHash ||
+      decisionFingerprint(decision) !== authorization.decisionHash ||
+      officialVerificationFingerprint(decision) !== authorization.officialVerificationHash) {
+    throw new Error('Urgent content or evidence changed after authorization');
+  }
+  const checkedAt = Date.parse(decision.verificationGate?.official.checkedAt ?? '');
+  if (decision.verificationGate?.official.status !== 'verified' || !Number.isFinite(checkedAt) ||
+      now.getTime() - checkedAt > 30 * 60 * 1000 ||
+      decision.verificationGate.official.claimOutcomes.some((claim) => claim.status !== 'verified')) {
+    throw new Error('Urgent official verification is no longer current and complete');
+  }
+  assertSocialVerificationSatisfied(bank.verificationGate, bank.revision);
 }
 
 export function markSocialFactsVerified(
@@ -127,16 +184,27 @@ export function isEvergreenArticleDecision(
 export function publicationModeForOpportunity(
   decision: AnalysisDecisionRecord,
   article: CanonicalNewsRecord,
+  now = new Date(),
 ): CreddyDistributionMode | undefined {
-  if (decision.analysisBatchId) {
-    const gate = decision.verificationGate;
-    // A completed check unlocks private production even when it finds a
-    // conflict. Release boundaries below still block blog and social output,
-    // so the item reaches Agent 07 for correction instead of disappearing.
-    if (!gate) return undefined;
-    if (decision.editorialDisposition === 'produce' || decision.editorialDisposition === 'evergreen') {
-      return 'article_and_social';
+  if (decision.productionAuthorization) {
+    const authorization = decision.productionAuthorization;
+    if (authorization.canonicalId !== decision.canonicalId || authorization.decisionId !== decision.id ||
+        authorization.analysisInputHash !== decision.analysisInputHash) return undefined;
+    if (authorization.expiresAt) {
+      const expiresAt = Date.parse(authorization.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) return undefined;
     }
+    if (decisionFingerprint(decision) !== authorization.decisionHash ||
+        officialVerificationFingerprint(decision) !== authorization.officialVerificationHash) return undefined;
+    if (!decision.verificationGate) return undefined;
+    if (authorization.approvalMode === 'auto_urgent' && decision.verificationGate.official.status !== 'verified') {
+      return undefined;
+    }
+    return authorization.distributionMode;
+  }
+  if (decision.analysisBatchId) {
+    // Current decisions are inert until the rolling queue writes an explicit
+    // production authorization. This is the expensive-asset boundary.
     return undefined;
   }
   if (isVerifiedSocialDecision(decision)) return 'article_and_social';
@@ -144,14 +212,30 @@ export function publicationModeForOpportunity(
   return undefined;
 }
 
-/** Current ranking-v3 decisions live in the completed analysis queue. The
- * opportunity directory is also read for backward-compatible fixtures and
- * already-routed records, with the completed decision taking precedence. */
+/** Only explicit opportunity records may reach Agent 04. Completed rankings
+ * remain editorial candidates until the rolling selector authorizes them. */
 export async function listPublicationDecisions(root: string): Promise<AnalysisDecisionRecord[]> {
-  const paths = [
-    ...await listJsonFiles(safeDataPath(root, '05-content-opportunities')),
-    ...await listJsonFiles(safeDataPath(root, '04-analysis-queue', 'completed')),
-  ];
+  const paths = await listJsonFiles(safeDataPath(root, '05-content-opportunities'));
   const decisions = await Promise.all(paths.map((path) => readJson<AnalysisDecisionRecord>(path)));
-  return [...new Map(decisions.map((decision) => [decision.id, decision])).values()];
+  const eligible: AnalysisDecisionRecord[] = [];
+  for (const decision of decisions) {
+    if (!decision.analysisBatchId) {
+      eligible.push(decision);
+      continue;
+    }
+    const authorization = decision.productionAuthorization;
+    if (!authorization) continue;
+    try {
+      const current = await readJson<AnalysisDecisionRecord>(
+        safeDataPath(root, '04-analysis-queue', 'completed', `${decision.canonicalId}.json`),
+      );
+      if (current.productionAuthorization?.id !== authorization.id ||
+          publicationModeForOpportunity(current, { canonicalId: current.canonicalId } as CanonicalNewsRecord) === undefined) continue;
+      eligible.push(current);
+    } catch {
+      // Missing or malformed current state fails closed; the opportunity remains
+      // on disk for audit but cannot reach Agent 04.
+    }
+  }
+  return [...new Map(eligible.map((decision) => [decision.id, decision])).values()];
 }

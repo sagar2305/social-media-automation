@@ -11,7 +11,7 @@ import {
 } from './config.js';
 import { qualifyCreddyText } from './qualification.js';
 import { getCreddyRuntimeConfig } from './runtime.js';
-import { validateCreddyConfig } from './validate-config.js';
+import { validateCreddyConfig, validateUrgentDeliveryConfig } from './validate-config.js';
 
 test('all approved sources and creator signals are enabled with conservative trust', () => {
   validateCreddyConfig();
@@ -19,7 +19,7 @@ test('all approved sources and creator signals are enabled with conservative tru
   assert.equal(CREDDY_SOURCES.length, 18);
   assert.equal(getEnabledCreddySources().length, 18);
   assert.equal(
-    getEnabledCreddySources().every((source) => source.cadence === 'twice_daily'),
+    getEnabledCreddySources().every((source) => source.cadence === 'hourly'),
     true,
   );
   for (const id of ['thrifty-traveler', 'loyalty-lobby', 'miles-to-memories']) {
@@ -100,6 +100,16 @@ test('new Creddy pipeline is disabled by default', () => {
   assert.equal(config.enabled, false);
   assert.equal(config.campaignSlug, 'credit-card-rewards');
   assert.equal(config.aiExecutionMode, 'codex_scheduled');
+});
+
+test('urgent delivery flags fail closed without their channel dependencies', () => {
+  assert.throws(() => validateUrgentDeliveryConfig({ CREDDY_URGENT_BLOG_AUTOPUBLISH_ENABLED: 'true' }), /CMS/);
+  assert.throws(() => validateUrgentDeliveryConfig({ CREDDY_URGENT_SOCIAL_AUTOPUBLISH_ENABLED: 'true' }), /BLOTATO_API_KEY/);
+  assert.doesNotThrow(() => validateUrgentDeliveryConfig({
+    CREDDY_URGENT_BLOG_AUTOPUBLISH_ENABLED: 'true', CREDDY_WEBSITE_CMS_PUBLISH_ENABLED: 'true',
+    CREDDY_URGENT_SOCIAL_AUTOPUBLISH_ENABLED: 'true', BLOTATO_API_KEY: 'redacted',
+    CREDDY_URGENT_INSTAGRAM_ACCOUNT: 'ig', CREDDY_URGENT_TIKTOK_ACCOUNT: 'tt',
+  }));
 });
 
 test('enabling Creddy fails closed when required credentials are missing', () => {

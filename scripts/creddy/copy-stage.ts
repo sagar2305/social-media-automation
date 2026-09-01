@@ -367,6 +367,7 @@ export async function listPendingCopyTasks(root: string): Promise<ContentOpportu
     const existing = await pathExists(output) ? await readJson<ContentDraftRecord>(output) : undefined;
     if (!existing || existing.copyVersion !== 'creddy-copy-v3' || existing.distributionMode !== task.distributionMode ||
         existing.analysisBatchId !== task.decision.analysisBatchId ||
+        JSON.stringify(existing.productionAuthorization) !== JSON.stringify(task.decision.productionAuthorization) ||
         JSON.stringify(existing.verificationGate) !== JSON.stringify(task.decision.verificationGate) ||
         JSON.stringify(existing.factualClaims) !== JSON.stringify(task.decision.claims)) {
       pending.push(task);
@@ -395,6 +396,10 @@ export async function acceptContentDraft(
     throw new Error('Content draft cannot alter the Agent 03 batch identity');
   }
   draft.analysisBatchId = task.decision.analysisBatchId;
+  if (draft.productionAuthorization && JSON.stringify(draft.productionAuthorization) !== JSON.stringify(task.decision.productionAuthorization)) {
+    throw new Error('Content draft cannot alter its production authorization');
+  }
+  draft.productionAuthorization = task.decision.productionAuthorization;
   if (!draft.sourceUrls.includes(task.article.canonicalUrl)) {
     throw new Error('Content draft must retain the canonical source URL');
   }

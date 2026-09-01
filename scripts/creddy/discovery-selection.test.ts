@@ -129,7 +129,7 @@ test('opaque search redirects remain separate unknown publisher lanes', () => {
   assert.equal(selected.filter((item) => item.publisherKey.startsWith('unknown:')).length, 4);
 });
 
-test('selection provides bounded lane coverage across sequential twice-daily slots', () => {
+test('selection provides bounded lane coverage across sequential hourly slots', () => {
   const adjacent = Array.from({ length: 14 }, (_, index) => ({
     url: `https://adjacent.example/${index}`,
     laneId: `adjacent-${index.toString().padStart(2, '0')}`,
@@ -137,12 +137,12 @@ test('selection provides bounded lane coverage across sequential twice-daily slo
     discoveredTitle: `Travel rewards update ${index}`,
   }));
   const covered = new Set<string>();
-  // 08:00 and 18:00 America/New_York in August (EDT).
+  // Four consecutive New York hourly runs in August (EDT).
   for (const scheduledTime of [
     '2026-08-24T12:00:00.000Z',
-    '2026-08-24T22:00:00.000Z',
-    '2026-08-25T12:00:00.000Z',
-    '2026-08-25T22:00:00.000Z',
+    '2026-08-24T13:00:00.000Z',
+    '2026-08-24T14:00:00.000Z',
+    '2026-08-24T15:00:00.000Z',
   ]) {
     const selected = selectDiscoveryCandidates(
       [...supportingCore(), ...adjacent],

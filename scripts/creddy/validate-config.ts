@@ -25,8 +25,8 @@ export function validateCreddyConfig(): void {
     throw new Error('Registered Creddy sources do not match the approved source IDs');
   }
   if (enabled.length !== approvedSourceIds.length) throw new Error('Every approved Creddy source must be enabled');
-  if (enabled.some((source) => source.cadence !== 'twice_daily')) {
-    throw new Error('Every boss-approved source must run twice daily');
+  if (enabled.some((source) => source.cadence !== 'hourly')) {
+    throw new Error('Every approved source must participate in hourly discovery');
   }
 
   unique(CREDDY_SOURCES.map((source) => source.id), 'Source IDs');
@@ -46,8 +46,22 @@ export function validateCreddyConfig(): void {
   }
 }
 
+export function validateUrgentDeliveryConfig(env: NodeJS.ProcessEnv = process.env): void {
+  const enabled = (name: string): boolean => env[name]?.trim().toLowerCase() === 'true';
+  if (enabled('CREDDY_URGENT_BLOG_AUTOPUBLISH_ENABLED') &&
+      !enabled('CREDDY_WEBSITE_CMS_PUBLISH_ENABLED')) {
+    throw new Error('Urgent blog publishing requires CREDDY_WEBSITE_CMS_PUBLISH_ENABLED=true');
+  }
+  if (enabled('CREDDY_URGENT_SOCIAL_AUTOPUBLISH_ENABLED')) {
+    for (const name of ['BLOTATO_API_KEY', 'CREDDY_URGENT_INSTAGRAM_ACCOUNT', 'CREDDY_URGENT_TIKTOK_ACCOUNT']) {
+      if (!env[name]?.trim()) throw new Error(`Urgent social publishing requires ${name}`);
+    }
+  }
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   validateCreddyConfig();
+  validateUrgentDeliveryConfig();
   console.log(
     `Creddy config valid: ${CREDDY_SOURCES.length} registered sources, ` +
       `${getEnabledCreddySources().length} enabled sources, ` +

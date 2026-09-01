@@ -11,6 +11,7 @@ import { inspectCreddyArticleImage } from './article-image-stage.js';
 import { assertCreddyArticleSeo, loadCreddyArticleSeoPeers, reviewCreddyArticleSeo } from './article-seo-review.js';
 import { pathExists, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import type { ContentBankRecord } from './pipeline-types.js';
+import { assertAutoUrgentAuthorizationCurrent, assertProductionAuthorizationCurrent } from './publication-policy.js';
 import {
   cleanWebsiteExport,
   readApprovedWebsiteExport,
@@ -289,6 +290,11 @@ export async function publishApprovedWebsiteExportToCms(
   const bank = await readJson<ContentBankRecord>(
     safeDataPath(root, '09-pending-approval', `${payload.contentBankId}.json`),
   );
+  const mutationNow = options.now ?? new Date();
+  await assertProductionAuthorizationCurrent(root, bank, mutationNow);
+  if (bank.approvalMode === 'auto_urgent' || bank.productionAuthorization?.approvalMode === 'auto_urgent') {
+    await assertAutoUrgentAuthorizationCurrent(root, bank, mutationNow);
+  }
   const seoCheckedAt = (options.now ?? new Date()).toISOString();
   const seoCheckedAtSlug = seoCheckedAt.replace(/[^0-9A-Za-z]+/g, '').slice(0, 24);
   await writeJsonAtomic(

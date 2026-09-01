@@ -17,7 +17,7 @@ import {
 } from './pipeline-types.js';
 import type { BlotatoApi } from './blotato-client.js';
 import { notifyCreddyPublished, type CreddyPublishedSlackEvent } from './slack-notifications.js';
-import { assertSocialVerificationSatisfied, assertVerificationGateIntegrity } from './publication-policy.js';
+import { assertAutoUrgentAuthorizationCurrent, assertProductionAuthorizationCurrent, assertSocialVerificationSatisfied, assertVerificationGateIntegrity } from './publication-policy.js';
 
 export async function runPublishStage(
   root: string,
@@ -47,12 +47,13 @@ export async function runPublishStage(
       try {
         const bank = await readJson<ContentBankRecord>(path);
         if (!bank.approvedBy || !bank.approvedAt || !bank.destinations?.length) {
-          throw new Error('Scheduled content is missing human approval or destinations');
+          throw new Error('Scheduled content is missing a valid approval or destinations');
         }
         const content = await readJson<ContentPackageRecord>(
           safeDataPath(root, '06-content-packages', `${bank.contentPackageId}.json`),
         );
         assertVerificationGateIntegrity(bank, content);
+        await assertProductionAuthorizationCurrent(root, bank, now);
         if (bank.destinations.some((destination) =>
           destination.platform !== 'creddy_website' && destination.format !== 'article')) {
           assertSocialVerificationSatisfied(bank.verificationGate, bank.revision);
@@ -108,6 +109,9 @@ export async function runPublishStage(
               : bank.textMusicVideoPath;
           if (!videoPath || !(await pathExists(videoPath))) {
             throw new Error(`Approved ${destination.format} video is missing`);
+          }
+          if (bank.approvalMode === 'auto_urgent') {
+            await assertAutoUrgentAuthorizationCurrent(root, bank, now);
           }
           const created = await client.scheduleVideo({
             platform: destination.platform,

@@ -12,14 +12,26 @@ test('discovery plan contains approved listings and six rotating searches withou
   assert.equal(plan.baselineRequests, 24);
 });
 
-test('consecutive New York editorial windows cover all twelve searches without overlap', () => {
-  const morning = activeCreddyTopicSearches(new Date('2026-08-24T12:00:00.000Z'));
-  const evening = activeCreddyTopicSearches(new Date('2026-08-24T22:00:00.000Z'));
-  assert.equal(morning.length, 6);
-  assert.equal(evening.length, 6);
-  assert.equal(morning.some((search) => evening.some((other) => other.id === search.id)), false);
-  assert.equal(new Set([...morning, ...evening].map((search) => search.id)).size, 12);
+test('consecutive New York hourly windows cover all twelve searches without overlap', () => {
+  const firstHour = activeCreddyTopicSearches(new Date('2026-08-24T12:00:00.000Z'));
+  const secondHour = activeCreddyTopicSearches(new Date('2026-08-24T13:00:00.000Z'));
+  assert.equal(firstHour.length, 6);
+  assert.equal(secondHour.length, 6);
+  assert.equal(firstHour.some((search) => secondHour.some((other) => other.id === search.id)), false);
+  assert.equal(new Set([...firstHour, ...secondHour].map((search) => search.id)).size, 12);
 });
+
+for (const [label, first, second] of [
+  ['spring forward', '2026-03-08T06:00:00.000Z', '2026-03-08T07:00:00.000Z'],
+  ['fall back', '2026-11-01T05:00:00.000Z', '2026-11-01T06:00:00.000Z'],
+] as const) {
+  test(`hourly search rotation remains disjoint across New York ${label}`, () => {
+    const firstHour = activeCreddyTopicSearches(new Date(first));
+    const secondHour = activeCreddyTopicSearches(new Date(second));
+    assert.equal(firstHour.some((search) => secondHour.some((other) => other.id === search.id)), false);
+    assert.equal(new Set([...firstHour, ...secondHour].map((search) => search.id)).size, 12);
+  });
+}
 
 test('source filtering keeps same-site articles and removes tracking duplicates', () => {
   const source = CREDDY_SOURCES.find((candidate) => candidate.id === 'awardwallet');

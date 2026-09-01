@@ -2,7 +2,7 @@
 
 Boss Mac installation and run instructions: [CREDDY-NEWS-BOSS-MAC-HANDOFF.md](./CREDDY-NEWS-BOSS-MAC-HANDOFF.md).
 
-## Standalone News Agent
+## Shared hourly News lane and standalone repair CLI
 
 On 2026-08-31, one source-verified U.S. Bank/Avianca story was published through
 the News branch and delivered to `#social-media-update`. The public snapshot
@@ -19,12 +19,15 @@ configured, the notification has no edit/delete buttons and Slack mutations
 remain denied. Pass canonical IDs after `publish` to limit a controlled run to
 specific stories; without IDs it processes the accepted News analysis queue.
 
-App News is a standalone agent with its own CLI, prompt, durable data root,
-collection cycle, ranking queue, official-verification queue and publisher. Run
-it with `npm run creddy:news -- <command>`. The existing `creddy:pipeline` and its
-Agent 1-8 blog, slideshow and social paths do not import or execute News. The
-News Agent reuses stable low-level collection and validation libraries, but it
-never reads or writes the existing content pipeline root.
+In normal operation, app News is a projection of the shared hourly discovery,
+ranking, and official-verification ledger. It publishes every eligible verified
+story with no daily count target and shares published items to Slack. Withheld
+items that reached the News verification slate are summarized in one idempotent
+hourly digest. They remain local for inspection and do not stop other channels.
+
+The `creddy:news` CLI remains available only for isolated repair, backfill, and
+schema validation. It keeps its separate root and must not have its own recurring
+schedule while the shared hourly workflow is enabled.
 
 Use `npm run creddy:news -- cycle-prep` for collection through analysis-queue
 creation, follow `scripts/creddy-news/NEWS_AGENT.md`, then use
@@ -152,4 +155,5 @@ These are not claims of production Slack or Realtime delivery verification.
 5. Rerun the cycle: no duplicate publication, no edit overwrite, no resurrection.
 6. Disconnect/reconnect each app. Verify fallback refresh and error behavior.
 7. Confirm existing website and slideshow workflows remain unchanged, then enable
-   and schedule only the standalone News Agent after explicit approval.
+   the shared hourly News projection after explicit approval. Do not schedule the
+   standalone repair CLI.

@@ -159,7 +159,7 @@ test('Agent 8 refuses scheduled records without explicit human approval', async 
   const manifest = await runPublishStage(root, client, new Date('2026-08-19T13:00:00Z'), 15);
   assert.equal(client.scheduled.length, 0);
   assert.equal(manifest.failedCount, 1);
-  assert.match(manifest.errors[0], /missing human approval/);
+  assert.match(manifest.errors[0], /missing a valid approval/);
 });
 
 test('Agent 8 independently refuses unresolved social verification even on an approved scheduled record', async () => {

@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import { unlink } from 'node:fs/promises';
 
+import { analysisInputFingerprint } from './analysis-stage.js';
 import { selectPersistedEditorialPortfolio } from './editorial-slate.js';
 import { assertRegisteredOfficialEvidence } from './official-source-registry.js';
 import {
@@ -9,6 +11,7 @@ import {
   safeDataPath,
   writeJsonAtomic,
 } from './pipeline-store.js';
+import { decisionFingerprint, officialVerificationFingerprint } from './rolling-editorial.js';
 import type {
   AnalysisDecisionRecord,
   AnalysisTaskRecord,
@@ -21,6 +24,11 @@ function validWebUrl(value: string): URL {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Official verification URLs must use HTTP or HTTPS');
   return url;
+}
+
+function rankingSnapshotFingerprint(decision: AnalysisDecisionRecord): string {
+  const { verificationGate: _verification, productionAuthorization: _authorization, ...ranking } = decision;
+  return createHash('sha256').update(JSON.stringify(ranking)).digest('hex');
 }
 
 export function validateOfficialVerification(
@@ -153,6 +161,64 @@ export async function prepareOfficialVerificationTasks(
   return tasks;
 }
 
+/** Rolling-workflow variant: verifies an explicit, priority-ordered list across
+ * analysis batches. It never scans or selects every completed decision. */
+export async function prepareRollingOfficialVerificationTasks(
+  root: string,
+  canonicalIds: string[],
+  now = new Date(),
+): Promise<OfficialVerificationTaskRecord[]> {
+  const requested = [...new Set(canonicalIds)];
+  if (requested.length === 0) return [];
+  const decisions = new Map((await completedDecisions(root)).map((decision) => [decision.canonicalId, decision]));
+  const canonicals = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '03-canonical-news', 'approved')))
+      .map((path) => readJson<CanonicalNewsRecord>(path)),
+  );
+  const articleById = new Map(canonicals.map((article) => [article.canonicalId, article]));
+  const pending = await listPendingOfficialVerificationTasks(root);
+  const pendingByDecision = new Map(pending.map((task) => [task.decision.id, task]));
+  const tasks: OfficialVerificationTaskRecord[] = [];
+  for (const [index, canonicalId] of requested.entries()) {
+    const decision = decisions.get(canonicalId);
+    const article = articleById.get(canonicalId);
+    if (!decision || !article) continue;
+    const existing = pendingByDecision.get(decision.id);
+    if (existing) {
+      const stillCurrent = existing.decision.analysisInputHash &&
+        existing.decision.analysisInputHash === decision.analysisInputHash &&
+        decision.analysisInputHash === analysisInputFingerprint(article) &&
+        rankingSnapshotFingerprint(existing.decision) === rankingSnapshotFingerprint(decision);
+      if (stillCurrent) {
+        tasks.push(existing);
+        continue;
+      }
+      const stalePath = safeDataPath(root, '04-official-verification', 'pending', `${existing.id}.json`);
+      await writeJsonAtomic(safeDataPath(root, '04-official-verification', 'history', `stale-${existing.id}.json`), {
+        version: 1, id: `stale-${existing.id}`, archivedAt: now.toISOString(), reason: 'analysis_or_evidence_changed', task: existing,
+      });
+      await unlink(stalePath).catch(() => undefined);
+    }
+    const hour = now.toISOString().slice(0, 13).replace(/[^0-9A-Za-z]+/g, '');
+    const suffix = decision.analysisInputHash?.slice(0, 12) ?? hour;
+    let id = `official-verification-${decision.id}-${suffix}`;
+    if (await pathExists(safeDataPath(root, '04-official-verification', 'completed', `${id}.json`))) {
+      id = `official-verification-${decision.id}-${suffix}-${hour}`;
+    }
+    const task: OfficialVerificationTaskRecord = {
+      version: 1,
+      id,
+      portfolioRank: index + 1,
+      selectedAt: now.toISOString(),
+      decision,
+      article,
+    };
+    await writeJsonAtomic(safeDataPath(root, '04-official-verification', 'pending', `${task.id}.json`), task);
+    tasks.push(task);
+  }
+  return tasks;
+}
+
 export async function listPendingOfficialVerificationTasks(root: string): Promise<OfficialVerificationTaskRecord[]> {
   return Promise.all(
     (await listJsonFiles(safeDataPath(root, '04-official-verification', 'pending')))
@@ -167,13 +233,31 @@ export async function acceptOfficialVerification(
   const pendingPath = safeDataPath(root, '04-official-verification', 'pending', `${input.id}.json`);
   if (!(await pathExists(pendingPath))) throw new Error(`Official verification task not found: ${input.id}`);
   const task = await readJson<OfficialVerificationTaskRecord>(pendingPath);
+  const currentPath = safeDataPath(root, '04-analysis-queue', 'completed', `${task.decision.canonicalId}.json`);
+  const articlePath = safeDataPath(root, '03-canonical-news', 'approved', `${task.decision.canonicalId}.json`);
+  const [current, article] = await Promise.all([
+    readJson<AnalysisDecisionRecord>(currentPath),
+    readJson<CanonicalNewsRecord>(articlePath),
+  ]);
+  const currentInputHash = analysisInputFingerprint(article);
+  const stale = !task.decision.analysisInputHash || task.decision.analysisInputHash !== current.analysisInputHash ||
+    current.analysisInputHash !== currentInputHash ||
+    rankingSnapshotFingerprint(task.decision) !== rankingSnapshotFingerprint(current) ||
+    Date.parse(current.analyzedAt) > Date.parse(task.decision.analyzedAt);
+  if (stale) {
+    await writeJsonAtomic(safeDataPath(root, '04-official-verification', 'history', `stale-${task.id}.json`), {
+      version: 1, id: `stale-${task.id}`, archivedAt: new Date().toISOString(), reason: 'analysis_or_evidence_changed', task,
+    });
+    await unlink(pendingPath);
+    throw new Error('Official verification task is stale because Agent 03 analysis or canonical evidence changed');
+  }
   const official = validateOfficialVerification(input, task);
   const socialStatus = official.status === 'verified'
     ? 'verified' as const
     : official.status === 'conflicting'
       ? 'conflicting' as const
       : 'manual_confirmation_required' as const;
-  const decision: AnalysisDecisionRecord = {
+  let decision: AnalysisDecisionRecord = {
     ...task.decision,
     verificationGate: {
       portfolioRank: task.portfolioRank,
@@ -182,6 +266,19 @@ export async function acceptOfficialVerification(
       socialStatus,
     },
   };
+  if (decision.productionAuthorization) {
+    const refreshedAuthorization = {
+      ...decision.productionAuthorization,
+      decisionHash: decisionFingerprint(decision),
+      officialVerificationHash: officialVerificationFingerprint(decision),
+    };
+    decision = { ...decision, productionAuthorization: refreshedAuthorization };
+    await writeJsonAtomic(
+      safeDataPath(root, '05-editorial-ledger', 'authorizations', `${refreshedAuthorization.id}.json`),
+      refreshedAuthorization,
+    );
+    await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', `${decision.id}.json`), decision);
+  }
   await writeJsonAtomic(
     safeDataPath(root, '04-official-verification', 'completed', `${input.id}.json`),
     official,

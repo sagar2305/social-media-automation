@@ -1,19 +1,9 @@
 import { CREDDY_TOPIC_SEARCHES, type CreddyTopicSearch } from './config.js';
 
 export function creddyEditorialRotationSlot(now: Date): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    hourCycle: 'h23',
-  }).formatToParts(now);
-  const value = (type: Intl.DateTimeFormatPartTypes): number =>
-    Number(parts.find((part) => part.type === type)?.value);
-  const localDay = Math.floor(Date.UTC(value('year'), value('month') - 1, value('day')) / 86_400_000);
-  // The reviewed discovery cadence is 08:00 and 18:00 America/New_York.
-  return localDay * 2 + (value('hour') >= 13 ? 1 : 0);
+  // Rotation follows elapsed UTC hours so DST transitions cannot repeat or
+  // skip a search half. New York time remains authoritative for daily slates.
+  return Math.floor(now.getTime() / 3_600_000);
 }
 
 export function activeCreddyTopicSearches(now = new Date()): CreddyTopicSearch[] {
@@ -29,4 +19,3 @@ export function activeCreddyTopicSearches(now = new Date()): CreddyTopicSearch[]
     .map(([, pair]) => pair.sort((a, b) => a.id.localeCompare(b.id))[parity])
     .filter((search): search is CreddyTopicSearch => Boolean(search));
 }
-
