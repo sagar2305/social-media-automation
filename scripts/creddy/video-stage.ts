@@ -2,6 +2,7 @@ import { copyFile } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
 
 import { CREDDY_CAMPAIGN_SLUG } from './config.js';
+import { persistCreddyArticleSeoReview } from './article-seo-review.js';
 import {
   createRunId,
   listJsonFiles,
@@ -21,6 +22,7 @@ import {
 } from './pipeline-types.js';
 import { assertBankVerificationIntegrity, assertSocialVerificationSatisfied } from './publication-policy.js';
 import type { VideoFactoryApi, VideoFactoryRemoteJob } from './video-factory-client.js';
+import { creddyArticleReadyReceiptName } from './slack-notifications.js';
 import type { CreddyArticleReadySlackEvent, CreddyContentReadySlackResult } from './slack-notifications.js';
 
 export interface VideoStageOptions {
@@ -248,6 +250,16 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
     const articleBlockers = content.article && content.articleReadiness !== 'ready_for_review'
       ? ['One or more Agent 05 article visuals do not have approved asset files yet.']
       : [];
+    const seo = content.article ? await persistCreddyArticleSeoReview({
+      root,
+      contentBankId: contentPackageId,
+      revision: targetRevision,
+      checkedAt: now,
+      article: content.article,
+      visuals: content.articleVisuals,
+      verificationGate: content.verificationGate,
+    }) : undefined;
+    articleBlockers.push(...(seo?.review.hardFailures ?? []).map((failure) => `SEO review: ${failure}`));
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
@@ -265,8 +277,9 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
         ? existing.verificationGate
         : content.verificationGate,
       articleReview: content.article ? {
-        status: articleBlockers.length ? 'needs_assets' : 'pending_review',
+        status: seo?.review.status === 'needs_changes' ? 'changes_requested' : articleBlockers.length ? 'needs_assets' : 'pending_review',
         blockers: articleBlockers,
+        seoReview: seo?.summary,
       } : undefined,
       revision: targetRevision,
       changeRequest: undefined,
@@ -304,6 +317,26 @@ export async function runArticleContentBankHandoff(
     const blockers = content.articleReadiness === 'ready_for_review'
       ? []
       : ['One or more Agent 05 article visuals do not have approved asset files yet.'];
+    const seo = await persistCreddyArticleSeoReview({
+      root,
+      contentBankId: id,
+      revision: existing?.revision ?? 1,
+      checkedAt: now,
+      article: content.article,
+      visuals: content.articleVisuals,
+      verificationGate: content.verificationGate,
+    });
+    blockers.push(...seo.review.hardFailures.map((failure) => `SEO review: ${failure}`));
+    const previousArticleReview = existing?.articleReview && existing.articleReview.status !== 'needs_assets'
+      ? existing.articleReview
+      : undefined;
+    const preserveTerminalArticleStatus = previousArticleReview &&
+      ['published', 'publishing', 'publish_failed', 'unpublished'].includes(previousArticleReview.status);
+    const nextArticleReviewStatus = seo.review.status === 'needs_changes'
+      ? 'changes_requested'
+      : blockers.length
+        ? 'needs_assets'
+        : previousArticleReview?.status ?? 'pending_review';
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
@@ -319,9 +352,12 @@ export async function runArticleContentBankHandoff(
         existing.verificationGate.factsVerificationRevision === existing.revision
         ? existing.verificationGate
         : content.verificationGate,
-      articleReview: existing?.articleReview && existing.articleReview.status !== 'needs_assets'
-        ? existing.articleReview
-        : { status: blockers.length ? 'needs_assets' : 'pending_review', blockers },
+      articleReview: {
+        ...previousArticleReview,
+        status: preserveTerminalArticleStatus ? previousArticleReview.status : nextArticleReviewStatus,
+        blockers,
+        seoReview: seo.summary,
+      },
       createdAt: existing?.createdAt ?? now.toISOString(),
       status: 'pending_review',
       revision: existing?.revision ?? 1,
@@ -334,13 +370,29 @@ export async function runArticleContentBankHandoff(
       rejectionReason: undefined,
     };
     await writeJsonAtomic(destination, record);
-    if (!blockers.length && options.autoPublisher && record.articleReview?.status !== 'unpublished') {
+    if (!blockers.length && options.autoPublisher && record.articleReview?.status !== 'unpublished' && record.articleReview?.seoReview?.status === 'pass') {
       try { await options.autoPublisher(id); } catch { /* Durable publish_failed state is the observable result. */ }
     }
-    if (!blockers.length && options.notifier && content.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))) {
-      const receiptPath = safeDataPath(root, 'reports', 'slack-article-ready', `${id}-revision-${record.revision}.json`);
+    const articleAssetsReady = content.articleReadiness === 'ready_for_review' &&
+      content.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath));
+    if (articleAssetsReady && options.notifier) {
+      const latest = await readJson<ContentBankRecord>(destination);
+      const publishStatus = latest.articleReview?.status === 'published' || latest.articleReview?.status === 'publish_failed' || latest.articleReview?.status === 'publishing' || latest.articleReview?.status === 'unpublished'
+        ? latest.articleReview.status
+        : undefined;
+      const receiptPath = safeDataPath(
+        root,
+        'reports',
+        'slack-article-ready',
+        creddyArticleReadyReceiptName({
+          id,
+          revision: record.revision,
+          seoContentSha256: latest.articleReview?.seoReview?.contentSha256,
+          seoReviewStatus: latest.articleReview?.seoReview?.status,
+          publishStatus,
+        }),
+      );
       if (!(await pathExists(receiptPath))) {
-        const latest = await readJson<ContentBankRecord>(destination);
         const notification = await options.notifier({
           id,
           title: content.article.title,
@@ -349,13 +401,13 @@ export async function runArticleContentBankHandoff(
           category: content.article.category,
           readingMinutes: content.article.readingMinutes,
           sourceUrls: content.article.sourceUrls,
-          articleImagePaths: content.articleVisuals.assets.map((asset) => asset.assetPath!),
+          articleImagePaths: content.articleVisuals!.assets.map((asset) => asset.assetPath!),
           articlePreviewPath: content.articlePreviewPath,
-          publishStatus: latest.articleReview?.status === 'published' || latest.articleReview?.status === 'publish_failed' || latest.articleReview?.status === 'publishing' || latest.articleReview?.status === 'unpublished'
-            ? latest.articleReview.status
-            : undefined,
+          publishStatus,
           publishedUrl: latest.articleReview?.publishedUrl,
           publishError: latest.articleReview?.publishError,
+          seoReviewStatus: latest.articleReview?.seoReview?.status,
+          seoWarnings: latest.articleReview?.seoReview?.warnings ?? [],
         });
         if (notification.sent) {
           await writeJsonAtomic(receiptPath, {

@@ -68,20 +68,28 @@ or personal experience. Do not pad the article to reach a word count.
 
 ### Search-quality requirements
 
-- Give every article one distinct search intent. Name the program, card, offer,
-  route, or decision in the SEO description and in at least one H2. Never reuse a
-  generic description or the same heading outline across unrelated articles.
-- Make the title's promise visible in the body. A comparison title requires a
-  real comparison; a current-offer title requires concrete terms, timing, and a
-  visible last-verified context. If evidence cannot support that promise, narrow
-  the title instead of padding the body.
+- Give every article one explicit, distinct reader search intent. Name the
+  primary program, card, offer, route, or decision in the article title, SEO
+  title, SEO description, first substantive paragraph, and at least one H2.
+  Answer that intent early. SEO titles must be 30–65 characters and descriptions
+  110–160 characters. Never reuse metadata or the same H2 outline.
+- Use at least two unique, descriptive H2 headings rather than generic labels.
+  Make the title's promise visible in the body. A comparison or “versus” title
+  requires a real comparison table. A current offer, bonus, deadline, promotion,
+  or dated news article requires concrete terms and a visible `As of Month D,
+  YYYY` or `Last checked Month D, YYYY` statement. If evidence cannot support
+  the promise, narrow the title instead of padding the body.
 - Prefer primary issuer, airline, hotel, loyalty-program, airport, or government
   evidence. When official verification is unavailable or inconclusive, use
   careful reported language and preserve the manual verification state; never
   imply first-party confirmation.
 - Write descriptive, topic-specific headings and image alt text. Do not create
-  keyword-stuffed variants. The live site supplies related-article links, so do
-  not invent product capabilities or awkward links inside prose.
+  keyword-stuffed variants. FAQs are optional and belong only where they answer
+  real follow-up search intent. The live site supplies related-article links, so
+  do not invent product capabilities or awkward links inside prose.
+- Agent 07 independently reruns the deterministic SEO and image-accessibility
+  review. Agent 08 recomputes it before any CMS upload. Objective failures block
+  publication; advisory notes stay visible for human editorial judgment.
 
 ## Concept and headline contract
 

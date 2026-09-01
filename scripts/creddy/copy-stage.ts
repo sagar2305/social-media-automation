@@ -18,6 +18,7 @@ import { validateDraftTrendReference } from './hook-trend-stage.js';
 import { validateApprovedCta } from './product-capabilities.js';
 import { assertReleasedCapabilityStatus } from './product-release-stage.js';
 import { validateCreddyArticle } from './article-content.js';
+import { assertCreddyArticleSeo, loadCreddyArticleSeoPeers, reviewCreddyArticleSeo } from './article-seo-review.js';
 import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 function words(value: string): number {
@@ -416,6 +417,15 @@ export async function acceptContentDraft(
     assertSlidesDoNotNamePublisher(draft, task.article);
   }
   assertNoExternalBrands(draft, normalizedSourceIdentifiers(task.article));
+
+  if (draft.article) {
+    const seoReview = reviewCreddyArticleSeo({
+      article: draft.article,
+      peers: await loadCreddyArticleSeoPeers(root, draft.article.id, draft.analysisBatchId),
+      verificationGate: draft.verificationGate,
+    });
+    assertCreddyArticleSeo(seoReview);
+  }
 
   const outputPath = safeDataPath(root, '06-content-drafts', `${draft.id}.json`);
   if (await pathExists(outputPath)) {

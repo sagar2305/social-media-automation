@@ -251,6 +251,12 @@ export async function CreddyContentBankPage({ mediaType, selectedId, updated }: 
                     {item.articlePublication || item.articleReview?.status === "published" ? "Published" : item.articleReview?.status === "unpublished" ? "Deleted from website" : item.articleReview?.status === "publishing" ? "Publishing" : item.articleReview?.status === "publish_failed" ? "Publish failed" : item.articleReview?.status === "approved" ? "Queued to publish" : item.articleReview?.status === "changes_requested" ? "Changes requested" : item.articleReview?.status === "needs_assets" ? "Needs article assets" : "Auto-publish queued"}
                   </Badge>
                 </div>
+                {item.articleReview?.seoReview && <div className="rounded-lg border bg-white/70 p-3 text-sm">
+                  <p className={item.articleReview.seoReview.status === "pass" ? "font-medium text-emerald-700" : "font-medium text-destructive"}>
+                    SEO review: {item.articleReview.seoReview.status === "pass" ? "passed" : "needs changes"}
+                  </p>
+                  {item.articleReview.seoReview.warnings.map((warning) => <p className="mt-1 text-amber-800" key={warning}>Review note: {warning}</p>)}
+                </div>}
                 {item.articleReview?.blockers?.map((blocker) => <p className="text-sm text-amber-800" key={blocker}>{blocker}</p>)}
                 {item.articleReview?.publishError && <p className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{item.articleReview.publishError}</p>}
                 <div className="flex flex-wrap gap-2">
