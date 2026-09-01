@@ -301,3 +301,24 @@ test('scheduled Agent 8 CMS publishing can explicitly republish existing approve
   assert.equal(repeated.skipped, 0);
   assert.equal(uploads, 6);
 });
+
+test('CMS republish preserves the first publication timestamp', async () => {
+  const fixture = await approvedFixture();
+  let row: CreddyBlogCmsRow | undefined;
+  const firstPublishedAt = '2026-08-20T10:00:00.000Z';
+  const client: WebsiteCmsClient = {
+    async uploadAsset(input) {
+      return `https://projectrefalpha.supabase.co/storage/v1/object/public/creddy-blog-assets/${input.objectPath}`;
+    },
+    async getPublishedAt() { return firstPublishedAt; },
+    async upsertArticle(value) { row = value; },
+  };
+  const result = await publishApprovedWebsiteExportToCms(fixture.root, fixture.exportPath, {
+    allowCmsPublish: true,
+    client,
+    now: new Date('2026-09-01T10:00:00.000Z'),
+  });
+
+  assert.equal(row?.published_at, firstPublishedAt);
+  assert.equal(result.publishedAt, firstPublishedAt);
+});

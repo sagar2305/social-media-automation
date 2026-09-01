@@ -66,6 +66,23 @@ who should avoid the option, material costs, eligibility, timing, and uncertaint
 Do not fabricate testing, ownership, applications, approvals, quotes, statistics,
 or personal experience. Do not pad the article to reach a word count.
 
+### Search-quality requirements
+
+- Give every article one distinct search intent. Name the program, card, offer,
+  route, or decision in the SEO description and in at least one H2. Never reuse a
+  generic description or the same heading outline across unrelated articles.
+- Make the title's promise visible in the body. A comparison title requires a
+  real comparison; a current-offer title requires concrete terms, timing, and a
+  visible last-verified context. If evidence cannot support that promise, narrow
+  the title instead of padding the body.
+- Prefer primary issuer, airline, hotel, loyalty-program, airport, or government
+  evidence. When official verification is unavailable or inconclusive, use
+  careful reported language and preserve the manual verification state; never
+  imply first-party confirmation.
+- Write descriptive, topic-specific headings and image alt text. Do not create
+  keyword-stuffed variants. The live site supplies related-article links, so do
+  not invent product capabilities or awkward links inside prose.
+
 ## Concept and headline contract
 
 Before writing slides, generate exactly four genuinely different core concepts.

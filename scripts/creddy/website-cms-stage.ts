@@ -40,6 +40,7 @@ export type WebsiteCmsClient = {
     contentType: 'image/png' | 'image/jpeg' | 'image/webp';
   }): Promise<string>;
   upsertArticle(row: CreddyBlogCmsRow): Promise<void>;
+  getPublishedAt?(slug: string): Promise<string | undefined>;
   deleteArticle?(slug: string): Promise<void>;
   deleteAssets?(prefix: string): Promise<number>;
 };
@@ -68,6 +69,7 @@ export type CreddyWebsiteCmsPublishResult = {
   uploadedAssetBytes: number;
   storageSavedBytes: number;
   contentSha256: string;
+  publishedAt: string;
   revalidation: 'revalidated' | 'not_configured' | 'failed';
   policy: 'agent_7_approved_cms_only';
 };
@@ -188,6 +190,15 @@ export function createSupabaseWebsiteCmsClient(
         .from(CREDDY_BLOG_TABLE)
         .upsert(row, { onConflict: 'slug' });
       if (error) throw new Error(`Website CMS article upsert failed: ${error.message}`);
+    },
+    async getPublishedAt(slug) {
+      const { data, error } = await supabase
+        .from(CREDDY_BLOG_TABLE)
+        .select('published_at')
+        .eq('slug', slug)
+        .maybeSingle();
+      if (error) throw new Error(`Website CMS publication-date lookup failed: ${error.message}`);
+      return data?.published_at;
     },
     async deleteArticle(slug) {
       const { error } = await supabase.from(CREDDY_BLOG_TABLE).delete().eq('slug', slug);
@@ -318,6 +329,7 @@ export async function publishApprovedWebsiteExportToCms(
   };
   const contentSha256 = createHash('sha256').update(stableJson(content)).digest('hex');
   const now = options.now ?? new Date();
+  const publishedAt = await options.client.getPublishedAt?.(slug) ?? now.toISOString();
   await options.client.upsertArticle({
     slug,
     content_bank_id: payload.contentBankId,
@@ -329,7 +341,7 @@ export async function publishApprovedWebsiteExportToCms(
     approved_by: payload.approvedBy,
     approved_at: payload.approvedAt,
     content_sha256: contentSha256,
-    published_at: now.toISOString(),
+    published_at: publishedAt,
     source_updated_at: payload.article.updatedAt,
   });
   const revalidation = await (options.revalidate ?? (async () => 'not_configured' as const))([
@@ -347,6 +359,7 @@ export async function publishApprovedWebsiteExportToCms(
     uploadedAssetBytes,
     storageSavedBytes: originalAssetBytes - uploadedAssetBytes,
     contentSha256,
+    publishedAt,
     revalidation,
     policy: 'agent_7_approved_cms_only',
   };
@@ -383,13 +396,12 @@ export async function publishReadyWebsiteExportsToCms(
           if (receipt.approvedAt === payload.approvedAt && receipt.contentSha256) return { skipped: true as const };
         }
         const result = await publishApprovedWebsiteExportToCms(root, exportPath, options);
-        const publishedAt = (options.now ?? new Date()).toISOString();
         await writeJsonAtomic(receiptPath, {
           version: 1,
           slug: result.slug,
           approvedAt: payload.approvedAt,
           contentSha256: result.contentSha256,
-          publishedAt,
+          publishedAt: result.publishedAt,
           revalidation: result.revalidation,
           cmsIdentifier: result.cmsIdentifier,
           liveUrl: result.liveUrl,
