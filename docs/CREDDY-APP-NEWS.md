@@ -1,5 +1,7 @@
 # Creddy app News
 
+Boss Mac installation and run instructions: [CREDDY-NEWS-BOSS-MAC-HANDOFF.md](./CREDDY-NEWS-BOSS-MAC-HANDOFF.md).
+
 ## Standalone News Agent
 
 On 2026-08-31, one source-verified U.S. Bank/Avianca story was published through
