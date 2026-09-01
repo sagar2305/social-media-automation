@@ -12,12 +12,13 @@ import { CREDDY_PIPELINE_VERSION } from './pipeline-types.js';
 import type { ContentBankRecord, ContentDraftRecord, ContentPackageRecord, VisualPlanRecord } from './pipeline-types.js';
 import { validateIndependentSlideshowCopy } from './copy-stage.js';
 import { CREDDY_LEGACY_TEMPLATE_FILES, creddyExpressionFile } from './expression-library.js';
-import { notifyCreddyArticleReady, notifyCreddyContentReady } from './slack-notifications.js';
+import { creddyArticleReadyReceiptName, notifyCreddyArticleReady, notifyCreddyContentReady } from './slack-notifications.js';
 import type {
   CreddyArticleReadySlackEvent,
   CreddyContentReadySlackEvent,
   CreddyContentReadySlackResult,
 } from './slack-notifications.js';
+import { persistCreddyArticleSeoReview } from './article-seo-review.js';
 
 type SlideshowManifest = {
   version: 1;
@@ -283,6 +284,30 @@ export async function runSlideshowContentBankHandoff(
           ? []
           : ['One or more Agent 05 article visuals do not have approved asset files yet.']
         : [];
+      let seoReviewSummary: NonNullable<ContentBankRecord['articleReview']>['seoReview'];
+      if (production?.article) {
+        const seo = await persistCreddyArticleSeoReview({
+          root,
+          contentBankId: id,
+          revision: existing?.revision ?? 1,
+          checkedAt: now,
+          article: production.article,
+          visuals: production.articleVisuals,
+          verificationGate: production.verificationGate ?? draft.verificationGate,
+        });
+        seoReviewSummary = seo.summary;
+        articleBlockers.push(...seo.review.hardFailures.map((failure) => `SEO review: ${failure}`));
+      }
+      const previousArticleReview = existing?.articleReview && existing.articleReview.status !== 'needs_assets'
+        ? existing.articleReview
+        : undefined;
+      const preserveTerminalArticleStatus = previousArticleReview &&
+        ['published', 'publishing', 'publish_failed', 'unpublished'].includes(previousArticleReview.status);
+      const nextArticleStatus = seoReviewSummary?.status === 'needs_changes'
+        ? 'changes_requested' as const
+        : articleBlockers.length
+          ? 'needs_assets' as const
+          : 'pending_review' as const;
       const record: ContentBankRecord = {
         ...existing,
         version: CREDDY_PIPELINE_VERSION,
@@ -301,11 +326,12 @@ export async function runSlideshowContentBankHandoff(
           existing.verificationGate.factsVerificationRevision === existing.revision
           ? existing.verificationGate
           : production?.verificationGate ?? draft.verificationGate,
-        articleReview: production?.article
-          ? existing?.articleReview && existing.articleReview.status !== 'needs_assets'
-            ? existing.articleReview
-            : { status: articleBlockers.length ? 'needs_assets' : 'pending_review', blockers: articleBlockers }
-          : undefined,
+        articleReview: production?.article ? {
+          ...previousArticleReview,
+          status: preserveTerminalArticleStatus ? previousArticleReview.status : nextArticleStatus,
+          blockers: articleBlockers,
+          seoReview: seoReviewSummary,
+        } : undefined,
         createdAt: existing?.createdAt ?? now.toISOString(),
         status: 'pending_review',
         revision: existing?.revision ?? 1,
@@ -328,7 +354,7 @@ export async function runSlideshowContentBankHandoff(
         production.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))
       ) {
         let articleState = record.articleReview;
-        if (articleAutoPublisher && articleState?.status !== 'unpublished') {
+        if (articleAutoPublisher && articleState?.status !== 'unpublished' && articleState?.seoReview?.status === 'pass') {
           try {
             if (await articleAutoPublisher(id)) result.articleAutoPublished += 1;
           } catch {
@@ -340,7 +366,15 @@ export async function runSlideshowContentBankHandoff(
           root,
           'reports',
           'slack-article-ready',
-          `${id}-revision-${record.revision}.json`,
+          creddyArticleReadyReceiptName({
+            id,
+            revision: record.revision,
+            seoContentSha256: articleState?.seoReview?.contentSha256,
+            seoReviewStatus: articleState?.seoReview?.status,
+            publishStatus: articleState?.status === 'published' || articleState?.status === 'publish_failed' || articleState?.status === 'publishing' || articleState?.status === 'unpublished'
+              ? articleState.status
+              : undefined,
+          }),
         );
         if (await pathExists(articleReceiptPath)) {
           result.articleSlackNotificationsSkipped += 1;
@@ -360,6 +394,8 @@ export async function runSlideshowContentBankHandoff(
               : undefined,
             publishedUrl: articleState?.publishedUrl,
             publishError: articleState?.publishError,
+            seoReviewStatus: articleState?.seoReview?.status,
+            seoWarnings: articleState?.seoReview?.warnings ?? [],
           });
           if (notification.sent) {
             await writeJsonAtomic(articleReceiptPath, {

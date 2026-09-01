@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { initializeCreddyDataRoot, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
-import { CREDDY_PIPELINE_VERSION, type ContentBankRecord, type ContentDraftRecord, type VisualPlanRecord } from './pipeline-types.js';
+import { initializeCreddyDataRoot, pathExists, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
+import { CREDDY_PIPELINE_VERSION, type ContentBankRecord, type ContentDraftRecord, type ContentPackageRecord, type VisualPlanRecord } from './pipeline-types.js';
+import type { CreddyArticleReadySlackEvent } from './slack-notifications.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
 
 const expressions = ['neutral', 'waving', 'thinking', 'confused', 'celebrate', 'pointing'] as const;
@@ -81,25 +82,60 @@ test('Agent 7 sends an independent article review without changing slideshow not
   for (const path of articleImagePaths) await writeFile(path, 'article-image');
   const articlePreviewPath = join(articleDirectory, 'preview.html');
   await writeFile(articlePreviewPath, '<!doctype html><title>Article preview</title>');
-  await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'production-analysis-1.json'), {
+  const packagePath = safeDataPath(root, '06-content-packages', 'production-analysis-1.json');
+  await writeJsonAtomic(packagePath, {
     version: CREDDY_PIPELINE_VERSION,
     id: 'package-1',
     articleReadiness: 'ready_for_review',
     articlePreviewPath,
     article: {
-      title: 'Independent website article',
-      dek: 'Verified article guidance.',
-      excerpt: 'A practical article summary.',
+      id: 'article-independent-benefit-guide',
+      title: 'How Credit Card Benefit Resets Work',
+      seoTitle: 'Generic Rewards Guide',
+      seoDescription: 'Learn how credit card benefit resets work, when the value renews, and what to verify before relying on a benefit in your budget.',
+      dek: 'Verified credit card benefit reset guidance.',
+      excerpt: 'A practical credit card benefit reset summary.',
       category: 'guides',
       readingMinutes: 5,
+      heroVisualId: 'article-1',
+      blocks: [
+        { id: 'reset-heading', type: 'heading', level: 2, text: 'Understand the benefit reset clock' },
+        { id: 'reset-copy', type: 'paragraph', text: 'A credit card benefit reset determines when a cardholder can use the next benefit period.', claimFields: [] },
+        { id: 'decision-heading', type: 'heading', level: 2, text: 'Verify the timing before deciding' },
+      ],
       sourceUrls: ['https://example.com/source'],
     },
     articleVisuals: {
-      assets: articleImagePaths.map((assetPath, index) => ({ id: `article-${index + 1}`, assetPath })),
+      version: 'creddy-article-visuals-v1',
+      designVersion: 'creddy-guides-v1',
+      assets: articleImagePaths.map((assetPath, index) => ({
+        id: `article-${index + 1}`,
+        usage: index === 0 ? 'hero' : 'inline',
+        articleBlockId: index === 0 ? 'reset-heading' : 'decision-heading',
+        aspectRatio: '16:9',
+        altText: `Editorial planning visual for benefit reset step ${index + 1}`,
+        caption: `Benefit reset planning detail ${index + 1}.`,
+        assetPath,
+      })),
     },
   });
   let socialNotifications = 0;
-  let articleNotifications = 0;
+  const articleNotifications: Array<{ seo?: string; publish?: string }> = [];
+  const articleNotifier = async (event: CreddyArticleReadySlackEvent) => {
+    articleNotifications.push({ seo: event.seoReviewStatus, publish: event.publishStatus });
+    assert.equal(event.title, 'How Credit Card Benefit Resets Work');
+    assert.deepEqual(event.articleImagePaths, articleImagePaths);
+    return { sent: true, channel: 'C123', messageTs: `article.${articleNotifications.length}`, fileIds: [] };
+  };
+  let articlePublishCalls = 0;
+  const articleAutoPublisher = async (id: string) => {
+    articlePublishCalls += 1;
+    const path = safeDataPath(root, '09-pending-approval', `${id}.json`);
+    const bank = await readJson<ContentBankRecord>(path);
+    bank.articleReview = { ...bank.articleReview!, status: 'published', publishedUrl: 'https://getcreddy.com/blog/test' };
+    await writeJsonAtomic(path, bank);
+    return true;
+  };
   const result = await runSlideshowContentBankHandoff(
     root,
     new Date(),
@@ -107,36 +143,47 @@ test('Agent 7 sends an independent article review without changing slideshow not
       socialNotifications += 1;
       return { sent: true, channel: 'C123', messageTs: 'social.1', fileIds: [] };
     },
-    async (event) => {
-      articleNotifications += 1;
-      assert.equal(event.title, 'Independent website article');
-      assert.deepEqual(event.articleImagePaths, articleImagePaths);
-      assert.equal(event.publishStatus, 'published');
-      return { sent: true, channel: 'C123', messageTs: 'article.1', fileIds: [] };
-    },
-    async (id) => {
-      const path = safeDataPath(root, '09-pending-approval', `${id}.json`);
-      const bank = await readJson<ContentBankRecord>(path);
-      bank.articleReview = { ...bank.articleReview!, status: 'published', publishedUrl: 'https://getcreddy.com/blog/test' };
-      await writeJsonAtomic(path, bank);
-      return true;
-    },
+    articleNotifier,
+    articleAutoPublisher,
   );
   assert.equal(socialNotifications, 1);
-  assert.equal(articleNotifications, 1);
+  assert.deepEqual(articleNotifications, [{ seo: 'needs_changes', publish: undefined }]);
   assert.equal(result.slackNotificationsSent, 1);
   assert.equal(result.articleSlackNotificationsSent, 1);
-  assert.equal(result.articleAutoPublished, 1);
+  assert.equal(result.articleAutoPublished, 0);
   assert.equal(result.articleAutoPublishFailed, 0);
+  const reviewed = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json'));
+  assert.equal(reviewed.articleReview?.seoReview?.status, 'needs_changes');
+  assert.equal(await pathExists(reviewed.articleReview!.seoReview!.reportPath), true);
 
-  const rerun = await runSlideshowContentBankHandoff(
+  const corrected = await readJson<ContentPackageRecord>(packagePath);
+  corrected.article!.seoTitle = 'How Credit Card Benefit Resets Work — Creddy';
+  await writeJsonAtomic(packagePath, corrected);
+  const correctedRun = await runSlideshowContentBankHandoff(
+    root,
+    new Date(),
+    async () => { throw new Error('social notification must be idempotent'); },
+    articleNotifier,
+    articleAutoPublisher,
+  );
+  assert.equal(correctedRun.slackNotificationsSkipped, 1);
+  assert.equal(correctedRun.articleSlackNotificationsSent, 1);
+  assert.equal(correctedRun.articleAutoPublished, 1);
+  assert.equal(articlePublishCalls, 1);
+  assert.deepEqual(articleNotifications, [
+    { seo: 'needs_changes', publish: undefined },
+    { seo: 'pass', publish: 'published' },
+  ]);
+
+  const unchangedRun = await runSlideshowContentBankHandoff(
     root,
     new Date(),
     async () => { throw new Error('social notification must be idempotent'); },
     async () => { throw new Error('article notification must be idempotent'); },
   );
-  assert.equal(rerun.slackNotificationsSkipped, 1);
-  assert.equal(rerun.articleSlackNotificationsSkipped, 1);
+  assert.equal(unchangedRun.slackNotificationsSkipped, 1);
+  assert.equal(unchangedRun.articleSlackNotificationsSkipped, 1);
+  assert.equal(articleNotifications.length, 2);
 });
 
 test('Agent 7 keeps already-rendered legacy expression manifests readable', async () => {

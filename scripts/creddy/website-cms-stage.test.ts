@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { CREDDY_ARTICLE_IMAGE_BLOCK, CREDDY_ARTICLE_THEME } from './article-content.js';
-import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
+import { reviewCreddyArticleSeo } from './article-seo-review.js';
+import { initializeCreddyDataRoot, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import { CREDDY_PIPELINE_VERSION, type ContentBankRecord } from './pipeline-types.js';
 import {
   publishApprovedWebsiteExportToCms,
@@ -52,13 +53,16 @@ async function approvedFixture(): Promise<{ root: string; exportPath: string }> 
     },
     article: {
       version: 'creddy-article-v1', designVersion: 'creddy-guides-v1', id: 'article-cms-1', slug,
-      category: 'guides', title: 'CMS test article', dek: 'A verified explanation.', excerpt: 'A verified explanation.',
-      seoTitle: 'CMS test article', seoDescription: 'A verified explanation for cardholders.', authorName: 'Creddy Editorial',
+      category: 'guides', title: 'How Credit Card Benefit Resets Work', dek: 'A verified explanation of benefit reset timing.', excerpt: 'Understand credit card benefit reset timing before counting on the value.',
+      seoTitle: 'How Credit Card Benefit Resets Work — Creddy', seoDescription: 'Learn how credit card benefit resets work, when the value renews, and what to verify before relying on a benefit in your budget.', authorName: 'Creddy Editorial',
       createdAt: approvedAt, updatedAt: approvedAt, readingMinutes: 4, heroVisualId: 'hero',
       blocks: [
         { id: 'hero-block', type: 'visual', visualId: 'hero', caption: 'Approved hero visual.' },
         { id: 'detail-block', type: 'visual', visualId: 'detail', caption: 'Approved detail visual.' },
         { id: 'summary-block', type: 'visual', visualId: 'summary', caption: 'Approved summary visual.' },
+        { id: 'reset-heading', type: 'heading', level: 2, text: 'Understand the benefit reset clock' },
+        { id: 'reset-copy', type: 'paragraph', text: 'A credit card benefit reset determines when a cardholder can use the next benefit period and which terms need confirmation.', claimFields: [] },
+        { id: 'decision-heading', type: 'heading', level: 2, text: 'Verify the timing before deciding' },
       ],
       sourceUrls: ['https://example.com/source'], referralDisclosure: 'Creddy may earn a commission from approved links.',
     },
@@ -82,6 +86,7 @@ async function approvedFixture(): Promise<{ root: string; exportPath: string }> 
     previewPath,
     publishState: 'ready_for_getcreddy_integration',
   };
+  const seoReview = reviewCreddyArticleSeo({ article: payload.article, visuals: payload.visuals });
   const bank: ContentBankRecord = {
     version: CREDDY_PIPELINE_VERSION,
     id: payload.contentBankId,
@@ -89,7 +94,16 @@ async function approvedFixture(): Promise<{ root: string; exportPath: string }> 
     createdAt: approvedAt,
     status: 'pending_review',
     revision: 1,
-    articleReview: { status: 'approved', approvedBy: payload.approvedBy, approvedAt },
+    articleReview: {
+      status: 'approved', approvedBy: payload.approvedBy, approvedAt,
+      seoReview: {
+        status: seoReview.status,
+        reviewedAt: approvedAt,
+        reportPath: join(root, 'reports', 'blog-seo-reviews', 'bank-cms-1.json'),
+        contentSha256: seoReview.contentSha256,
+        warnings: seoReview.warnings,
+      },
+    },
   };
   await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `${bank.id}.json`), bank);
   const exportPath = safeDataPath(root, '14-website-ready', `${slug}.json`);
@@ -107,6 +121,40 @@ test('Agent 8 CMS publish requires the explicit external-write gate', async () =
     publishApprovedWebsiteExportToCms(fixture.root, fixture.exportPath, { allowCmsPublish: false, client }),
     /CREDDY_WEBSITE_CMS_PUBLISH_ENABLED=true/,
   );
+});
+
+test('Agent 8 SEO failure happens before any CMS upload or mutation', async () => {
+  const fixture = await approvedFixture();
+  const payload = await readJson<CreddyWebsiteExportPayload>(fixture.exportPath);
+  payload.article.seoTitle = 'Generic rewards guide';
+  await writeJsonAtomic(fixture.exportPath, payload);
+  let mutations = 0;
+  const client: WebsiteCmsClient = {
+    async uploadAsset() { mutations += 1; return 'https://example.com/asset'; },
+    async upsertArticle() { mutations += 1; },
+  };
+  await assert.rejects(
+    publishApprovedWebsiteExportToCms(fixture.root, fixture.exportPath, { allowCmsPublish: true, client }),
+    /Article SEO review failed/,
+  );
+  assert.equal(mutations, 0);
+});
+
+test('Agent 8 rejects SEO-valid content whose hash no longer matches Agent 7 review', async () => {
+  const fixture = await approvedFixture();
+  const payload = await readJson<CreddyWebsiteExportPayload>(fixture.exportPath);
+  payload.article.dek = 'An updated but still search-aligned explanation of credit card benefit reset timing.';
+  await writeJsonAtomic(fixture.exportPath, payload);
+  let mutations = 0;
+  const client: WebsiteCmsClient = {
+    async uploadAsset() { mutations += 1; return 'https://example.com/asset'; },
+    async upsertArticle() { mutations += 1; },
+  };
+  await assert.rejects(
+    publishApprovedWebsiteExportToCms(fixture.root, fixture.exportPath, { allowCmsPublish: true, client }),
+    /no longer matches the approved article/,
+  );
+  assert.equal(mutations, 0);
 });
 
 test('Agent 8 unpublish removes the CMS row, immutable asset set, and revalidates singular blog routes', async () => {

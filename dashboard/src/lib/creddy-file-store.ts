@@ -105,6 +105,13 @@ type ContentBankFile = {
     requestedAt?: string;
     changeNotes?: string;
     blockers?: string[];
+    seoReview?: {
+      status: "pass" | "needs_changes";
+      reviewedAt: string;
+      reportPath: string;
+      contentSha256: string;
+      warnings: string[];
+    };
   };
   createdAt: string;
   updatedAt?: string;

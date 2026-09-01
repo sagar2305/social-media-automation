@@ -42,7 +42,19 @@ export type CreddyArticleReadySlackEvent = {
   publishStatus?: 'published' | 'publish_failed' | 'publishing' | 'unpublished';
   publishedUrl?: string;
   publishError?: string;
+  seoReviewStatus?: 'pass' | 'needs_changes';
+  seoWarnings?: string[];
 };
+
+export function creddyArticleReadyReceiptName(input: {
+  id: string;
+  revision: number;
+  seoContentSha256?: string;
+  seoReviewStatus?: 'pass' | 'needs_changes';
+  publishStatus?: CreddyArticleReadySlackEvent['publishStatus'];
+}): string {
+  return `${input.id}-revision-${input.revision}-seo-${input.seoContentSha256?.slice(0, 12) ?? 'no-hash'}-${input.seoReviewStatus ?? 'unknown'}-${input.publishStatus ?? 'review'}.json`;
+}
 
 type SlackBlock = Record<string, unknown>;
 
@@ -211,6 +223,9 @@ export function articleReadyReviewBlocks(event: CreddyArticleReadySlackEvent): S
     }] : []),
     { type: 'button', action_id: 'creddy_content_open', value: event.id, text: { type: 'plain_text', text: 'View full article', emoji: true } },
   ];
+  const seoContext = event.seoReviewStatus === 'pass'
+    ? `:white_check_mark: Independent SEO review passed.${event.seoWarnings?.length ? ` Review notes: ${event.seoWarnings.map(clean).join(' • ')}` : ''}`
+    : ':no_entry: Independent SEO review needs changes. Publication is blocked; open the portal for the exact blockers.';
   return [
     { type: 'header', text: { type: 'plain_text', text: published ? ':white_check_mark: Website article published' : failed ? ':warning: Website article publish failed' : ':newspaper: Website article processing', emoji: true } },
     { type: 'section', text: { type: 'mrkdwn', text: `*${clean(event.title)}*\n${clean(event.dek)}` } },
@@ -219,6 +234,7 @@ export function articleReadyReviewBlocks(event: CreddyArticleReadySlackEvent): S
       { type: 'mrkdwn', text: `*Reading time*\n${event.readingMinutes} min` },
     ] },
     { type: 'section', text: { type: 'mrkdwn', text: `*Summary*\n${clean(event.excerpt)}` } },
+    ...(event.seoReviewStatus ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: seoContext.slice(0, 2900) }] }] : []),
     { type: 'section', text: { type: 'mrkdwn', text: `*Sources*\n${slackSourceLinks(event.sourceUrls) || 'No valid sources available.'}` } },
     { type: 'context', elements: [{ type: 'mrkdwn', text: published
       ? `:white_check_mark: Agent 8 published this automatically at <${event.publishedUrl}|getcreddy.com/blog>. Slideshow approval remains separate.`

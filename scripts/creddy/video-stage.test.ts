@@ -8,6 +8,7 @@ import { acceptContentPackage, acceptContentRevision } from './content-stage.js'
 import {
   initializeCreddyDataRoot,
   listJsonFiles,
+  pathExists,
   readJson,
   safeDataPath,
   writeJsonAtomic,
@@ -23,6 +24,7 @@ import type {
   VideoFactoryApi,
   VideoFactoryRemoteJob,
 } from './video-factory-client.js';
+import type { CreddyArticleReadySlackEvent } from './slack-notifications.js';
 import { approveContentBankItem, buildCreddyVideoScript, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 
 class FakeVideoFactory implements VideoFactoryApi {
@@ -185,10 +187,33 @@ test('article-only packages enter review and can be approved without videos', as
     scriptLines: [], caption: '', hashtags: [], cta: { label: 'Open Creddy', deepLink: 'creddy://home' },
     imagePrompts: [], characterExpressions: [], narrationLines: [], visualPlanId: 'visual-copy-analysis-article',
     brief: 'Evergreen guide.', sourceUrls: ['https://example.com/guide'], factualClaims: [],
-    article: { title: 'Credit Card Guide' } as ContentPackageRecord['article'],
-    articleVisuals: { version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1', assets: [] },
+    article: {
+      id: 'article-credit-card-benefit-reset',
+      title: 'How Credit Card Benefit Resets Work',
+      seoTitle: 'How Credit Card Benefit Resets Work — Creddy',
+      seoDescription: 'Learn how credit card benefit resets work, when the value renews, and what to verify before relying on a benefit in your budget.',
+      dek: 'A practical benefit reset guide.', excerpt: 'Understand credit card benefit reset timing.',
+      category: 'guides', readingMinutes: 5, heroVisualId: 'hero-reset',
+      sourceUrls: ['https://example.com/guide'],
+      blocks: [
+        { id: 'clock-heading', type: 'heading', level: 2, text: 'Understand the benefit reset clock' },
+        { id: 'clock-copy', type: 'paragraph', text: 'A credit card benefit reset determines when the next benefit period begins.', claimFields: [] },
+        { id: 'decision-heading', type: 'heading', level: 2, text: 'Verify the timing before deciding' },
+      ],
+    } as ContentPackageRecord['article'],
+    articleVisuals: {
+      version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1',
+      assets: ['hero-reset', 'reset-clock', 'reset-decision'].map((id, index) => ({
+        id, usage: index === 0 ? 'hero' as const : 'inline' as const,
+        articleBlockId: index === 0 ? 'clock-heading' : 'decision-heading',
+        assetType: 'editorial_illustration' as const, aspectRatio: '16:9' as const, generationMode: 'generate' as const,
+        altText: `Editorial calendar showing benefit reset step ${index + 1}`,
+        caption: `Benefit reset planning detail ${index + 1}.`, claimFields: [], assetPath: join(root, `${id}.png`),
+      })),
+    },
     articlePreviewPath: previewPath, articleReadiness: 'ready_for_review',
   };
+  for (const asset of content.articleVisuals!.assets) await writeFile(asset.assetPath!, 'article-image');
   await writeJsonAtomic(safeDataPath(root, '06-content-packages', `${content.id}.json`), content);
   assert.equal(await runArticleContentBankHandoff(root), 1);
   const bankId = `article-${content.id}`;
@@ -202,7 +227,139 @@ test('article-only packages enter review and can be approved without videos', as
   }, new Date('2026-08-19T14:00:00.000Z'));
   assert.equal(approved.mediaType, 'article');
   assert.equal(approved.articleReview?.status, 'approved');
+  assert.equal(approved.articleReview?.seoReview?.status, 'pass');
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+});
+
+test('Agent 7 blocks an SEO failure, sends it for review, and preserves terminal publication state', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-article-seo-block-'));
+  await initializeCreddyDataRoot(root);
+  const previewPath = join(root, 'article-preview.html');
+  await writeFile(previewPath, '<!doctype html><title>Guide</title>');
+  const articleVisuals: NonNullable<ContentPackageRecord['articleVisuals']> = {
+    version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1',
+    assets: ['hero-reset', 'reset-clock', 'reset-decision'].map((id, index) => ({
+      id, usage: index === 0 ? 'hero' as const : 'inline' as const,
+      articleBlockId: index === 0 ? 'clock-heading' : 'decision-heading',
+      assetType: 'editorial_illustration' as const, aspectRatio: '16:9' as const, generationMode: 'generate' as const,
+      altText: `Editorial calendar showing benefit reset step ${index + 1}`,
+      caption: `Benefit reset planning detail ${index + 1}.`, claimFields: [], assetPath: join(root, `${id}.png`),
+    })),
+  };
+  const content: ContentPackageRecord = {
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_only', contentDraftId: 'copy-seo-block',
+    id: 'production-seo-block', analysisId: 'analysis-seo-block', canonicalId: 'canonical-seo-block',
+    createdAt: '2026-09-01T00:00:00.000Z', audience: 'US rewards users', slot: 'understand', hook: 'Benefit reset guide',
+    scriptLines: [], caption: '', hashtags: [], cta: { label: 'Open Creddy', deepLink: 'creddy://home' },
+    imagePrompts: [], brief: 'Evergreen guide.', sourceUrls: ['https://example.com/guide'], factualClaims: [],
+    article: {
+      id: 'article-seo-block', title: 'How Credit Card Benefit Resets Work',
+      seoTitle: 'Generic Rewards Guide',
+      seoDescription: 'Learn how credit card benefit resets work, when the value renews, and what to verify before relying on a benefit in your budget.',
+      dek: 'A practical benefit reset guide.', excerpt: 'Understand credit card benefit reset timing.',
+      category: 'guides', readingMinutes: 5, heroVisualId: 'hero-reset', sourceUrls: ['https://example.com/guide'],
+      blocks: [
+        { id: 'clock-heading', type: 'heading', level: 2, text: 'Understand the benefit reset clock' },
+        { id: 'clock-copy', type: 'paragraph', text: 'A credit card benefit reset determines when the next benefit period begins.', claimFields: [] },
+        { id: 'decision-heading', type: 'heading', level: 2, text: 'Verify the timing before deciding' },
+      ],
+    } as ContentPackageRecord['article'],
+    articleVisuals, articlePreviewPath: previewPath, articleReadiness: 'ready_for_review',
+  };
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', `${content.id}.json`), content);
+  let publishCalls = 0;
+  let notifierCalls = 0;
+  await runArticleContentBankHandoff(root, new Date('2026-09-01T01:00:00.000Z'), {
+    autoPublisher: async () => { publishCalls += 1; return true; },
+    notifier: async (event) => {
+      notifierCalls += 1;
+      assert.equal(event.seoReviewStatus, 'needs_changes');
+      return { sent: true, channel: 'C123', messageTs: '123.456', fileIds: [] };
+    },
+  });
+  const bank = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `article-${content.id}.json`));
+  assert.equal(publishCalls, 0);
+  assert.equal(notifierCalls, 1);
+  assert.equal(bank.articleReview?.status, 'changes_requested');
+  assert.equal(bank.articleReview?.seoReview?.status, 'needs_changes');
+  assert.ok(bank.articleReview?.blockers?.some((blocker) => /SEO review/.test(blocker)));
+  assert.equal(await pathExists(bank.articleReview!.seoReview!.reportPath), true);
+
+  bank.articleReview!.status = 'published';
+  bank.articleReview!.publishedUrl = 'https://getcreddy.com/blog/benefit-reset-guide';
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `article-${content.id}.json`), bank);
+  await runArticleContentBankHandoff(root, new Date('2026-09-01T02:00:00.000Z'));
+  const rerun = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `article-${content.id}.json`));
+  assert.equal(rerun.articleReview?.status, 'published');
+  assert.equal(rerun.articleReview?.seoReview?.status, 'needs_changes');
+  assert.ok(rerun.articleReview?.blockers?.some((blocker) => /SEO review/.test(blocker)));
+});
+
+test('Agent 7 sends a fresh Slack update when same-revision article SEO is corrected and published', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-article-seo-slack-lifecycle-'));
+  await initializeCreddyDataRoot(root);
+  const previewPath = join(root, 'article-preview.html');
+  await writeFile(previewPath, '<!doctype html><title>Guide</title>');
+  const articleVisuals: NonNullable<ContentPackageRecord['articleVisuals']> = {
+    version: 'creddy-article-visuals-v1', designVersion: 'creddy-guides-v1',
+    assets: ['hero-reset', 'reset-clock', 'reset-decision'].map((id, index) => ({
+      id, usage: index === 0 ? 'hero' as const : 'inline' as const,
+      articleBlockId: index === 0 ? 'clock-heading' : 'decision-heading',
+      assetType: 'editorial_illustration' as const, aspectRatio: '16:9' as const, generationMode: 'generate' as const,
+      altText: `Editorial calendar showing benefit reset step ${index + 1}`,
+      caption: `Benefit reset planning detail ${index + 1}.`, claimFields: [], assetPath: join(root, `${id}.png`),
+    })),
+  };
+  const content: ContentPackageRecord = {
+    version: CREDDY_PIPELINE_VERSION, distributionMode: 'article_only', contentDraftId: 'copy-seo-lifecycle',
+    id: 'production-seo-lifecycle', analysisId: 'analysis-seo-lifecycle', canonicalId: 'canonical-seo-lifecycle',
+    createdAt: '2026-09-01T00:00:00.000Z', audience: 'US rewards users', slot: 'understand', hook: 'Benefit reset guide',
+    scriptLines: [], caption: '', hashtags: [], cta: { label: 'Open Creddy', deepLink: 'creddy://home' },
+    imagePrompts: [], brief: 'Evergreen guide.', sourceUrls: ['https://example.com/guide'], factualClaims: [],
+    article: {
+      id: 'article-seo-lifecycle', title: 'How Credit Card Benefit Resets Work', seoTitle: 'Generic Rewards Guide',
+      seoDescription: 'Learn how credit card benefit resets work, when the value renews, and what to verify before relying on a benefit in your budget.',
+      dek: 'A practical benefit reset guide.', excerpt: 'Understand credit card benefit reset timing.', category: 'guides',
+      readingMinutes: 5, heroVisualId: 'hero-reset', sourceUrls: ['https://example.com/guide'],
+      blocks: [
+        { id: 'clock-heading', type: 'heading', level: 2, text: 'Understand the benefit reset clock' },
+        { id: 'clock-copy', type: 'paragraph', text: 'A credit card benefit reset determines when the next benefit period begins.', claimFields: [] },
+        { id: 'decision-heading', type: 'heading', level: 2, text: 'Verify the timing before deciding' },
+      ],
+    } as ContentPackageRecord['article'],
+    articleVisuals, articlePreviewPath: previewPath, articleReadiness: 'ready_for_review',
+  };
+  for (const asset of articleVisuals.assets) await writeFile(asset.assetPath!, 'article-image');
+  const packagePath = safeDataPath(root, '06-content-packages', `${content.id}.json`);
+  await writeJsonAtomic(packagePath, content);
+  const notifications: Array<{ seo?: string; publish?: string }> = [];
+  const notifier = async (event: CreddyArticleReadySlackEvent) => {
+    notifications.push({ seo: event.seoReviewStatus, publish: event.publishStatus });
+    return { sent: true, channel: 'C123', messageTs: String(notifications.length), fileIds: [] };
+  };
+  await runArticleContentBankHandoff(root, new Date('2026-09-01T01:00:00.000Z'), { notifier });
+  assert.deepEqual(notifications, [{ seo: 'needs_changes', publish: undefined }]);
+
+  content.article!.seoTitle = 'How Credit Card Benefit Resets Work — Creddy';
+  await writeJsonAtomic(packagePath, content);
+  let publishCalls = 0;
+  const autoPublisher = async (id: string) => {
+    publishCalls += 1;
+    const destination = safeDataPath(root, '09-pending-approval', `${id}.json`);
+    const bank = await readJson<ContentBankRecord>(destination);
+    bank.articleReview!.status = 'published';
+    bank.articleReview!.publishedUrl = 'https://getcreddy.com/blog/benefit-reset-guide';
+    await writeJsonAtomic(destination, bank);
+    return true;
+  };
+  await runArticleContentBankHandoff(root, new Date('2026-09-01T02:00:00.000Z'), { autoPublisher, notifier });
+  assert.equal(publishCalls, 1);
+  assert.deepEqual(notifications, [
+    { seo: 'needs_changes', publish: undefined },
+    { seo: 'pass', publish: 'published' },
+  ]);
+  await runArticleContentBankHandoff(root, new Date('2026-09-01T03:00:00.000Z'), { notifier });
+  assert.equal(notifications.length, 2);
 });
 
 test('text plus music jobs fail closed when no licensed music path is configured', async () => {

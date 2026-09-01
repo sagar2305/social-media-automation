@@ -8,7 +8,9 @@ import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 
 import { inspectCreddyArticleImage } from './article-image-stage.js';
+import { assertCreddyArticleSeo, loadCreddyArticleSeoPeers, reviewCreddyArticleSeo } from './article-seo-review.js';
 import { pathExists, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
+import type { ContentBankRecord } from './pipeline-types.js';
 import {
   cleanWebsiteExport,
   readApprovedWebsiteExport,
@@ -279,6 +281,27 @@ export async function publishApprovedWebsiteExportToCms(
   const payload = await readApprovedWebsiteExport(root, exportPath);
   const clean = cleanWebsiteExport(payload);
   const slug = safeSlug(payload.article.slug);
+  const seoReview = reviewCreddyArticleSeo({
+    article: payload.article,
+    visuals: payload.visuals,
+    peers: await loadCreddyArticleSeoPeers(root, payload.article.id),
+  });
+  const bank = await readJson<ContentBankRecord>(
+    safeDataPath(root, '09-pending-approval', `${payload.contentBankId}.json`),
+  );
+  const seoCheckedAt = (options.now ?? new Date()).toISOString();
+  const seoCheckedAtSlug = seoCheckedAt.replace(/[^0-9A-Za-z]+/g, '').slice(0, 24);
+  await writeJsonAtomic(
+    safeDataPath(root, 'reports', 'blog-seo-reviews', `${payload.contentBankId}-prepublish-${seoCheckedAtSlug}-${seoReview.contentSha256.slice(0, 12)}.json`),
+    { ...seoReview, contentBankId: payload.contentBankId, approvedAt: payload.approvedAt, checkedAt: seoCheckedAt, stage: 'agent_8_prepublish' },
+  );
+  assertCreddyArticleSeo(seoReview);
+  if (
+    bank.articleReview?.seoReview?.status !== 'pass' ||
+    bank.articleReview.seoReview.contentSha256 !== seoReview.contentSha256
+  ) {
+    throw new Error('Article SEO review is missing, failed, or no longer matches the approved article');
+  }
   if (payload.visuals.assets.length !== 3) throw new Error('Website CMS publishing requires exactly three approved article images');
   const publicAssetUrls: string[] = [];
   const assets = [];
