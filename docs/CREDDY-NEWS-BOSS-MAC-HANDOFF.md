@@ -1,8 +1,5 @@
 # Creddy News Agent — Boss Mac handoff
 
-For a single autonomous Codex setup task, copy the prompt from
-[CREDDY-NEWS-CODEX-SETUP-PROMPT.md](./CREDDY-NEWS-CODEX-SETUP-PROMPT.md).
-
 This guide installs and runs only Creddy App News. It does not run the blog,
 slideshow, website-article, video, Blotato, or social-media agents.
 
