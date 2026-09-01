@@ -15,6 +15,7 @@ import {
   authorizeRollingProduction,
   passesUrgentPreGate,
   reconcileRollingEditorialLedger,
+  newsProjectionCandidateIds,
   selectDailyEditorialSlate,
   verificationCandidateIds,
   type RollingEditorialRecord,
@@ -24,9 +25,9 @@ const NOW = new Date('2026-09-01T12:00:00.000Z'); // 08:00 America/New_York
 
 function article(index: number): CanonicalNewsRecord {
   return {
-    version: 1, id: `raw-${index}`, runId: 'run', sourceId: `source-${index}`, sourceName: `Source ${index}`,
-    sourceTier: 'B', factualUse: 'discovery_and_confirmation', originalUrl: `https://example.com/${index}`,
-    canonicalUrl: `https://example.com/${index}`, title: `Story ${index}`, markdown: `Material story ${index}`,
+    version: 1, id: `raw-${index}`, runId: 'run', sourceId: 'the-points-guy', sourceName: 'The Points Guy',
+    sourceTier: 'B', factualUse: 'discovery_and_confirmation', originalUrl: `https://thepointsguy.com/news/story-${index}`,
+    canonicalUrl: `https://thepointsguy.com/news/story-${index}`, title: `Story ${index}`, markdown: `Material story ${index}`,
     contentHash: `content-${index}`, titleFingerprint: `story-${index}`,
     publishedAt: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString(),
     fetchedAt: new Date(NOW.getTime() - 30 * 60 * 1000).toISOString(), providerMetadata: {},
@@ -86,6 +87,7 @@ async function rootWith(count: number, urgent = false): Promise<string> {
   await initializeCreddyDataRoot(root);
   for (let index = 0; index < count; index += 1) {
     await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', `canonical-${index}.json`), article(index));
+    await writeJsonAtomic(safeDataPath(root, '01-raw', `raw-${index}.json`), article(index));
     await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', `canonical-${index}.json`), decision(index, urgent));
   }
   return root;
@@ -173,6 +175,37 @@ test('a new analysis-input revision resets nonterminal channel state but preserv
   assert.equal(reconciled.channels.social, 'active');
 });
 
+test('News first-seen freshness persists for unchanged input and resets only for newly fetched revision evidence', async () => {
+  const root = await rootWith(1);
+  await reconcileRollingEditorialLedger(root, NOW);
+  const ledgerPath = safeDataPath(root, '05-editorial-ledger', 'items', 'canonical-0.json');
+  const old = await readJson<RollingEditorialRecord>(ledgerPath);
+  old.firstSeenAt = new Date(NOW.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString();
+  await writeJsonAtomic(ledgerPath, old);
+
+  await reconcileRollingEditorialLedger(root, NOW);
+  assert.deepEqual(await newsProjectionCandidateIds(root, NOW), []);
+  assert.equal((await readJson<RollingEditorialRecord>(ledgerPath)).firstSeenAt, old.firstSeenAt);
+
+  const revisionFetchedAt = new Date(NOW.getTime() - 5 * 60 * 1000).toISOString();
+  const revisionEvidence = { ...article(0), id: 'raw-revision', fetchedAt: revisionFetchedAt };
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'raw-revision.json'), revisionEvidence);
+  const articlePath = safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json');
+  const revisedArticle = await readJson<CanonicalNewsRecord>(articlePath);
+  revisedArticle.fetchedAt = revisionFetchedAt;
+  revisedArticle.evidenceRecordIds = ['raw-0', 'raw-revision'];
+  await writeJsonAtomic(articlePath, revisedArticle);
+  const decisionPath = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const revisedDecision = await readJson<AnalysisDecisionRecord>(decisionPath);
+  revisedDecision.analysisInputHash = 'hash-revision-with-new-evidence';
+  revisedDecision.evidenceRecordIds = ['raw-0', 'raw-revision'];
+  revisedDecision.claims = revisedDecision.claims.map((claim) => ({ ...claim, sourceRecordIds: ['raw-0', 'raw-revision'] }));
+  await writeJsonAtomic(decisionPath, revisedDecision);
+
+  assert.deepEqual(await newsProjectionCandidateIds(root, NOW), ['canonical-0']);
+  assert.equal((await readJson<RollingEditorialRecord>(ledgerPath)).firstSeenAt, revisionFetchedAt);
+});
+
 test('human approval cannot deliver after the current evidence-bound authorization changes', async () => {
   const root = await rootWith(1);
   await authorizeRollingProduction(root, NOW);
@@ -238,7 +271,7 @@ test('expired urgent article cannot reach the CMS publish callback', async () =>
   assert.equal(mutations, 0);
 });
 
-test('urgent gate rejects editorial rejects, reverify routes, and unbound event times', () => {
+test('urgent pre-gate rejects editorial rejects and unbound event times but admits corroboration candidates', () => {
   const base = decision(0, true);
   const record = {
     version: 1 as const, canonicalId: base.canonicalId, decisionId: base.id, analysisInputHash: base.analysisInputHash!,
@@ -251,9 +284,76 @@ test('urgent gate rejects editorial rejects, reverify routes, and unbound event 
   const rejected = { ...base, route: 'rejected' as const, editorialDisposition: 'reject' as const, rejectionReasons: ['Not suitable.'] };
   assert.equal(passesUrgentPreGate(record, rejected, article(0), NOW), false);
   const reverify = { ...base, route: 'reverify' as const, verificationState: 'official_source_needed' as const, verificationRequirements: ['Verify.'] };
-  assert.equal(passesUrgentPreGate(record, reverify, article(0), NOW), false);
+  assert.equal(passesUrgentPreGate(record, reverify, article(0), NOW), true);
+  assert.equal(passesUrgentPreGate(record, { ...reverify, conflictChangesMessage: true }, article(0), NOW), false);
   const unbound = { ...base, claims: base.claims.filter((claim) => claim.field !== 'event_occurred_at') };
   assert.equal(passesUrgentPreGate(record, unbound, article(0), NOW), false);
+});
+
+test('trusted missing-date News is eligible before 06:00 without routine official verification', async () => {
+  const root = await rootWith(1);
+  const early = new Date('2026-09-01T09:00:00.000Z'); // 05:00 America/New_York
+  const articlePath = safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json');
+  const rawPath = safeDataPath(root, '01-raw', 'raw-0.json');
+  const currentArticle = await readJson<CanonicalNewsRecord>(articlePath);
+  delete currentArticle.publishedAt;
+  currentArticle.fetchedAt = new Date(early.getTime() - 30 * 60 * 1000).toISOString();
+  await writeJsonAtomic(articlePath, currentArticle);
+  await writeJsonAtomic(rawPath, currentArticle);
+  const decisionPath = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const currentDecision = await readJson<AnalysisDecisionRecord>(decisionPath);
+  currentDecision.route = 'reverify';
+  currentDecision.verificationState = 'official_source_needed';
+  currentDecision.verificationRequirements = ['Routine issuer confirmation'];
+  delete currentDecision.verificationGate;
+  await writeJsonAtomic(decisionPath, currentDecision);
+  await reconcileRollingEditorialLedger(root, early);
+  assert.deepEqual(await verificationCandidateIds(root, early), []);
+  assert.deepEqual(await newsProjectionCandidateIds(root, early), ['canonical-0']);
+  assert.equal(await selectDailyEditorialSlate(root, early), undefined);
+});
+
+test('unknown search publishers and known conflicts cannot enter the hourly News projection', async () => {
+  const root = await rootWith(1);
+  const currentArticle = article(0);
+  currentArticle.sourceId = 'topic-search:card-offer';
+  currentArticle.sourceName = 'Unknown Publisher';
+  currentArticle.originalUrl = 'https://unknown.example/story';
+  currentArticle.canonicalUrl = currentArticle.originalUrl;
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json'), currentArticle);
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'raw-0.json'), currentArticle);
+  await reconcileRollingEditorialLedger(root, NOW);
+  assert.deepEqual(await newsProjectionCandidateIds(root, NOW), []);
+  const decisionPath = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const conflicted = await readJson<AnalysisDecisionRecord>(decisionPath);
+  conflicted.materialConflict = true;
+  conflicted.conflictChangesMessage = true;
+  await writeJsonAtomic(decisionPath, conflicted);
+  assert.deepEqual(await newsProjectionCandidateIds(root, NOW), []);
+});
+
+test('two independent trusted publications can authorize and revalidate unattended urgent delivery', async () => {
+  const root = await rootWith(1, true);
+  const second = { ...article(0), id: 'raw-second', sourceId: 'doctor-of-credit', sourceName: 'Doctor of Credit',
+    originalUrl: 'https://www.doctorofcredit.com/material-change', canonicalUrl: 'https://www.doctorofcredit.com/material-change' };
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'raw-second.json'), second);
+  const decisionPath = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const corroborated = await readJson<AnalysisDecisionRecord>(decisionPath);
+  corroborated.route = 'reverify';
+  corroborated.verificationState = 'independent_confirmation_needed';
+  corroborated.verificationRequirements = ['Two trusted publications must agree.'];
+  corroborated.evidenceRecordIds = ['raw-0', 'raw-second'];
+  corroborated.claims = corroborated.claims.map((claim) => ({ ...claim, sourceRecordIds: ['raw-0', 'raw-second'] }));
+  delete corroborated.verificationGate;
+  await writeJsonAtomic(decisionPath, corroborated);
+  const authorized = await authorizeRollingProduction(root, NOW, null);
+  assert.equal(authorized.urgent.length, 1);
+  const selected = await readJson<AnalysisDecisionRecord>(decisionPath);
+  await writeScheduledBank(root, selected, 'corroborated-urgent', new Date(NOW.getTime() + 60 * 1000));
+  const publisher = countingPublisher();
+  const result = await runPublishStage(root, publisher.client, NOW, 15);
+  assert.equal(result.failedCount, 0);
+  assert.equal(publisher.calls.count, 1);
 });
 
 test('cross-publisher copies of one material event share one urgent claim', async () => {

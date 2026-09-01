@@ -13,9 +13,9 @@ import { publicHttps, validateNewsPatch, type NewsItem } from '../../shared/cred
 
 function fixtures() {
   const now = Date.now();
-  const article: CanonicalNewsRecord = { version: CREDDY_PIPELINE_VERSION, id: 'raw-test', runId: 'test', sourceId: 'test',
-    sourceName: 'Test Publisher', sourceTier: 'B', factualUse: 'discovery_and_confirmation',
-    originalUrl: 'https://example.com/card-benefit', canonicalUrl: 'https://example.com/card-benefit',
+  const article: CanonicalNewsRecord = { version: CREDDY_PIPELINE_VERSION, id: 'raw-test', runId: 'test', sourceId: 'the-points-guy',
+    sourceName: 'The Points Guy', sourceTier: 'B', factualUse: 'discovery_and_confirmation',
+    originalUrl: 'https://thepointsguy.com/news/card-benefit', canonicalUrl: 'https://thepointsguy.com/news/card-benefit',
     title: 'Verified test card benefit', markdown: 'Test evidence', cleanedMarkdown: 'Test evidence', contentHash: 'a'.repeat(64),
     titleFingerprint: 'test-card', fetchedAt: new Date(now).toISOString(), publishedAt: new Date(now - 1000).toISOString(),
     providerMetadata: {}, qualification: { qualifies: true, matchedKeywords: ['card'] }, canonicalId: 'canonical-test',
@@ -62,8 +62,9 @@ test('ready evidence becomes short app news, without generating an image', () =>
 test('community-only, absent, old and incomplete evidence never publishes', () => {
   const { article, decision, now } = fixtures();
   assert.match(prepareAppNews(decision, article, [], now).error!, /evidence/);
-  assert.match(prepareAppNews(decision, article, [{ ...article, factualUse: 'signal_only' }], now).error!, /confirmation/);
-  assert.match(prepareAppNews(decision, { ...article, publishedAt: '2020-01-01' }, [article], now).error!, /72 hours/);
+  assert.match(prepareAppNews(decision, article, [{ ...article, sourceId: 'reddit-churning', canonicalUrl: 'https://reddit.com/r/churning/test', factualUse: 'signal_only' }], now).error!, /configured specialist/);
+  assert.equal(prepareAppNews(decision, { ...article, publishedAt: '2020-01-01' }, [article], now).error, null);
+  assert.match(prepareAppNews(decision, article, [article], now, undefined, '2020-01-01').error!, /72-hour window/);
   assert.match(prepareAppNews({ ...decision, summary: 'x'.repeat(481) }, article, [article], now).error!, /480/);
   assert.match(prepareAppNews({ ...decision, expiry: '2020-01-01' }, article, [article], now).error!, /expired/);
 });
@@ -78,20 +79,55 @@ test('source normalization removes only tracking and fragment, not article query
   assert.equal(newsSourceKey('https://example.com/story/?utm_source=x&id=2#hi'), 'https://example.com/story?id=2');
   assert.notEqual(newsSourceKey('https://example.com/story?id=2'), newsSourceKey('https://example.com/story?id=3'));
 });
-test('publisher publication metadata supports collected articles without inventing dates', () => {
+test('source dates remain provenance while News freshness truthfully uses first seen', () => {
   const { article, decision, now } = fixtures();
   article.providerMetadata['article:published_time'] = article.publishedAt;
   article.publishedAt = undefined;
-  assert.equal(prepareAppNews(decision, article, [article], now).error, null);
+  const metadata = prepareAppNews(decision, article, [article], now);
+  assert.equal(metadata.error, null);
+  assert.equal(metadata.provenance.dateBasis, 'first_seen');
+  assert.equal(metadata.provenance.sourcePublishedAt, new Date(article.providerMetadata['article:published_time'] as string).toISOString());
   delete article.providerMetadata['article:published_time'];
   article.providerMetadata['article:modified_time'] = new Date(now).toISOString();
-  assert.match(prepareAppNews(decision, article, [article], now).error!, /72 hours/);
+  const fallback = prepareAppNews(decision, article, [article], now, undefined, article.fetchedAt);
+  assert.equal(fallback.error, null);
+  assert.equal(fallback.provenance.dateBasis, 'first_seen');
+  assert.equal(fallback.content.published_at, Date.parse(article.fetchedAt));
 });
-test('new batched decisions cannot bypass the shared official verification boundary', () => {
+test('trusted batched News does not require routine official verification while conflicts still block', () => {
   const { article, decision, now } = fixtures();
-  assert.match(prepareAppNews({ ...decision, ...{analysisBatchId:'batch-new'} }, article, [article], now).error!, /official verification/);
+  const attributed = { ...decision, analysisBatchId: 'batch-new', route: 'reverify' as const,
+    verificationState: 'official_source_needed' as const, verificationRequirements: ['Routine issuer confirmation'] };
+  assert.equal(prepareAppNews(attributed, article, [article], now).error, null);
   const conflicting = { ...decision, verificationGate:{official:{status:'conflicting'}} } as unknown as AnalysisDecisionRecord;
-  assert.match(prepareAppNews(conflicting, article, [article], now).error!, /official verification/);
+  assert.match(prepareAppNews(conflicting, article, [article], now).error!, /conflict/);
+});
+test('unknown search publishers and exceptional one-source claims remain withheld', () => {
+  const { article, decision, now } = fixtures();
+  const unknown = { ...article, sourceId: 'topic-search:card-offer', sourceName: 'Unknown Publisher',
+    canonicalUrl: 'https://unknown.example/news/card-benefit', originalUrl: 'https://unknown.example/news/card-benefit' };
+  assert.match(prepareAppNews(decision, unknown, [unknown], now).error!, /configured specialist/);
+  const exceptional = { ...decision, route: 'reverify' as const, verificationState: 'independent_confirmation_needed' as const,
+    verificationRequirements: ['Independent confirmation'] };
+  assert.match(prepareAppNews(exceptional, article, [article], now).error!, /two trusted specialist/);
+});
+test('a configured source id cannot confer trust on an unrelated host', () => {
+  const { article, decision, now } = fixtures();
+  const spoofed = { ...article, sourceId: 'the-points-guy', sourceName: 'The Points Guy',
+    canonicalUrl: 'https://unknown.example/news/card-benefit', originalUrl: 'https://unknown.example/news/card-benefit' };
+  assert.match(prepareAppNews(decision, spoofed, [spoofed], now).error!, /configured specialist/);
+});
+test('trusted-source confidence floor admits legacy source-capped rankings but not weak claims', () => {
+  const { article, decision, now } = fixtures();
+  const accepted: AnalysisDecisionRecord = { ...decision, confidenceScore: 60, route: 'reverify',
+    verificationState: 'official_source_needed', verificationRequirements: ['Routine issuer confirmation'],
+    claims: decision.claims.map((claim) => ({ ...claim, confidence: 60 })) };
+  accepted.editorialPriorityScore = calculateEditorialPriorityScore(accepted);
+  assert.equal(prepareAppNews(accepted, article, [article], now).error, null);
+  const weak: AnalysisDecisionRecord = { ...accepted, confidenceScore: 59,
+    claims: accepted.claims.map((claim) => ({ ...claim, confidence: 59 })) };
+  weak.editorialPriorityScore = calculateEditorialPriorityScore(weak);
+  assert.match(prepareAppNews(weak, article, [article], now).error!, /does not qualify|evidence/);
 });
 test('news text and URLs are bounded and safe', () => {
   assert.throws(() => validateNewsPatch({ headline: 'short', summary: 'x'.repeat(100), category: 'Credit cards' }));

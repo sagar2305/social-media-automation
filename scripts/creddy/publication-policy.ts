@@ -5,9 +5,11 @@ import type {
   ContentPackageRecord,
   CreddyDistributionMode,
   CreddyVerificationGate,
+  RawArticleRecord,
 } from './pipeline-types.js';
 import { listJsonFiles, readJson, safeDataPath } from './pipeline-store.js';
 import { decisionFingerprint, officialVerificationFingerprint } from './rolling-editorial.js';
+import { trustedEditorialEvidence } from './news-policy.js';
 
 const VOLATILE_ARTICLE_LANGUAGE = /\b(?:adds?|added|bonus|offer|highest[- ]ever|limited[- ]time|ends?|expires?|through\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|launch(?:es|ed)?|new\s+(?:card|benefit|route)|devaluation|promo|status match|buy\s+\w+\s+(?:points|miles))\b/i;
 
@@ -63,6 +65,7 @@ export function assertVerificationGateIntegrity(
   if (!bank.analysisBatchId || bank.analysisBatchId !== content.analysisBatchId) {
     throw new Error('Current-workflow content has a missing or mismatched Agent 03 batch identity');
   }
+  if (!bank.verificationGate && !content.verificationGate) return;
   if (!bank.verificationGate || !content.verificationGate) {
     throw new Error('Current-workflow content is missing its official-verification gate');
   }
@@ -132,10 +135,26 @@ export async function assertAutoUrgentAuthorizationCurrent(
     throw new Error('Urgent content or evidence changed after authorization');
   }
   const checkedAt = Date.parse(decision.verificationGate?.official.checkedAt ?? '');
-  if (decision.verificationGate?.official.status !== 'verified' || !Number.isFinite(checkedAt) ||
-      now.getTime() - checkedAt > 30 * 60 * 1000 ||
-      decision.verificationGate.official.claimOutcomes.some((claim) => claim.status !== 'verified')) {
-    throw new Error('Urgent official verification is no longer current and complete');
+  const officialSatisfied = decision.verificationGate?.official.status === 'verified' && Number.isFinite(checkedAt) &&
+    now.getTime() - checkedAt <= 30 * 60 * 1000 &&
+    decision.verificationGate.official.claimOutcomes.every((claim) => claim.status === 'verified');
+  if (!officialSatisfied) {
+    const article = await readJson<CanonicalNewsRecord>(
+      safeDataPath(root, '03-canonical-news', 'approved', `${decision.canonicalId}.json`),
+    );
+    const raw = new Map<string, RawArticleRecord>();
+    for (const path of await listJsonFiles(safeDataPath(root, '01-raw'))) {
+      const record = await readJson<RawArticleRecord>(path);
+      raw.set(record.id, record);
+    }
+    const corroboration = trustedEditorialEvidence(
+      decision,
+      article,
+      decision.evidenceRecordIds.flatMap((id) => raw.has(id) ? [raw.get(id)!] : []),
+    );
+    if (!corroboration.satisfied || !corroboration.independentlyCorroborated) {
+      throw new Error('Urgent delivery requires current official evidence or two independent trusted specialist publications');
+    }
   }
   assertSocialVerificationSatisfied(bank.verificationGate, bank.revision);
 }
@@ -196,10 +215,9 @@ export function publicationModeForOpportunity(
     }
     if (decisionFingerprint(decision) !== authorization.decisionHash ||
         officialVerificationFingerprint(decision) !== authorization.officialVerificationHash) return undefined;
-    if (!decision.verificationGate) return undefined;
-    if (authorization.approvalMode === 'auto_urgent' && decision.verificationGate.official.status !== 'verified') {
-      return undefined;
-    }
+    if (decision.verificationGate?.official.status === 'conflicting') return undefined;
+    if (!decision.verificationGate && authorization.approvalMode !== 'human_review' &&
+        authorization.officialVerificationHash !== 'none') return undefined;
     return authorization.distributionMode;
   }
   if (decision.analysisBatchId) {

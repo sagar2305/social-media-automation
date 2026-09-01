@@ -19,11 +19,15 @@ configured, the notification has no edit/delete buttons and Slack mutations
 remain denied. Pass canonical IDs after `publish` to limit a controlled run to
 specific stories; without IDs it processes the accepted News analysis queue.
 
-In normal operation, app News is a projection of the shared hourly discovery,
-ranking, and official-verification ledger. It publishes every eligible verified
-story with no daily count target and shares published items to Slack. Withheld
-items that reached the News verification slate are summarized in one idempotent
-hourly digest. They remain local for inspection and do not stop other channels.
+In normal operation, app News is a projection of the shared hourly discovery and
+ranking ledger. It publishes every eligible attributed story from a configured
+tier B/C specialist publication with no daily count target and shares published
+items to Slack. Feed freshness uses the durable first-seen time; any publisher
+date remains separate provenance and never vetoes a current story.
+Community/creator/unknown sources, known conflicts, expiry,
+and exceptional unsupported claims remain blocked or withheld. News never waits
+for the 06:00 daily production slate. Actual exceptional failures are summarized
+in one idempotent hourly digest and do not stop other channels.
 
 The `creddy:news` CLI remains available only for isolated repair, backfill, and
 schema validation. It keeps its separate root and must not have its own recurring
@@ -55,10 +59,11 @@ The dashboard staff-auth project remains separate; do not replace its credential
 - `creddy_news_feed_revision`: public invalidation counter for Realtime.
 - `creddy_news_snapshot()`: consistent published snapshot for both mobile apps.
 
-Only accepted ranking-v3, verification-ready, conflict-free stories with high
-confidence and confirmation evidence for every claim can publish. Source dates
-must be within 72 hours and deadlines cannot already be expired. The publisher
-uses the standalone News decision headline and summary, never scraped prose.
+Only accepted ranking-v3, conflict-free stories with sufficiently confident evidence
+from configured specialist publications can publish automatically. The durable
+first-seen time must be within 72 hours and deadlines cannot already be expired.
+Official checks are exceptional, not routine. The publisher uses the standalone
+News decision headline and summary, never scraped prose.
 Headlines are 10-160 characters; summaries are 80-480. Invalid content is recorded
 as `not_published` with a reason, not sent to a human approval queue.
 

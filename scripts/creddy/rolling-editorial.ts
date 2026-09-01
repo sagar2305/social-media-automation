@@ -3,6 +3,7 @@ import { mkdir, open } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { calculateEditorialPriorityScore, validateAnalysisDecision } from './analysis-stage.js';
+import { evaluateTrustedNewsPolicy, trustedEditorialEvidence } from './news-policy.js';
 import {
   createRunId,
   listJsonFiles,
@@ -18,6 +19,7 @@ import type {
   CreddyDistributionMode,
   CreddyOfficialVerificationRecord,
   CreddyProductionAuthorization,
+  RawArticleRecord,
 } from './pipeline-types.js';
 
 export type EditorialFreshnessClass = 'breaking' | 'time_sensitive' | 'timely' | 'evergreen';
@@ -192,9 +194,26 @@ async function articlesByCanonical(root: string): Promise<Map<string, CanonicalN
   return new Map(articles.map((article) => [article.canonicalId, article]));
 }
 
+async function evidenceById(root: string): Promise<Map<string, RawArticleRecord>> {
+  const evidence = await Promise.all(
+    (await listJsonFiles(safeDataPath(root, '01-raw')))
+      .map((path) => readJson<RawArticleRecord>(path)),
+  );
+  return new Map(evidence.map((record) => [record.id, record]));
+}
+
+function evidenceForDecision(
+  decision: AnalysisDecisionRecord,
+  evidence: Map<string, RawArticleRecord>,
+): RawArticleRecord[] {
+  return decision.evidenceRecordIds.flatMap((id) => evidence.has(id) ? [evidence.get(id)!] : []);
+}
+
 export async function reconcileRollingEditorialLedger(root: string, now = new Date()): Promise<RollingEditorialRecord[]> {
   return withStageLock(root, 'rolling_editorial', async () => {
-    const [decisions, articles] = await Promise.all([decisionsByCanonical(root), articlesByCanonical(root)]);
+    const [decisions, articles, evidence] = await Promise.all([
+      decisionsByCanonical(root), articlesByCanonical(root), evidenceById(root),
+    ]);
     const records: RollingEditorialRecord[] = [];
     for (const [canonicalId, decision] of decisions) {
       const article = articles.get(canonicalId);
@@ -208,6 +227,10 @@ export async function reconcileRollingEditorialLedger(root: string, now = new Da
       const expired = hardExpiresAt <= now.getTime();
       const authorization = decision.productionAuthorization;
       const revisionChanged = previous !== undefined && previous.analysisInputHash !== decision.analysisInputHash;
+      const currentEvidenceTimes = evidenceForDecision(decision, evidence)
+        .map((item) => validDate(item.fetchedAt))
+        .filter((timestamp): timestamp is number => timestamp !== undefined);
+      const revisionFirstSeenAt = new Date(Math.max(validDate(article.fetchedAt) ?? 0, ...currentEvidenceTimes)).toISOString();
       const priorChannels = previous?.channels;
       const preserveTerminal = (state: EditorialLaneState | undefined): EditorialLaneState =>
         state === 'published' || state === 'rejected' ? state : 'active';
@@ -236,7 +259,7 @@ export async function reconcileRollingEditorialLedger(root: string, now = new Da
         analysisInputHash: decision.analysisInputHash,
         decisionHash: decisionFingerprint(decision),
         officialVerificationHash: officialVerificationFingerprint(decision),
-        firstSeenAt: previous?.firstSeenAt ?? article.fetchedAt,
+        firstSeenAt: revisionChanged ? revisionFirstSeenAt : previous?.firstSeenAt ?? revisionFirstSeenAt,
         lastSeenAt: article.fetchedAt,
         sourcePublishedAt: article.publishedAt,
         eventOccurredAt: new Date(eventAt).toISOString(),
@@ -330,8 +353,9 @@ export function passesUrgentPreGate(
   const claimedEventAt = typeof eventClaim?.value === 'string' ? validDate(eventClaim.value) : undefined;
   const eventAt = Date.parse(record.eventOccurredAt);
   const discoveredAt = Date.parse(record.firstSeenAt);
-  return decision.editorialDisposition === 'produce' && decision.route === 'auto_process' &&
-    decision.verificationState === 'ready' && decision.rejectionReasons.length === 0 &&
+  return decision.editorialDisposition === 'produce' && ['auto_process', 'reverify'].includes(decision.route) &&
+    ['ready', 'official_source_needed', 'independent_confirmation_needed'].includes(decision.verificationState ?? '') &&
+    decision.rejectionReasons.length === 0 &&
     explicitEventAt !== undefined && claimedEventAt === explicitEventAt && eventAt === explicitEventAt &&
     record.freshnessClass === 'breaking' && Number.isFinite(eventAt) && now.getTime() - eventAt <= 6 * 60 * 60 * 1000 &&
     now.getTime() - eventAt >= 0 && Number.isFinite(discoveredAt) && discoveredAt >= eventAt &&
@@ -340,7 +364,7 @@ export function passesUrgentPreGate(
     (decision.viralPotential?.score ?? 0) >= 85 && (decision.viralPotential?.urgency ?? 0) >= 90 &&
     decision.confidenceScore >= 85 && (decision.channelScores?.blogSeo ?? 0) >= 80 &&
     (decision.channelScores?.instagramTikTok ?? 0) >= 85 && (decision.viralPotential?.visualPotential ?? 0) >= 75 &&
-    article.canonicalId === decision.canonicalId && !decision.materialConflict;
+    article.canonicalId === decision.canonicalId && !decision.materialConflict && !decision.conflictChangesMessage;
 }
 
 export function passesUrgentVerifiedGate(
@@ -348,15 +372,17 @@ export function passesUrgentVerifiedGate(
   decision: AnalysisDecisionRecord,
   article: CanonicalNewsRecord,
   now = new Date(),
+  independentlyCorroborated = false,
 ): boolean {
   if (!passesUrgentPreGate(record, decision, article, now)) return false;
   const official = decision.verificationGate?.official;
   const checkedAt = validDate(official?.checkedAt);
   const eventOutcome = official?.claimOutcomes.find((claim) => claim.field === 'event_occurred_at');
-  return official?.status === 'verified' && checkedAt !== undefined && now.getTime() - checkedAt <= 30 * 60 * 1000 &&
+  const officialSatisfied = official?.status === 'verified' && checkedAt !== undefined && now.getTime() - checkedAt <= 30 * 60 * 1000 &&
     eventOutcome?.status === 'verified' && eventOutcome.officialUrls.length > 0 &&
     official.claimOutcomes.length === decision.claims.length && official.claimOutcomes.every((claim) => claim.status === 'verified') &&
     official.remainingRequirements.length === 0 && official.failureReasons.length === 0;
+  return officialSatisfied || independentlyCorroborated;
 }
 
 async function urgentAuthorizations(root: string): Promise<CreddyProductionAuthorization[]> {
@@ -429,8 +455,8 @@ export async function authorizeRollingProduction(root: string, now = new Date(),
   return withStageLock(root, 'production_authorization', async () => {
     await reconcileAuthorizationWrites(root);
     const records = await reconcileRollingEditorialLedger(root, now);
-    const [decisions, articles, existing] = await Promise.all([
-      decisionsByCanonical(root), articlesByCanonical(root), urgentAuthorizations(root),
+    const [decisions, articles, evidence, existing] = await Promise.all([
+      decisionsByCanonical(root), articlesByCanonical(root), evidenceById(root), urgentAuthorizations(root),
     ]);
     const daily = selectedDaily === undefined ? await selectDailyEditorialSlate(root, now) : selectedDaily ?? undefined;
     const recordById = new Map(records.map((record) => [record.canonicalId, record]));
@@ -446,7 +472,12 @@ export async function authorizeRollingProduction(root: string, now = new Date(),
       if (blogBudget <= 0) break;
       const decision = decisions.get(record.canonicalId);
       const article = articles.get(record.canonicalId);
-      if (!decision || !article || decision.productionAuthorization || !passesUrgentVerifiedGate(record, decision, article, now)) continue;
+      const evidencePolicy = decision && article
+        ? trustedEditorialEvidence(decision, article, evidenceForDecision(decision, evidence))
+        : undefined;
+      const corroboration = Boolean(evidencePolicy?.satisfied && evidencePolicy.independentlyCorroborated);
+      if (!decision || !article || decision.productionAuthorization ||
+          !passesUrgentVerifiedGate(record, decision, article, now, corroboration)) continue;
       const eventAt = Date.parse(record.eventOccurredAt);
       const prospectiveId = `authorization-urgent-${decision.canonicalId}-${decision.analysisInputHash!.slice(0, 12)}`;
       const eventFingerprint = urgentEventFingerprint(decision, record);
@@ -468,7 +499,14 @@ export async function authorizeRollingProduction(root: string, now = new Date(),
       const decision = decisions.get(canonicalId);
       const record = recordById.get(canonicalId);
       if (!decision || !record || authorizedThisRun.has(canonicalId) || decision.productionAuthorization ||
-          !decision.verificationGate || decision.verificationGate.official.status === 'conflicting') continue;
+          decision.verificationGate?.official.status === 'conflicting') continue;
+      const article = articles.get(canonicalId);
+      const trusted = article && trustedEditorialEvidence(
+        decision,
+        article,
+        evidenceForDecision(decision, evidence),
+      ).satisfied;
+      if (!decision.verificationGate && !trusted) continue;
       dailyAuthorizations.push(await writeAuthorization(root, decision, record, {
         lane: 'daily', distributionMode: 'article_and_social', approvalMode: 'human_review', selectionRunId: daily!.selectionRunId,
         reason: 'Selected from the rolling diversified daily editorial slate.',
@@ -485,7 +523,9 @@ export async function verificationCandidateIds(
   selectedDaily?: DailyEditorialSelection | null,
 ): Promise<string[]> {
   const records = await reconcileRollingEditorialLedger(root, now);
-  const [decisions, articles] = await Promise.all([decisionsByCanonical(root), articlesByCanonical(root)]);
+  const [decisions, articles, evidence] = await Promise.all([
+    decisionsByCanonical(root), articlesByCanonical(root), evidenceById(root),
+  ]);
   const officialAttempts = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '04-official-verification', 'completed')))
       .map((path) => readJson<CreddyOfficialVerificationRecord>(path)),
@@ -504,12 +544,20 @@ export async function verificationCandidateIds(
     if (!decision || !article || record.effectiveFreshness <= 0 || decision.materialConflict) return [];
     const official = decision.verificationGate?.official;
     const checkedAt = validDate(official?.checkedAt);
+    const attachedEvidence = evidenceForDecision(decision, evidence);
+    const corroboration = trustedEditorialEvidence(decision, article, attachedEvidence);
     const urgent = passesUrgentPreGate(record, decision, article, now);
-    const news = validDate(article.publishedAt) !== undefined && now.getTime() - validDate(article.publishedAt)! <= 72 * 60 * 60 * 1000 &&
-      decision.verificationState === 'ready' && ['auto_process', 'evergreen_queue'].includes(decision.route);
+    const urgentNeedsVerification = urgent && !passesUrgentVerifiedGate(
+      record, decision, article, now, corroboration.satisfied && corroboration.independentlyCorroborated,
+    );
+    const newsPolicy = evaluateTrustedNewsPolicy({
+      decision, article, evidence: attachedEvidence, firstSeenAt: record.firstSeenAt, now: now.getTime(),
+    });
+    const newsNeedsVerification = newsPolicy.requiresVerification;
     const selectedDaily = dailyIds.has(record.canonicalId);
-    if (!urgent && !news && !selectedDaily) return [];
-    const maxAge = urgent ? 30 * 60 * 1000 : record.freshnessClass === 'evergreen' ? 30 * DAY_MS : DAY_MS;
+    const dailyNeedsVerification = selectedDaily && !corroboration.satisfied;
+    if (!urgentNeedsVerification && !newsNeedsVerification && !dailyNeedsVerification) return [];
+    const maxAge = urgentNeedsVerification ? 30 * 60 * 1000 : record.freshnessClass === 'evergreen' ? 30 * DAY_MS : DAY_MS;
     if (official?.status === 'verified' && checkedAt !== undefined && now.getTime() - checkedAt <= maxAge) return [];
     if (official?.status === 'conflicting') return [];
     if (checkedAt !== undefined && official?.status === 'inconclusive' && now.getTime() - checkedAt < DAY_MS) return [];
@@ -519,7 +567,7 @@ export async function verificationCandidateIds(
       const retryAfter = unavailableAttempts <= 1 ? 6 * 60 * 60 * 1000 : DAY_MS;
       if (now.getTime() - checkedAt < retryAfter) return [];
     }
-    return [{ id: record.canonicalId, priority: urgent ? 3 : news ? 2 : 1, score: record.effectivePriority }];
+    return [{ id: record.canonicalId, priority: urgentNeedsVerification ? 3 : newsNeedsVerification ? 2 : 1, score: record.effectivePriority }];
   });
   return candidates.sort((left, right) => right.priority - left.priority || right.score - left.score)
     .slice(0, limit).map((item) => item.id);
@@ -528,14 +576,21 @@ export async function verificationCandidateIds(
 /** Explicit News projection list. The News publisher must never scan the whole
  * completed analysis directory in shared-workflow mode. */
 export async function newsProjectionCandidateIds(root: string, now = new Date()): Promise<string[]> {
-  const [decisions, articles] = await Promise.all([decisionsByCanonical(root), articlesByCanonical(root)]);
+  const [decisions, articles, evidence, records] = await Promise.all([
+    decisionsByCanonical(root), articlesByCanonical(root), evidenceById(root), reconcileRollingEditorialLedger(root, now),
+  ]);
+  const recordByCanonical = new Map(records.map((record) => [record.canonicalId, record]));
   return [...decisions.values()].flatMap((decision) => {
     const article = articles.get(decision.canonicalId);
-    const publishedAt = validDate(article?.publishedAt);
-    if (!article || publishedAt === undefined || now.getTime() - publishedAt > 72 * 60 * 60 * 1000 || now.getTime() < publishedAt) return [];
-    if (decision.rubricVersion !== 'creddy-ranking-v3' || decision.verificationState !== 'ready' ||
-        !['auto_process', 'evergreen_queue'].includes(decision.route) || !decision.verificationGate) return [];
-    return [decision.canonicalId];
+    if (!article) return [];
+    const policy = evaluateTrustedNewsPolicy({
+      decision,
+      article,
+      evidence: evidenceForDecision(decision, evidence),
+      firstSeenAt: recordByCanonical.get(decision.canonicalId)?.firstSeenAt,
+      now: now.getTime(),
+    });
+    return policy.eligible ? [decision.canonicalId] : [];
   });
 }
 

@@ -12,18 +12,18 @@ later tick.
 ## Editorial cadence
 
 - Every hour: collect, clean, deduplicate, rank only new or materially changed
-  inputs, recompute freshness, verify eligible News/urgent/daily candidates, and
-  publish every verified eligible app News item.
+  inputs, recompute freshness, publish attributed News from configured specialist
+  publications, and verify only exceptional News/urgent/daily candidates.
 - First successful run after **06:00 America/New_York**: persist one diversified
   daily slate of up to five qualifying stories after the ranking queue is clean.
   Zero is valid. A 09:00 ET fallback records remaining blockers so one poisoned
   task cannot freeze the day. The selection is then stable.
-- Breaking lane: a fully official-verified item may receive an audited
-  `auto_urgent` authorization. Safety budgets are two urgent blogs per New York
-  day and one urgent Instagram+TikTok package per rolling six hours.
-- Normal daily social remains in Slack human review. A blog may proceed after an
-  unavailable/inconclusive official check; social stays locked for the audited
-  **Facts verified and approve** action. A known official conflict blocks both.
+- Breaking lane: fresh official evidence or agreement between two independent
+  configured specialist publications may receive an audited `auto_urgent`
+  authorization. Safety budgets are two urgent blogs per New York day and one
+  urgent Instagram+TikTok package per rolling six hours.
+- Normal daily social remains in Slack human review. Trusted-source blogs do not
+  require routine official re-verification. A known conflict blocks both.
 
 Freshness horizons are deterministic: breaking content hard-expires after 72
 hours (and qualifies for urgent treatment only within six hours), time-sensitive
@@ -46,9 +46,11 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
 3. **Agent 03 — Ranking:** independent ranking-v3 scores, channel potential,
    event time, freshness class, material-event classification, and claim-level
    evidence. A ranking is a candidate, never permission to create assets.
-4. **Official verification gate:** checks up to five highest-priority candidates
-   per hourly pass, ordered urgent, app News, then daily. Failure is retained and
-   reported; it never aborts the remaining queue.
+4. **Exceptional verification gate:** checks up to five highest-priority
+   exceptions per hourly pass, ordered urgent, app News, then daily. Configured
+   specialist publications do not enter this queue merely because an official
+   page was not checked. Failure is retained and reported; it never aborts the
+   remaining queue.
 5. **Agent 04 — Copy:** runs only for an explicit, hash-bound production
    authorization and produces the unified article/social package.
 6. **Agent 05 — Visual plan:** creates claim-traced article and six-slide plans
@@ -60,10 +62,11 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
    fail-closed feature flag is enabled and all frozen hashes still match.
 9. **Agent 08 — Reconciliation:** publishes/exports only valid approved or
    auto-urgent records and independently reconciles Instagram and TikTok.
-10. **App News projection:** uses the same discovery/ranking/official evidence,
-    publishes every verified eligible item (no daily cap), and posts published
-    items to Slack. Withheld verification-slate items appear in one idempotent
-    hourly Slack digest, not as a message flood.
+10. **App News projection:** publishes every eligible attributed item from a
+    configured specialist publication (no daily cap) and posts it to Slack.
+    The feed uses a provenance-labeled first-seen timestamp while retaining any
+    publisher date separately. News never waits for 06:00. Actual conflict/high-risk failures
+    appear in one idempotent hourly Slack digest, not as a message flood.
 
 ## Exact scheduled-task sequence
 
