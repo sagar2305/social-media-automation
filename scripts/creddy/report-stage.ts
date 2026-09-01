@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { CREDDY_DISCOVERY_PROFILE } from './config.js';
-import { selectEditorialPortfolio } from './analysis-stage.js';
+import { selectPersistedEditorialPortfolio } from './editorial-slate.js';
 import {
   listJsonFiles,
   pathExists,
@@ -407,7 +407,8 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     const newest = (batchId: string) => Math.max(...decisions.filter((item) => item.analysisBatchId === batchId).map((item) => Date.parse(item.analyzedAt)));
     return newest(right) - newest(left);
   })[0];
-  const portfolio = selectEditorialPortfolio(
+  const portfolio = await selectPersistedEditorialPortfolio(
+    root,
     latestBatchId ? decisions.filter((item) => item.analysisBatchId === latestBatchId) : decisions,
     5,
   );
@@ -441,7 +442,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Official verification: ${Object.entries(officialCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
     '',
     '> Viral potential and channel scores are editorial predictions, not measured views. Legacy rows show `n/a` until ranking v3 re-analysis.',
-    '> Agent 03 attempts official verification only for the persisted diversified top-five slate. Every completed result continues privately to Agents 04–07; known official conflicts remain visible in final review and block both blog and social release.',
+    '> Agent 03 attempts official verification only for the persisted selected five-story slate. A batch-scoped human editorial slate takes precedence over automatic diversification. Every completed result continues privately to Agents 04–07; known official conflicts remain visible in final review and block both blog and social release.',
     '> Slack review is allowed only for a high-importance material conflict that changes the message after verification is exhausted.',
     '',
     '| Rank | Headline | Priority | Viral | Product fit | Freshness | Confidence | Hook | Best channel | Verification | Route |',
@@ -453,7 +454,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     '',
     `## Recommended five-story slate (${portfolio.length})`,
     '',
-    '> This is the highest-upside diversified editorial slate. A completed official attempt unlocks private production; unresolved social content still requires an audited factual confirmation.',
+    '> This is the persisted editorial slate for the batch. A completed official attempt unlocks private production; unresolved social content still requires an audited factual confirmation.',
     '',
     '| Slate | Headline | Category | Priority | Viral | Hook | Official result | Social gate | Operational route |',
     '|---:|---|---|---:|---:|---|---|---|---|',

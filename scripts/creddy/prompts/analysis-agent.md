@@ -102,7 +102,8 @@ If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
 After accepting every ranking, run `npm run creddy:pipeline -- agent-3-verification-prepare`.
-This persists the diversified top-five slate and returns only its pending official-
+This persists the automatic diversified top-five slate, or the batch-scoped human
+editorial slate when one has been recorded, and returns only its pending official-
 verification tasks. For every task, search official first-party issuer, airline,
 hotel, loyalty-program, airport, or government pages. A second points publisher is
 not official evidence. Produce one `CreddyOfficialVerificationRecord` with stable ID

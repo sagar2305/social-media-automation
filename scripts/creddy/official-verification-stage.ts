@@ -1,6 +1,6 @@
 import { unlink } from 'node:fs/promises';
 
-import { selectEditorialPortfolio } from './analysis-stage.js';
+import { selectPersistedEditorialPortfolio } from './editorial-slate.js';
 import { assertRegisteredOfficialEvidence } from './official-source-registry.js';
 import {
   listJsonFiles,
@@ -129,7 +129,7 @@ export async function prepareOfficialVerificationTasks(
       .map((path) => readJson<CanonicalNewsRecord>(path)),
   );
   const articleById = new Map(canonicals.map((article) => [article.canonicalId, article]));
-  const selected = selectEditorialPortfolio(decisions, 5);
+  const selected = await selectPersistedEditorialPortfolio(root, decisions, 5);
   const tasks: OfficialVerificationTaskRecord[] = [];
   for (const [index, decision] of selected.entries()) {
     if (decision.verificationGate) continue;
