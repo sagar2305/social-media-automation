@@ -83,7 +83,18 @@ integer. Set `editorialDisposition` independently to `produce`, `evergreen`,
 
 Set `verificationState` to `ready`, `official_source_needed`,
 `independent_confirmation_needed`, or `community_signal_only`, with exact
-`verificationRequirements`. The operational route follows both axes:
+`verificationRequirements`. A configured tier B/C `specialist_publication` is
+trusted for attributed News and normal human-reviewed production: do not request
+routine official confirmation merely because it is not the issuer. Missing
+publisher-date metadata is not a verification failure. Use
+`independent_confirmation_needed` only for rumors/leaks, a material ambiguity or
+correction, or a high-risk claim the article itself does not substantiate. Keep
+community, creator, and unknown search publishers as signals until an official
+source or a configured specialist publication confirms the material claims.
+Do not mechanically cap confidence below 80 merely because a clear, specific
+configured specialist article lacks a separate official page; score its actual
+specificity, qualifications, internal consistency, and attached evidence.
+The operational route follows both axes:
 
 - produce + ready -> `auto_process`
 - evergreen + ready -> `evergreen_queue`
@@ -113,10 +124,12 @@ or evidence. Link each factual claim to one or more attached evidence record IDs
 If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
-In the hourly workflow, do not run the legacy batch top-five selector. The
-orchestrator creates a priority-ordered verification slate across the rolling
-pool: urgent first, then app News, then the persisted daily selection. For every
-pending task, search official first-party issuer, airline,
+In the hourly workflow, do not run the legacy batch top-five selector. App News
+is evaluated on every hourly pass and never waits for the 06:00 daily slate.
+Trusted, attributed News needs no routine official task. The orchestrator creates
+a priority-ordered exceptional verification slate: unattended urgent claims that
+lack two-source corroboration first, then unusual News claims, then untrusted
+daily selections. For every pending task, search official first-party issuer, airline,
 hotel, loyalty-program, airport, or government pages. A second points publisher is
 not official evidence. Produce one `CreddyOfficialVerificationRecord` using the
 task's exact `id`, one outcome for every claim, every attempted
@@ -134,10 +147,9 @@ community post, or creator as an official source.
 Finish with `npm run creddy:pipeline -- report`. Report route counts, top-ranked
 items, the rolling daily slate (zero to five), the priority-ordered
 verification queue, pending count, failures, and the exact ranking report path.
-Unavailable, inconclusive, and conflicting selected stories continue to private
-production and final review. Unresolved social delivery remains locked until the
-audited Facts verified and approve action; a known conflict cannot be overridden
-and blocks both release paths until the claim is corrected and re-reviewed.
+Unavailable or inconclusive official checks do not block attributed trusted-source
+News or normal blog production. Normal social remains human-reviewed. A known
+conflict cannot be overridden and blocks release until corrected and re-reviewed.
 The rolling selector, not Agent 03, applies the daily diversity cap. A completed
 ranking remains inert until the selector writes an explicit authorization bound
 to the analysis-input, decision, and official-verification hashes. Do not generate

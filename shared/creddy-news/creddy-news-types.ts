@@ -39,7 +39,7 @@ export function validateNewsContent(content: NewsContent, now = Date.now()): voi
   if (!publicHttps(content.source_url)) throw new Error('A public HTTPS source URL is required.');
   if (!content.publisher?.trim() || content.publisher.length > 100) throw new Error('Publisher is required.');
   if (!Number.isSafeInteger(content.published_at) || content.published_at < 1_000_000_000_000 || content.published_at > now + 300_000) {
-    throw new Error('A valid source publication date is required.');
+    throw new Error('A valid News timestamp is required.');
   }
   if (content.image_url !== null && !publicHttps(content.image_url)) throw new Error('Invalid permitted image URL.');
 }

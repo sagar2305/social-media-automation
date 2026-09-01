@@ -7,6 +7,14 @@ is enabled. Never invoke
 social approval, Blotato, or Video Factory. The News Agent has its own data root
 and may share only the configured Supabase project and Slack destination.
 
+The shared hourly projection trusts configured tier B/C specialist publications
+for attributed News without routine official re-verification. News freshness and
+feed time use the durable first-seen time with `dateBasis=first_seen`; publisher
+dates remain separate provenance and never veto a current story. Community,
+creator, and unknown search sources
+remain signals. Conflicts, expiry, and exceptional unsupported claims remain
+withheld. Shared News runs hourly and never waits for the 06:00 daily slate.
+
 ## Cycle
 
 1. Run `npm run creddy:news -- cycle-prep`. This collects the configured finance
