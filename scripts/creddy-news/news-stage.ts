@@ -13,6 +13,23 @@ export function newsSourceKey(value: string): string {
   url.searchParams.sort(); url.pathname = url.pathname.replace(/\/$/, '') || '/';
   return url.toString();
 }
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Defense in depth for source titles copied into Agent 03 output. Publisher
+ * attribution is rendered separately, so remove only an exact trailing suffix. */
+export function newsHeadlineWithoutPublisherSuffix(headline: string, publisher: string): string {
+  const trimmed = headline.trim();
+  const source = publisher.trim();
+  if (!source) return trimmed;
+  return trimmed.replace(
+    new RegExp(`\\s+(?:-|–|—|\\|)\\s*${escapeRegularExpression(source)}\\s*$`, 'iu'),
+    '',
+  ).trim();
+}
+
 export type ApprovedNewsImage = { url: string; rights: 'licensed' | 'owned' | 'publisher_permission'; attribution: string };
 export function prepareAppNews(
   decision: AnalysisDecisionRecord,
@@ -24,7 +41,7 @@ export function prepareAppNews(
 ) {
   const categories: Record<string, NewsCategory> = { card_offer: 'Credit cards', loyalty_news: 'Loyalty', redemption: 'Points & miles', travel_development: 'Travel rewards', evergreen_education: 'Credit cards' };
   const policy = evaluateTrustedNewsPolicy({ decision, article, evidence, firstSeenAt, now });
-  const content: NewsContent = { headline: decision.headline,
+  const content: NewsContent = { headline: newsHeadlineWithoutPublisherSuffix(decision.headline, article.sourceName),
     summary: decision.summary,
     category: categories[decision.portfolioCategory ?? ''] ?? 'Credit cards',
     publisher: article.sourceName, source_url: article.canonicalUrl,

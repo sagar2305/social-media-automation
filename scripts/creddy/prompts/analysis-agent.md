@@ -38,6 +38,17 @@ Create ranking-v3 decisions with `rubricVersion: "creddy-ranking-v3"`. Keep
 editorial potential independent from verification readiness: an exciting story
 may rank highly while its operational `route` remains `reverify`.
 
+Write `headline` and `summary` as Creddy-native public News copy, not as copied
+publisher metadata or internal analysis notes. The headline should be concise,
+active, benefit- or consequence-led, and compelling enough to earn an informed
+click while remaining fully supported by the attached evidence. Never append or
+name the publisher, website, creator, or source in the headline; attribution is
+rendered separately. Avoid clickbait, invented urgency, hidden qualifications,
+or certainty stronger than the evidence. Write the summary as one or two
+reader-facing sentences that lead with the material impact, tradeoff, or action.
+Do not expose workflow language such as “attached evidence,” “potentially useful
+story,” “source record,” “verification,” or instructions to “confirm” facts.
+
 Also classify the rolling time horizon with `freshnessClass`: `breaking`,
 `time_sensitive`, `timely`, or `evergreen`. Set `eventOccurredAt` to the earliest
 trustworthy timestamp for the material event, not the scrape time. For a breaking

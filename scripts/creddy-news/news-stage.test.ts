@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { calculateEditorialPriorityScore, calculateViralPotentialScore } from '../creddy/analysis-stage.js';
-import { prepareAppNews, newsSourceKey, runAppNewsStage } from './news-stage.js';
+import { newsHeadlineWithoutPublisherSuffix, prepareAppNews, newsSourceKey, runAppNewsStage } from './news-stage.js';
 import { CREDDY_PIPELINE_VERSION, type AnalysisDecisionRecord, type CanonicalNewsRecord } from '../creddy/pipeline-types.js';
 import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
 import { NewsService } from '../../shared/creddy-news/creddy-news-service.js';
@@ -58,6 +58,26 @@ test('ready evidence becomes short app news, without generating an image', () =>
   const prepared = prepareAppNews(decision, article, [article], now);
   assert.equal(prepared.error, null); assert.equal(prepared.content.image_url, null);
   assert.equal(prepared.content.source_url, article.canonicalUrl);
+});
+test('News removes only an exact trailing publisher suffix because attribution is separate', () => {
+  for (const separator of ['-', '–', '—', '|']) {
+    assert.equal(
+      newsHeadlineWithoutPublisherSuffix(`Frontier makes elite status easier  ${separator}  the points guy`, 'The Points Guy'),
+      'Frontier makes elite status easier',
+    );
+  }
+  assert.equal(
+    newsHeadlineWithoutPublisherSuffix('Miles+More changes award pricing - Miles+More (Blog)', 'Miles+More (Blog)'),
+    'Miles+More changes award pricing',
+  );
+  assert.equal(
+    newsHeadlineWithoutPublisherSuffix('What The Points Guy report means for Frontier members', 'The Points Guy'),
+    'What The Points Guy report means for Frontier members',
+  );
+  assert.equal(
+    newsHeadlineWithoutPublisherSuffix('Frontier makes elite status easier', 'The Points Guy'),
+    'Frontier makes elite status easier',
+  );
 });
 test('community-only, absent, old and incomplete evidence never publishes', () => {
   const { article, decision, now } = fixtures();
