@@ -66,6 +66,33 @@ export function articleWordCount(article: CreddyArticleDraft): number {
   return words(article.blocks.flatMap(textForBlock).join(' '));
 }
 
+const SEO_TOPIC_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'before', 'for', 'from', 'guide', 'how', 'in', 'of', 'on',
+  'practical', 'the', 'this', 'to', 'use', 'what', 'with', 'work', 'works',
+]);
+
+function seoTopicTerms(value: string): Set<string> {
+  return new Set(value.toLowerCase().match(/[a-z0-9]+/g)?.filter((term) =>
+    term.length >= 4 && !SEO_TOPIC_STOP_WORDS.has(term),
+  ) ?? []);
+}
+
+function hasTopicOverlap(topic: Set<string>, value: string): boolean {
+  const words = seoTopicTerms(value);
+  return [...topic].some((term) => words.has(term));
+}
+
+function assertSpecificArticleSeo(article: CreddyArticleDraft): void {
+  const topic = seoTopicTerms(article.title);
+  if (!topic.size) throw new Error('Article title requires a specific searchable topic');
+  if (!hasTopicOverlap(topic, article.seoDescription)) {
+    throw new Error('SEO description must name the article-specific topic');
+  }
+  if (/^learn how to evaluate rewards and card benefits with a real-trip value test/i.test(article.seoDescription)) {
+    throw new Error('SEO description is an overused generic template');
+  }
+}
+
 function assertHttpUrl(value: string, label: string): void {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error(`${label} must use http or https`);
@@ -95,6 +122,7 @@ export function validateCreddyArticle(
   if (article.seoDescription.length < 100 || article.seoDescription.length > 170) {
     throw new Error('SEO description must contain 100–170 characters');
   }
+  assertSpecificArticleSeo(article);
   if (article.authorName !== 'Creddy Editorial') throw new Error('Article author must use Creddy Editorial');
   if (!Number.isInteger(article.readingMinutes) || article.readingMinutes < 3 || article.readingMinutes > 20) {
     throw new Error('Article reading time must be 3–20 minutes');

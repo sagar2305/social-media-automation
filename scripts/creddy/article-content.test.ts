@@ -147,3 +147,9 @@ test('rejects missing subscription and unsafe generated visual requests', () => 
   unsafe.assets[0]!.prompt = 'Create a realistic bank logo and credit card design with headline text inside the image for this article.';
   assert.throws(() => validateCreddyArticleVisuals(unsafe, article(), claims), /prohibited/);
 });
+
+test('rejects generic SEO metadata that omits the article topic', () => {
+  const generic = article();
+  generic.seoDescription = 'Learn how to evaluate rewards and card benefits with a real-trip value test, current-rule verification, practical comparisons, and a review checklist.';
+  assert.throws(() => validateCreddyArticle(generic, claims, [source]), /article-specific topic|generic template/);
+});
