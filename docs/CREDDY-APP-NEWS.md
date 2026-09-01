@@ -1,6 +1,6 @@
 # Creddy app News
 
-## Controlled publication verified, recurring cycle not activated
+## Standalone News Agent
 
 On 2026-08-31, one source-verified U.S. Bank/Avianca story was published through
 the News branch and delivered to `#social-media-update`. The public snapshot
@@ -9,23 +9,34 @@ The production News schema is deployed. The owner subsequently approved the
 three current human channel members as News editors. The local dashboard and
 Socket Mode worker have management enabled. A dashboard headline edit reached
 the public app snapshot and updated the same Slack receipt at revision 2.
-Recurring collection is still off. Actual Slack button interaction and delivery
-to running iOS/Android screens still require end-to-end verification.
+Recurring collection is still off. Actual Slack button interaction still
+requires the final end-to-end verification.
 
 Published notifications do not require editor permissions. With no editors
 configured, the notification has no edit/delete buttons and Slack mutations
-remain denied. Pass canonical IDs after `app-news-publish` to limit a controlled
-run to specific stories; without IDs it processes the accepted analysis queue.
+remain denied. Pass canonical IDs after `publish` to limit a controlled run to
+specific stories; without IDs it processes the accepted News analysis queue.
 
-App News is an independent output of the existing Creddy content cycle. Agent 7
-now calls the news branch using durable Agent 1-3 evidence. It does not recollect
-sources, generate article artwork, render social media, change website article
-publishing, or bypass slideshow approval. The standalone retry command is
-`npm run creddy:pipeline -- app-news-publish`.
+App News is a standalone agent with its own CLI, prompt, durable data root,
+collection cycle, ranking queue, official-verification queue and publisher. Run
+it with `npm run creddy:news -- <command>`. The existing `creddy:pipeline` and its
+Agent 1-8 blog, slideshow and social paths do not import or execute News. The
+News Agent reuses stable low-level collection and validation libraries, but it
+never reads or writes the existing content pipeline root.
 
-The branch is off unless `CREDDY_NEWS_ENABLED=true`. Do not enable it simply to
-inspect the dashboard. No production migration, Slack post, live extraction, or
-schedule activation is performed by the implementation tests.
+Use `npm run creddy:news -- cycle-prep` for collection through analysis-queue
+creation, follow `scripts/creddy-news/NEWS_AGENT.md`, then use
+`npm run creddy:news -- publish`. The standalone retry command is the same
+`publish` command with optional canonical IDs.
+
+The agent is off unless `CREDDY_NEWS_AGENT_ENABLED=true`; app publication is a
+second fail-closed switch requiring `CREDDY_NEWS_ENABLED=true`. Do not enable
+either simply to inspect the dashboard. No production migration, Slack post,
+live extraction, or schedule activation is performed by implementation tests.
+
+`CREDDY_NEWS_DATA_ROOT` is an absolute News-only directory. When omitted, the
+agent uses `<CREDDY_DATA_ROOT>/creddy-news`, while the existing workflow remains
+at `<CREDDY_DATA_ROOT>/creddy`. Startup rejects an identical root.
 
 ## Data and eligibility
 
@@ -41,9 +52,8 @@ The dashboard staff-auth project remains separate; do not replace its credential
 
 Only accepted ranking-v3, verification-ready, conflict-free stories with high
 confidence and confirmation evidence for every claim can publish. Source dates
-must be within 72 hours and deadlines cannot already be expired. The optional
-`newsBrief` on Agent 3 decisions contains original headline/summary/category.
-The fallback is the accepted decision headline and summary, never scraped prose.
+must be within 72 hours and deadlines cannot already be expired. The publisher
+uses the standalone News decision headline and summary, never scraped prose.
 Headlines are 10-160 characters; summaries are 80-480. Invalid content is recorded
 as `not_published` with a reason, not sent to a human approval queue.
 
@@ -69,6 +79,8 @@ Configure these on both the cycle/Socket Mode worker and dashboard server:
 
 ```dotenv
 CREDDY_NEWS_ENABLED=false
+CREDDY_NEWS_AGENT_ENABLED=false
+CREDDY_NEWS_DATA_ROOT=/absolute/path/to/creddy-news
 CREDDY_NEWS_SLACK_CHANNEL_ID=
 CREDDY_NEWS_SLACK_TEAM_ID=
 CREDDY_NEWS_SLACK_EDITOR_IDS=
@@ -138,4 +150,4 @@ These are not claims of production Slack or Realtime delivery verification.
 5. Rerun the cycle: no duplicate publication, no edit overwrite, no resurrection.
 6. Disconnect/reconnect each app. Verify fallback refresh and error behavior.
 7. Confirm existing website and slideshow workflows remain unchanged, then enable
-   News in the already-selected cycle. Do not activate a new independent scraper.
+   and schedule only the standalone News Agent after explicit approval.

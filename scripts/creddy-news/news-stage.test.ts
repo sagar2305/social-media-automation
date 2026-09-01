@@ -3,10 +3,10 @@ import test from 'node:test';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { calculateEditorialPriorityScore, calculateViralPotentialScore } from './analysis-stage.js';
+import { calculateEditorialPriorityScore, calculateViralPotentialScore } from '../creddy/analysis-stage.js';
 import { prepareAppNews, newsSourceKey, runAppNewsStage } from './news-stage.js';
-import { CREDDY_PIPELINE_VERSION, type AnalysisDecisionRecord, type CanonicalNewsRecord } from './pipeline-types.js';
-import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
+import { CREDDY_PIPELINE_VERSION, type AnalysisDecisionRecord, type CanonicalNewsRecord } from '../creddy/pipeline-types.js';
+import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
 import { NewsService } from '../../shared/creddy-news/creddy-news-service.js';
 import { authorizeNewsSlack, handleNewsSlack, newsMessage, newsSlackAcknowledgement, notifyNews, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
 import { publicHttps, validateNewsPatch, type NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
@@ -145,7 +145,7 @@ test('notification failures are durable, existing receipts update instead of rep
 test('disabled cycle performs no work', async () => {
   assert.equal((await runAppNewsStage('/not/a/data/root', { env: {} })).disabled, true);
 });
-test('shared-cycle branch consumes existing evidence only and records a report', async () => {
+test('standalone news branch consumes its own evidence root and records a report', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-news-stage-'));
   await initializeCreddyDataRoot(root);
   const { article, decision } = fixtures();

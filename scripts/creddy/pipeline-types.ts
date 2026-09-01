@@ -261,7 +261,6 @@ export interface CreddyClaim {
 }
 
 export interface AnalysisDecisionRecord {
-  newsBrief?: { headline: string; summary: string; category: 'Credit cards' | 'Banking' | 'Points & miles' | 'Loyalty' | 'Travel rewards' };
   version: typeof CREDDY_PIPELINE_VERSION;
   id: string;
   canonicalId: string;

@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { configuredNewsService, type NewsService } from '../../shared/creddy-news/creddy-news-service.js';
 import { validateNewsContent, publicHttps, type NewsContent, type NewsCategory } from '../../shared/creddy-news/creddy-news-types.js';
 import { notifyNews } from '../../shared/creddy-news/creddy-news-slack.js';
-import { listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
-import { validateAnalysisDecision } from './analysis-stage.js';
-import type { AnalysisDecisionRecord, CanonicalNewsRecord, RawArticleRecord } from './pipeline-types.js';
+import { listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
+import { validateAnalysisDecision } from '../creddy/analysis-stage.js';
+import type { AnalysisDecisionRecord, CanonicalNewsRecord, RawArticleRecord } from '../creddy/pipeline-types.js';
 
 export function newsSourceKey(value: string): string {
   const url = new URL(value); url.hash = '';
@@ -16,9 +16,9 @@ export type ApprovedNewsImage = { url: string; rights: 'licensed' | 'owned' | 'p
 export function prepareAppNews(decision: AnalysisDecisionRecord, article: CanonicalNewsRecord, evidence: RawArticleRecord[], now = Date.now(), approvedImage?: ApprovedNewsImage) {
   const categories: Record<string, NewsCategory> = { card_offer: 'Credit cards', loyalty_news: 'Loyalty', redemption: 'Points & miles', travel_development: 'Travel rewards', evergreen_education: 'Credit cards' };
   const sourceDate = article.publishedAt ?? article.providerMetadata?.['article:published_time'] ?? article.providerMetadata?.datePublished;
-  const content: NewsContent = { headline: decision.newsBrief?.headline ?? decision.headline,
-    summary: decision.newsBrief?.summary ?? decision.summary,
-    category: decision.newsBrief?.category ?? categories[decision.portfolioCategory ?? ''] ?? 'Credit cards',
+  const content: NewsContent = { headline: decision.headline,
+    summary: decision.summary,
+    category: categories[decision.portfolioCategory ?? ''] ?? 'Credit cards',
     publisher: article.sourceName, source_url: article.canonicalUrl,
     image_url: null, published_at: typeof sourceDate === 'string' ? Date.parse(sourceDate) : NaN };
   const errors: string[] = [];
@@ -47,7 +47,7 @@ export function prepareAppNews(decision: AnalysisDecisionRecord, article: Canoni
     claims: decision.claims, imageRights: content.image_url ? image : null } };
 }
 
-/** Reuses Agent 1-3 output. No Firecrawl, image-generation, or video calls. */
+/** Publishes only from the standalone News Agent data root. */
 export async function runAppNewsStage(root: string, options: { env?: NodeJS.ProcessEnv; service?: NewsService; notify?: typeof notifyNews; canonicalIds?: string[] } = {}) {
   const env = options.env ?? process.env;
   if (env.CREDDY_NEWS_ENABLED !== 'true') return { disabled: true, published: 0, notPublished: 0, deleted: 0, failures: [] };
