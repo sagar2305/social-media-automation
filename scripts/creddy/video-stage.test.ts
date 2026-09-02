@@ -137,8 +137,16 @@ test('two Video Factory formats become one pending Content Bank item', async () 
     now: new Date('2026-08-19T13:00:00Z'),
   });
   assert.equal(result.outputCount, 2);
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', 'content-video.json'), {
+    version: CREDDY_PIPELINE_VERSION, id: 'content-video', contentPackageId: 'content-video',
+    createdAt: '2026-08-19T12:50:00.000Z', status: 'changes_requested', revision: 1,
+    articlePreviewPath: '/legacy/article.html', articleReview: { status: 'pending_review', blockers: [] },
+  });
   assert.equal(await runContentBankHandoff(root), 1);
   assert.equal((await listJsonFiles(safeDataPath(root, '09-pending-approval'))).length, 1);
+  const socialOnly = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', 'content-video.json'));
+  assert.equal(socialOnly.articlePreviewPath, undefined);
+  assert.equal(socialOnly.articleReview, undefined);
 
   const approved = await approveContentBankItem(
     root,
@@ -175,7 +183,7 @@ test('two Video Factory formats become one pending Content Bank item', async () 
   );
 });
 
-test('article-only packages enter review and can be approved without videos', async () => {
+test('article handoff keeps one stable article record when authorization upgrades to social', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-article-bank-'));
   await initializeCreddyDataRoot(root);
   const previewPath = join(root, 'article-preview.html');
@@ -228,6 +236,23 @@ test('article-only packages enter review and can be approved without videos', as
   assert.equal(approved.mediaType, 'article');
   assert.equal(approved.articleReview?.status, 'approved');
   assert.equal(approved.articleReview?.seoReview?.status, 'pass');
+  assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+  approved.articleReview!.status = 'published';
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `${bankId}.json`), approved);
+
+  content.distributionMode = 'article_and_social';
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', `${content.id}.json`), content);
+  let publishedCalls = 0;
+  assert.equal(await runArticleContentBankHandoff(root, new Date('2026-08-19T15:00:00.000Z'), {
+    autoPublisher: async () => { publishedCalls += 1; return true; },
+    notifier: async () => ({ sent: false, fileIds: [] }),
+  }), 0);
+  const preserved = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `${bankId}.json`));
+  assert.equal(preserved.mediaType, 'article');
+  assert.equal(preserved.articleReview?.status, 'published');
+  assert.equal(preserved.articleReview?.seoReview?.status, 'pass');
+  assert.equal(publishedCalls, 0);
+  assert.equal((await listJsonFiles(safeDataPath(root, '09-pending-approval'))).length, 1);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
 });
 

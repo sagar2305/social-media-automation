@@ -15,9 +15,9 @@ import {
   safeDataPath,
   writeJsonAtomic,
 } from './pipeline-store.js';
-import { CREDDY_PIPELINE_VERSION, type RawArticleRecord } from './pipeline-types.js';
+import { CREDDY_PIPELINE_VERSION, type ContentBankRecord, type ContentPackageRecord, type RawArticleRecord } from './pipeline-types.js';
 import { qualifyCreddyText } from './qualification.js';
-import { writeObservablePipelineReports } from './report-stage.js';
+import { buildContentBankReviewReport, writeObservablePipelineReports } from './report-stage.js';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -37,6 +37,22 @@ test('search redirects use the publisher URL reported by the completed scrape', 
     }),
     'https://publisher.example/story',
   );
+});
+
+test('Agent 7 report shows a published article without requiring a video pair', () => {
+  const content = {
+    id: 'production-ranking-current', distributionMode: 'article_only', hook: 'Current blog story',
+    sourceUrls: ['https://example.com/source'], factualClaims: [],
+  } as unknown as ContentPackageRecord;
+  const articleBank = {
+    version: CREDDY_PIPELINE_VERSION, id: `article-${content.id}`, contentPackageId: content.id,
+    createdAt: '2026-09-02T12:00:00.000Z', status: 'pending_review', revision: 1,
+    mediaType: 'article', articleReview: { status: 'published', blockers: [], publishedUrl: 'https://getcreddy.com/blog/current-story' },
+  } as ContentBankRecord;
+  const report = buildContentBankReviewReport([content], [], [articleBank]).join('\n');
+  assert.match(report, /Article status: published=1/);
+  assert.match(report, /Social status: not_applicable=1/);
+  assert.doesNotMatch(report, /waiting_for_video_pair/);
 });
 
 test('collection stores new content once and respects the recheck window', async () => {

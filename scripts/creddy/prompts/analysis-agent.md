@@ -136,11 +136,13 @@ If a decision fails CLI validation, correct it once; otherwise leave it pending
 and report the specific blocker.
 
 In the hourly workflow, do not run the legacy batch top-five selector. App News
-is evaluated on every hourly pass and never waits for the 06:00 daily slate.
+and blog eligibility are evaluated on every hourly pass and never wait for the
+06:00 social slate. Every News-qualified item is also authorized as a blog, and
+additional high-quality current stories may be blog-only without a daily cap.
 Trusted, attributed News needs no routine official task. The orchestrator creates
 a priority-ordered exceptional verification slate: unattended urgent claims that
-lack two-source corroboration first, then unusual News claims, then untrusted
-daily selections. For every pending task, search official first-party issuer, airline,
+lack two-source corroboration first, then unusual News claims, hourly blog
+exceptions, then untrusted daily social selections. For every pending task, search official first-party issuer, airline,
 hotel, loyalty-program, airport, or government pages. A second points publisher is
 not official evidence. Produce one `CreddyOfficialVerificationRecord` using the
 task's exact `id`, one outcome for every claim, every attempted
@@ -156,12 +158,12 @@ the batch. Never treat a configured publisher,
 community post, or creator as an official source.
 
 Finish with `npm run creddy:pipeline -- report`. Report route counts, top-ranked
-items, the rolling daily slate (zero to five), the priority-ordered
+items, the rolling daily social slate (zero to five), hourly blog authorizations, the priority-ordered
 verification queue, pending count, failures, and the exact ranking report path.
 Unavailable or inconclusive official checks do not block attributed trusted-source
 News or normal blog production. Normal social remains human-reviewed. A known
 conflict cannot be overridden and blocks release until corrected and re-reviewed.
-The rolling selector, not Agent 03, applies the daily diversity cap. A completed
+The rolling selector, not Agent 03, applies the social-only daily diversity cap. A completed
 ranking remains inert until the selector writes an explicit authorization bound
 to the analysis-input, decision, and official-verification hashes. Do not generate
 scripts, captions, images, videos, approvals, schedules, or posts.

@@ -30,6 +30,72 @@ function cell(value: unknown): string {
   return String(value ?? '').replaceAll('|', '\\|').replace(/\s+/g, ' ').trim();
 }
 
+export function buildContentBankReviewReport(
+  productionContent: ContentPackageRecord[],
+  productionJobs: VideoJobRecord[],
+  allBankRecords: ContentBankRecord[],
+): string[] {
+  const newestBankById = new Map<string, ContentBankRecord>();
+  for (const record of allBankRecords) {
+    const previous = newestBankById.get(record.id);
+    if (!previous || record.createdAt >= previous.createdAt) newestBankById.set(record.id, record);
+  }
+  const reviewRows = productionContent.map((content) => ({
+    content,
+    articleBank: newestBankById.get(`article-${content.id}`),
+    socialBank: content.distributionMode === 'article_only'
+      ? undefined
+      : (content.visualPlanId ? newestBankById.get(`slideshow-${content.visualPlanId}`) : undefined) ?? newestBankById.get(content.id),
+    jobs: productionJobs.filter((job) => job.contentPackageId === content.id),
+  }));
+  const articleStatusCounts = reviewRows.reduce<Record<string, number>>((counts, row) => {
+    const status = row.articleBank?.articleReview?.status ?? (row.articleBank?.status || 'waiting_for_article_handoff');
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
+  const socialStatusCounts = reviewRows.reduce<Record<string, number>>((counts, row) => {
+    const status = row.content.distributionMode === 'article_only'
+      ? 'not_applicable'
+      : row.socialBank?.status ?? 'waiting_for_social_render';
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
+  return [
+    '# Agent 07 — Content Bank and delivery', '',
+    `Generated: ${new Date().toISOString()}`,
+    `Current production packages: ${reviewRows.length}`,
+    `Article status: ${Object.entries(articleStatusCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
+    `Social status: ${Object.entries(socialStatusCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
+    '',
+    '> Agent 07 hands off each ready article independently and may auto-publish it through the configured CMS gate.',
+    '> Normal social waits for its completed render and remains a human Slack/dashboard review action.',
+    '> Blog release may continue after unavailable or inconclusive verification. Social delivery requires official success or the audited Facts verified and approve action. A known official conflict blocks both.',
+    '> Dashboard: /creddy/content-bank',
+    '',
+    '| Content | Revision | Text + music | Narrated | Article status | Social review status | Instagram caption | TikTok caption | CTA | Claims | Sources |',
+    '|---|---:|---|---|---|---|---|---|---|---:|---:|',
+    ...reviewRows.map(({ content, articleBank, socialBank, jobs }) => {
+      const revision = socialBank?.revision ?? articleBank?.revision ?? Math.max(1, ...jobs.map((job) => job.revision));
+      const textStatus = content.distributionMode === 'article_only'
+        ? 'not_applicable'
+        : jobs.find((job) => job.revision === revision && job.format === 'text_music')?.status ?? 'missing';
+      const narratedStatus = content.distributionMode === 'article_only'
+        ? 'not_applicable'
+        : jobs.find((job) => job.revision === revision && job.format === 'narrated')?.status ?? 'missing';
+      const articleStatus = articleBank?.articleReview?.status ?? (articleBank?.status || 'waiting_for_article_handoff');
+      const socialStatus = content.distributionMode === 'article_only'
+        ? 'not_applicable'
+        : socialBank?.status ?? 'waiting_for_social_render';
+      const cta = content.cta
+        ? `${content.cta.label} → ${content.cta.deepLink}`
+        : content.distributionMode === 'article_only'
+          ? 'Article CTAs'
+          : 'missing';
+      return `| ${cell(content.hook)} | ${revision} | ${cell(textStatus)} | ${cell(narratedStatus)} | ${cell(articleStatus)} | ${cell(socialStatus)} | ${cell(content.platformCaptions?.instagram ?? content.caption ?? '')} | ${cell(content.platformCaptions?.tiktok ?? content.caption ?? '')} | ${cell(cta)} | ${content.factualClaims?.length ?? 0} | ${content.sourceUrls?.length ?? 0} |`;
+    }),
+  ];
+}
+
 async function writeMarkdown(path: string, markdown: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${markdown.trim()}\n`, 'utf8');
@@ -442,7 +508,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `Official verification: ${Object.entries(officialCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
     '',
     '> Viral potential and channel scores are editorial predictions, not measured views. Legacy rows show `n/a` until ranking v3 re-analysis.',
-    '> Agent 03 attempts official verification only for the persisted selected five-story slate. A batch-scoped human editorial slate takes precedence over automatic diversification. Every completed result continues privately to Agents 04–07; known official conflicts remain visible in final review and block both blog and social release.',
+    '> The hourly workflow verifies only bounded exceptions, while News and blogs remain uncapped. A batch-scoped human social slate takes precedence over automatic diversification. Only explicitly authorized results continue privately to Agents 04–07; known official conflicts block both blog and social release.',
     '> Slack review is allowed only for a high-importance material conflict that changes the message after verification is exhausted.',
     '',
     '| Rank | Headline | Priority | Viral | Product fit | Freshness | Confidence | Hook | Best channel | Verification | Route |',
@@ -452,7 +518,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
       return `| ${index + 1} | ${cell(item.headline)} | ${item.editorialPriorityScore ?? 'n/a'} | ${item.viralPotential?.score ?? item.popularityScore ?? 'n/a'} | ${item.productFitScore ?? 'n/a'} | ${item.freshnessScore ?? 'n/a'} | ${item.confidenceScore} | ${cell(item.hookType ?? 'legacy')} | ${cell(channels ? `${channels[0]} (${channels[1]})` : 'n/a')} | ${cell(item.verificationState ?? 'legacy')} | ${cell(item.route)} |`;
     }),
     '',
-    `## Recommended five-story slate (${portfolio.length})`,
+    `## Recommended social slate (${portfolio.length}, maximum five)`,
     '',
     '> This is the persisted editorial slate for the batch. A completed official attempt unlocks private production; unresolved social content still requires an audited factual confirmation.',
     '',
@@ -699,46 +765,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
         .map((path) => readJson<ContentBankRecord>(path)),
     )),
   )).flat();
-  const newestBankById = new Map<string, ContentBankRecord>();
-  for (const record of allBankRecords) {
-    const previous = newestBankById.get(record.id);
-    if (!previous || record.createdAt >= previous.createdAt) newestBankById.set(record.id, record);
-  }
-  const reviewRows = productionContent.map((content) => ({
-    content,
-    bank: newestBankById.get(content.id),
-    jobs: productionJobs.filter((job) => job.contentPackageId === content.id),
-  }));
-  const reviewStatusCounts = reviewRows.reduce<Record<string, number>>((counts, row) => {
-    const status = row.bank?.status ?? 'waiting_for_video_pair';
-    counts[status] = (counts[status] ?? 0) + 1;
-    return counts;
-  }, {});
-  const reviewLines = [
-    '# Agent 07 — Content Bank and human review', '',
-    `Generated: ${new Date().toISOString()}`,
-    `Current production packages: ${reviewRows.length}`,
-    `Status: ${Object.entries(reviewStatusCounts).map(([status, count]) => `${status}=${count}`).join(', ') || 'none'}`,
-    '',
-    '> Agent 07 creates a review item only when matching text + music and narrated videos are complete for the same revision.',
-    '> Approval, rejection, change requests, destination selection, and scheduling are human dashboard actions. Agent 07 never performs them automatically.',
-    '> Blog release may continue after unavailable or inconclusive verification. Social delivery requires official success or the audited Facts verified and approve action. A known official conflict blocks both.',
-    '> Dashboard: /creddy/content-bank',
-    '',
-    '| Content | Revision | Text + music | Narrated | Review status | Instagram caption | TikTok caption | CTA | Claims | Sources |',
-    '|---|---:|---|---|---|---|---|---|---:|---:|',
-    ...reviewRows.map(({ content, bank, jobs }) => {
-      const revision = bank?.revision ?? Math.max(1, ...jobs.map((job) => job.revision));
-      const textStatus = jobs.find((job) => job.revision === revision && job.format === 'text_music')?.status ?? 'missing';
-      const narratedStatus = jobs.find((job) => job.revision === revision && job.format === 'narrated')?.status ?? 'missing';
-      const cta = content.cta
-        ? `${content.cta.label} → ${content.cta.deepLink}`
-        : content.distributionMode === 'article_only'
-          ? 'Article CTAs'
-          : 'missing';
-      return `| ${cell(content.hook)} | ${revision} | ${cell(textStatus)} | ${cell(narratedStatus)} | ${cell(bank?.status ?? 'waiting_for_video_pair')} | ${cell(content.platformCaptions?.instagram ?? content.caption ?? '')} | ${cell(content.platformCaptions?.tiktok ?? content.caption ?? '')} | ${cell(cta)} | ${content.factualClaims?.length ?? 0} | ${content.sourceUrls?.length ?? 0} |`;
-    }),
-  ];
+  const reviewLines = buildContentBankReviewReport(productionContent, productionJobs, allBankRecords);
   const reviewPath = safeDataPath(outputRoot, '07-content-bank-review.md');
   await writeMarkdown(reviewPath, reviewLines.join('\n'));
   written.push(reviewPath);
@@ -800,7 +827,7 @@ export async function writeObservablePipelineReports(root: string): Promise<stri
     `| 04 | Scripts, narration, captions, CTA, claims, and briefs | 04-content-writing.md; 06-content-drafts | ${drafts.length} drafts |`,
     `| 05 | Visual theme, scenes, and Creddy expressions | 05-visual-planning.md; 06-visual-plans | ${visualPlans.length} plans |`,
     `| 06 | Text+music and narrated Video Factory renders | 06-video-production.md; 07-video-jobs; 08-rendered-videos | ${productionJobs.filter((job) => job.status === 'done').length}/${productionJobs.length} jobs done |`,
-    `| 07 | Complete-pair handoff to human review | 07-content-bank-review.md; 09-pending-approval | ${reviewStatusCounts.pending_review ?? 0} current-production items pending review |`,
+    `| 07 | Independent article delivery and social review | 07-content-bank-review.md; 09-pending-approval | ${allBankRecords.filter((record) => record.status === 'pending_review').length} items pending review |`,
     `| 08 | Human-approved Blotato scheduling and reconciliation | 08-publishing.md; 11-scheduled; 12-published | ${destinationCounts.published ?? 0} published; ${destinationCounts.pending ?? 0} pending |`,
     '',
     '## Audit sequence',

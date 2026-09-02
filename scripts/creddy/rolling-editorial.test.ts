@@ -133,7 +133,7 @@ test('completed rankings cannot reach Agent 04 without explicit rolling authoriz
   assert.deepEqual(await listPublicationDecisions(root), []);
 });
 
-test('daily rolling selection is durable, diversified, and capped at five', async () => {
+test('daily social selection is durable and capped while hourly blogs are uncapped', async () => {
   const root = await rootWith(7);
   const first = await selectDailyEditorialSlate(root, NOW);
   const second = await selectDailyEditorialSlate(root, new Date(NOW.getTime() + 60 * 60 * 1000));
@@ -142,7 +142,112 @@ test('daily rolling selection is durable, diversified, and capped at five', asyn
   assert.equal((await listJsonFiles(safeDataPath(root, '05-editorial-ledger', 'daily-selections'))).length, 1);
   const authorized = await authorizeRollingProduction(root, NOW);
   assert.equal(authorized.daily.length, 5);
-  assert.equal((await listPublicationDecisions(root)).length, 5);
+  assert.equal(authorized.hourlyBlogs.length, 2);
+  assert.equal((await listPublicationDecisions(root)).length, 7);
+});
+
+test('before 06:00 every eligible News item becomes a blog without a daily cap', async () => {
+  const root = await rootWith(7);
+  const early = new Date('2026-09-02T09:00:00.000Z'); // 05:00 America/New_York
+  assert.equal(await selectDailyEditorialSlate(root, early), undefined);
+  const authorized = await authorizeRollingProduction(root, early);
+  assert.equal(authorized.daily.length, 0);
+  assert.equal(authorized.hourlyBlogs.length, 7);
+  assert.ok(authorized.hourlyBlogs.every((item) => item.distributionMode === 'article_only'));
+});
+
+test('News eligibility implies a blog even when the ordinary blog score is low', async () => {
+  const root = await rootWith(1);
+  const path = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const ranked = await readJson<AnalysisDecisionRecord>(path);
+  ranked.channelScores!.blogSeo = 10;
+  await writeJsonAtomic(path, ranked);
+  const authorized = await authorizeRollingProduction(root, NOW, null);
+  assert.equal(authorized.hourlyBlogs.length, 1);
+  assert.match(authorized.hourlyBlogs[0]!.reason, /News item/);
+});
+
+test('a current official-only story can become an additional blog without entering News', async () => {
+  const root = await rootWith(1);
+  const unknown = article(0);
+  unknown.sourceId = 'official-program';
+  unknown.sourceName = 'Official Program';
+  unknown.originalUrl = 'https://official.example/story';
+  unknown.canonicalUrl = unknown.originalUrl;
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json'), unknown);
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'raw-0.json'), unknown);
+  assert.deepEqual(await newsProjectionCandidateIds(root, NOW), []);
+  const authorized = await authorizeRollingProduction(root, NOW, null);
+  assert.equal(authorized.hourlyBlogs.length, 1);
+  assert.match(authorized.hourlyBlogs[0]!.reason, /uncapped hourly blog/);
+});
+
+test('routine blog backfill excludes first-seen items older than 72 hours', async () => {
+  const root = await rootWith(1);
+  const oldTime = new Date(NOW.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString();
+  for (const path of [
+    safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json'),
+    safeDataPath(root, '01-raw', 'raw-0.json'),
+  ]) {
+    const old = await readJson<CanonicalNewsRecord>(path);
+    old.fetchedAt = oldTime;
+    old.publishedAt = oldTime;
+    old.sourceId = 'official-program';
+    old.sourceName = 'Official Program';
+    old.originalUrl = 'https://official.example/old-story';
+    old.canonicalUrl = old.originalUrl;
+    await writeJsonAtomic(path, old);
+  }
+  const authorized = await authorizeRollingProduction(root, NOW, null);
+  assert.equal(authorized.hourlyBlogs.length, 0);
+});
+
+test('hourly blog exceptions enter verification before the daily social boundary', async () => {
+  const root = await rootWith(1);
+  const early = new Date('2026-09-02T09:00:00.000Z'); // 05:00 America/New_York
+  const articlePath = safeDataPath(root, '03-canonical-news', 'approved', 'canonical-0.json');
+  const rawPath = safeDataPath(root, '01-raw', 'raw-0.json');
+  const unknown = await readJson<CanonicalNewsRecord>(articlePath);
+  unknown.sourceId = 'official-program';
+  unknown.sourceName = 'Official Program';
+  unknown.originalUrl = 'https://official.example/unverified-story';
+  unknown.canonicalUrl = unknown.originalUrl;
+  await writeJsonAtomic(articlePath, unknown);
+  await writeJsonAtomic(rawPath, unknown);
+  const decisionPath = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const unverified = await readJson<AnalysisDecisionRecord>(decisionPath);
+  delete unverified.verificationGate;
+  await writeJsonAtomic(decisionPath, unverified);
+  assert.deepEqual(await verificationCandidateIds(root, early), ['canonical-0']);
+});
+
+test('the 06:00 social selection upgrades five hourly articles without duplicating blog authorization', async () => {
+  const root = await rootWith(7);
+  const early = new Date('2026-09-02T09:00:00.000Z');
+  assert.equal((await authorizeRollingProduction(root, early)).hourlyBlogs.length, 7);
+  const afterBoundary = new Date('2026-09-02T10:00:00.000Z');
+  const upgraded = await authorizeRollingProduction(root, afterBoundary);
+  assert.equal(upgraded.daily.length, 5);
+  assert.equal(upgraded.hourlyBlogs.length, 0);
+  assert.ok(upgraded.daily.every((item) => item.distributionMode === 'article_and_social'));
+  const repeated = await authorizeRollingProduction(root, new Date(afterBoundary.getTime() + 60 * 60 * 1000));
+  assert.equal(repeated.daily.length, 0);
+  assert.equal(repeated.hourlyBlogs.length, 0);
+  assert.equal((await listPublicationDecisions(root)).length, 7);
+});
+
+test('message-changing conflicts cannot enter the daily social slate or authorization', async () => {
+  const root = await rootWith(1);
+  const path = safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json');
+  const conflicted = await readJson<AnalysisDecisionRecord>(path);
+  conflicted.conflictChangesMessage = true;
+  conflicted.verificationGate!.official.status = 'inconclusive';
+  await writeJsonAtomic(path, conflicted);
+  const selection = await selectDailyEditorialSlate(root, NOW);
+  assert.deepEqual(selection?.canonicalIds, []);
+  const authorized = await authorizeRollingProduction(root, NOW, selection);
+  assert.equal(authorized.daily.length, 0);
+  assert.equal(authorized.hourlyBlogs.length, 0);
 });
 
 test('a changed decision hash invalidates an existing production opportunity', async () => {

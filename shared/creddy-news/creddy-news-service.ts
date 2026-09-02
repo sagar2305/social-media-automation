@@ -25,6 +25,16 @@ export class NewsService {
     if (!rows[0]) throw new Error('News item not found.');
     return rows[0];
   }
+  async findByIdentity(id: string, sourceKey: string): Promise<NewsItem | undefined> {
+    const byId = await this.request<NewsItem[]>(
+      `creddy_news_items?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
+    );
+    if (byId[0]) return byId[0];
+    const bySource = await this.request<NewsItem[]>(
+      `creddy_news_items?source_key=eq.${encodeURIComponent(sourceKey)}&select=*&limit=1`,
+    );
+    return bySource[0];
+  }
   async ingest(input: { id: string; sourceKey: string; content: NewsContent; provenance: Record<string, unknown>; error: string | null }): Promise<NewsItem> {
     if (!input.error) validateNewsContent(input.content);
     return this.request('rpc/creddy_news_ingest', 'POST', { p_id: input.id, p_source_key: input.sourceKey,

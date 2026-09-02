@@ -19,8 +19,8 @@ export function isVerifiedSocialDecision(decision: AnalysisDecisionRecord): bool
     ['auto_process', 'evergreen_queue'].includes(decision.route);
   if (!ready) return false;
   // Legacy ranking-v3 records predate bounded official verification and retain
-  // their established behavior. Every newly batched decision must first be in
-  // the persisted top-five slate and complete the official-source attempt.
+  // their established behavior. Every newly batched social decision must first
+  // be in the persisted daily social slate and complete its verification gate.
   return !decision.analysisBatchId || decision.verificationGate?.official.status === 'verified';
 }
 

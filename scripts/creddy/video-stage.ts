@@ -247,19 +247,6 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
     const content = await readJson<ContentPackageRecord>(
       safeDataPath(root, '06-content-packages', `${contentPackageId}.json`),
     );
-    const articleBlockers = content.article && content.articleReadiness !== 'ready_for_review'
-      ? ['One or more Agent 05 article visuals do not have approved asset files yet.']
-      : [];
-    const seo = content.article ? await persistCreddyArticleSeoReview({
-      root,
-      contentBankId: contentPackageId,
-      revision: targetRevision,
-      checkedAt: now,
-      article: content.article,
-      visuals: content.articleVisuals,
-      verificationGate: content.verificationGate,
-    }) : undefined;
-    articleBlockers.push(...(seo?.review.hardFailures ?? []).map((failure) => `SEO review: ${failure}`));
     const record: ContentBankRecord = {
       ...existing,
       version: CREDDY_PIPELINE_VERSION,
@@ -271,17 +258,13 @@ export async function runContentBankHandoff(root: string, now = new Date()): Pro
       status: 'pending_review',
       textMusicVideoPath: textMusic.outputPath,
       narratedVideoPath: narrated.outputPath,
-      articlePreviewPath: content.articlePreviewPath,
+      articlePreviewPath: undefined,
       verificationGate: existing?.verificationGate?.factsVerifiedAt &&
         existing.verificationGate.official.id === content.verificationGate?.official.id &&
         existing.verificationGate.factsVerificationRevision === targetRevision
         ? existing.verificationGate
         : content.verificationGate,
-      articleReview: content.article ? {
-        status: seo?.review.status === 'needs_changes' ? 'changes_requested' : articleBlockers.length ? 'needs_assets' : 'pending_review',
-        blockers: articleBlockers,
-        seoReview: seo?.summary,
-      } : undefined,
+      articleReview: undefined,
       revision: targetRevision,
       changeRequest: undefined,
       approvedBy: undefined,
@@ -310,7 +293,8 @@ export async function runArticleContentBankHandoff(
     .filter((path) => /\/production-[^/]+\.json$/.test(path) && !path.includes('/legacy/'));
   for (const path of packagePaths) {
     const content = await readJson<ContentPackageRecord>(path);
-    if (content.distributionMode !== 'article_only' || !content.article || !content.articlePreviewPath) continue;
+    if (!['article_only', 'article_and_social'].includes(content.distributionMode ?? '') ||
+        !content.article || !content.articlePreviewPath) continue;
     const id = `article-${content.id}`;
     const destination = safeDataPath(root, '09-pending-approval', `${id}.json`);
     const existing = await pathExists(destination) ? await readJson<ContentBankRecord>(destination) : undefined;
@@ -361,18 +345,14 @@ export async function runArticleContentBankHandoff(
         seoReview: seo.summary,
       },
       createdAt: existing?.createdAt ?? now.toISOString(),
-      status: 'pending_review',
+      updatedAt: now.toISOString(),
+      status: existing?.status ?? 'pending_review',
       revision: existing?.revision ?? 1,
-      changeRequest: undefined,
-      approvedBy: undefined,
-      approvedAt: undefined,
-      destinations: undefined,
-      rejectedBy: undefined,
-      rejectedAt: undefined,
-      rejectionReason: undefined,
     };
     await writeJsonAtomic(destination, record);
-    if (!blockers.length && options.autoPublisher && record.articleReview?.status !== 'unpublished' && record.articleReview?.seoReview?.status === 'pass') {
+    if (!blockers.length && options.autoPublisher &&
+        !['published', 'unpublished'].includes(record.articleReview?.status ?? '') &&
+        record.articleReview?.seoReview?.status === 'pass') {
       try { await options.autoPublisher(id); } catch { /* Durable publish_failed state is the observable result. */ }
     }
     const articleAssetsReady = content.articleReadiness === 'ready_for_review' &&

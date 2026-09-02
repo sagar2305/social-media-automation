@@ -13,17 +13,24 @@ later tick.
 
 - Every hour: collect, clean, deduplicate, rank only new or materially changed
   inputs, recompute freshness, publish attributed News from configured specialist
-  publications, and verify only exceptional News/urgent/daily candidates.
+  publications, authorize every eligible News item as a blog plus any additional
+  qualifying blog stories, and verify only exceptional News/blog/urgent/social candidates.
 - First successful run after **06:00 America/New_York**: persist one diversified
-  daily slate of up to five qualifying stories after the ranking queue is clean.
+  daily **social-only** slate of up to five qualifying stories after the ranking queue is clean.
   Zero is valid. A 09:00 ET fallback records remaining blockers so one poisoned
   task cannot freeze the day. The selection is then stable.
 - Breaking lane: fresh official evidence or agreement between two independent
   configured specialist publications may receive an audited `auto_urgent`
   authorization. Safety budgets are two urgent blogs per New York day and one
   urgent Instagram+TikTok package per rolling six hours.
-- Normal daily social remains in Slack human review. Trusted-source blogs do not
-  require routine official re-verification. A known conflict blocks both.
+- Normal social remains in Slack human review. News and blogs never wait for the
+  06:00 social selection and have no daily cap. Every News-qualified story is
+  also authorized for a blog, while other high-quality current stories may be
+  blog-only. New routine blog authorizations are limited to the current 72-hour
+  first-seen window so activation cannot flood the historical catalog.
+  Trusted-source blogs do not require routine official re-verification. A blog
+  may publish as soon as its article and approved visuals are ready; it never
+  waits for a social slideshow or video. A known conflict blocks every channel.
 
 Freshness horizons are deterministic: breaking content hard-expires after 72
 hours (and qualifies for urgent treatment only within six hours), time-sensitive
@@ -47,17 +54,19 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
    event time, freshness class, material-event classification, and claim-level
    evidence. A ranking is a candidate, never permission to create assets.
 4. **Exceptional verification gate:** checks up to five highest-priority
-   exceptions per hourly pass, ordered urgent, app News, then daily. Configured
+   exceptions per hourly pass, ordered urgent, app News, hourly blog, then daily social. Configured
    specialist publications do not enter this queue merely because an official
    page was not checked. Failure is retained and reported; it never aborts the
    remaining queue.
 5. **Agent 04 — Copy:** runs only for an explicit, hash-bound production
-   authorization and produces the unified article/social package.
+   authorization and produces the authorized article or article-and-social package.
 6. **Agent 05 — Visual plan:** creates claim-traced article and six-slide plans
    without altering approved facts or copy.
 7. **Agent 06 — Production:** creates article images/previews and both social
    formats idempotently.
-8. **Agent 07 — Review/delivery:** sends normal review to Slack once. A current
+8. **Agent 07 — Review/delivery:** keeps the article and social Content Bank
+   records separate, sends normal social review to Slack once, and lets an
+   eligible article publish independently. A current
    `auto_urgent` authorization may bypass human review only when the relevant
    fail-closed feature flag is enabled and all frozen hashes still match.
 9. **Agent 08 — Reconciliation:** publishes/exports only valid approved or
@@ -66,7 +75,10 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
     configured specialist publication (no daily cap) and posts it to Slack.
     The feed uses a provenance-labeled first-seen timestamp while retaining any
     publisher date separately. News never waits for 06:00. Actual conflict/high-risk failures
-    appear in one idempotent hourly Slack digest, not as a message flood.
+    appear in one idempotent hourly Slack digest, not as a message flood. Hourly
+    reports distinguish newly inserted, changed, notification-reconciled, and
+    unchanged published rows;
+    the aggregate `published` count remains the number observed as published.
 
 ## Exact scheduled-task sequence
 

@@ -18,7 +18,7 @@ import {
 import { phoneTemplateForDraft } from './product-capabilities.js';
 import { validateCreddyArticleVisuals } from './article-content.js';
 import { CREDDY_APPROVED_EXPRESSIONS } from './expression-library.js';
-import { isVerifiedSocialDecision, listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
+import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 export const CREDDY_MANIFEST_EXPRESSIONS = CREDDY_APPROVED_EXPRESSIONS;
 
@@ -91,9 +91,7 @@ async function visualTasks(root: string): Promise<VisualPlanningTaskRecord[]> {
   const decisions = await listPublicationDecisions(root);
   const modesByAnalysisId = new Map(decisions.flatMap((decision) => {
     const article = articleById.get(decision.canonicalId);
-    const mode = isVerifiedSocialDecision(decision)
-      ? 'article_and_social' as const
-      : article && publicationModeForOpportunity(decision, article);
+    const mode = article && publicationModeForOpportunity(decision, article);
     return mode ? [[decision.id, mode] as const] : [];
   }));
   const drafts = await Promise.all(

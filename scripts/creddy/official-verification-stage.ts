@@ -130,7 +130,7 @@ export async function prepareOfficialVerificationTasks(
     throw new Error('Finish the audited Agent 03 conflict correction before preparing any official-verification slate');
   }
   if (unfinished.some((task) => task.queueRunId === batchId)) {
-    throw new Error('Finish every Agent 03 ranking decision in the current batch before selecting its five-story verification slate');
+    throw new Error('Finish every Agent 03 ranking decision in the current batch before selecting its bounded verification slate');
   }
   const canonicals = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '03-canonical-news', 'approved')))

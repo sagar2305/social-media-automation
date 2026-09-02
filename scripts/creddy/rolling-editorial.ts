@@ -280,9 +280,26 @@ export async function reconcileRollingEditorialLedger(root: string, now = new Da
 
 function eligibleForDaily(record: RollingEditorialRecord, decision: AnalysisDecisionRecord): boolean {
   return record.effectivePriority >= 75 && (decision.productFitScore ?? 0) >= 75 &&
-    record.channels.blog === 'active' && record.channels.social === 'active' &&
+    record.channels.social === 'active' &&
     ['produce', 'evergreen'].includes(decision.editorialDisposition ?? '') &&
-    !decision.materialConflict && record.effectiveFreshness > 0;
+    !decision.materialConflict && !decision.conflictChangesMessage && record.effectiveFreshness > 0;
+}
+
+function eligibleForRoutineHourlyBlog(record: RollingEditorialRecord, decision: AnalysisDecisionRecord, now: Date): boolean {
+  const firstSeenAt = Date.parse(record.firstSeenAt);
+  return record.effectivePriority >= 75 && (decision.productFitScore ?? 0) >= 75 &&
+    record.channels.blog === 'active' && ['produce', 'evergreen'].includes(decision.editorialDisposition ?? '') &&
+    !decision.materialConflict && !decision.conflictChangesMessage && record.effectiveFreshness > 0 &&
+    Number.isFinite(firstSeenAt) && now.getTime() - firstSeenAt >= 0 && now.getTime() - firstSeenAt <= 72 * 60 * 60 * 1000;
+}
+
+function hasCurrentOfficialVerification(decision: AnalysisDecisionRecord, record: RollingEditorialRecord, now: Date): boolean {
+  const official = decision.verificationGate?.official;
+  const checkedAt = validDate(official?.checkedAt);
+  const maxAge = record.freshnessClass === 'evergreen' ? 30 * DAY_MS : DAY_MS;
+  return official?.status === 'verified' && checkedAt !== undefined && now.getTime() - checkedAt <= maxAge &&
+    official.claimOutcomes.length === decision.claims.length && official.claimOutcomes.every((claim) => claim.status === 'verified') &&
+    official.remainingRequirements.length === 0 && official.failureReasons.length === 0;
 }
 
 function diversified(decisions: AnalysisDecisionRecord[], records: Map<string, RollingEditorialRecord>, limit: number): string[] {
@@ -422,7 +439,7 @@ async function writeAuthorization(
   root: string,
   decision: AnalysisDecisionRecord,
   record: RollingEditorialRecord,
-  input: { lane: 'urgent' | 'daily'; distributionMode: CreddyDistributionMode; reason: string; approvalMode: 'auto_urgent' | 'human_review'; selectionRunId: string; expiresAt?: string },
+  input: { lane: CreddyProductionAuthorization['lane']; distributionMode: CreddyDistributionMode; reason: string; approvalMode: 'auto_urgent' | 'human_review'; selectionRunId: string; expiresAt?: string },
   now: Date,
 ): Promise<CreddyProductionAuthorization> {
   const authorization: CreddyProductionAuthorization = {
@@ -451,6 +468,7 @@ async function writeAuthorization(
 export async function authorizeRollingProduction(root: string, now = new Date(), selectedDaily?: DailyEditorialSelection | null): Promise<{
   urgent: CreddyProductionAuthorization[];
   daily: CreddyProductionAuthorization[];
+  hourlyBlogs: CreddyProductionAuthorization[];
 }> {
   return withStageLock(root, 'production_authorization', async () => {
     await reconcileAuthorizationWrites(root);
@@ -462,6 +480,7 @@ export async function authorizeRollingProduction(root: string, now = new Date(),
     const recordById = new Map(records.map((record) => [record.canonicalId, record]));
     const urgent: CreddyProductionAuthorization[] = [];
     const dailyAuthorizations: CreddyProductionAuthorization[] = [];
+    const hourlyBlogs: CreddyProductionAuthorization[] = [];
     const urgentToday = existing.filter((item) => sameNyDate(new Date(item.selectedAt), now));
     const lastUrgentSocial = existing.filter((item) => item.distributionMode === 'article_and_social')
       .sort((left, right) => Date.parse(right.selectedAt) - Date.parse(left.selectedAt))[0];
@@ -498,7 +517,10 @@ export async function authorizeRollingProduction(root: string, now = new Date(),
     for (const canonicalId of daily?.canonicalIds ?? []) {
       const decision = decisions.get(canonicalId);
       const record = recordById.get(canonicalId);
-      if (!decision || !record || authorizedThisRun.has(canonicalId) || decision.productionAuthorization ||
+      const existingAuthorization = decision?.productionAuthorization;
+      if (!decision || !record || authorizedThisRun.has(canonicalId) ||
+          (existingAuthorization && existingAuthorization.lane !== 'hourly_blog') ||
+          decision.materialConflict || decision.conflictChangesMessage ||
           decision.verificationGate?.official.status === 'conflicting') continue;
       const article = articles.get(canonicalId);
       const trusted = article && trustedEditorialEvidence(
@@ -509,10 +531,30 @@ export async function authorizeRollingProduction(root: string, now = new Date(),
       if (!decision.verificationGate && !trusted) continue;
       dailyAuthorizations.push(await writeAuthorization(root, decision, record, {
         lane: 'daily', distributionMode: 'article_and_social', approvalMode: 'human_review', selectionRunId: daily!.selectionRunId,
-        reason: 'Selected from the rolling diversified daily editorial slate.',
+        reason: 'Selected from the rolling diversified daily social slate.',
+      }, now));
+      authorizedThisRun.add(canonicalId);
+    }
+    for (const record of records) {
+      const decision = decisions.get(record.canonicalId);
+      const article = articles.get(record.canonicalId);
+      if (!decision || !article || authorizedThisRun.has(record.canonicalId) || decision.productionAuthorization) continue;
+      const attachedEvidence = evidenceForDecision(decision, evidence);
+      const trusted = trustedEditorialEvidence(decision, article, attachedEvidence);
+      const newsPolicy = evaluateTrustedNewsPolicy({
+        decision, article, evidence: attachedEvidence, firstSeenAt: record.firstSeenAt, now: now.getTime(),
+      });
+      const routineEligible = eligibleForRoutineHourlyBlog(record, decision, now) &&
+        (trusted.satisfied || hasCurrentOfficialVerification(decision, record, now));
+      if (!newsPolicy.eligible && !routineEligible) continue;
+      hourlyBlogs.push(await writeAuthorization(root, decision, record, {
+        lane: 'hourly_blog', distributionMode: 'article_only', approvalMode: 'human_review', selectionRunId: createRunId(now),
+        reason: newsPolicy.eligible
+          ? 'Eligible hourly News item is also authorized as a blog article.'
+          : 'Qualified current story is authorized for uncapped hourly blog production.',
       }, now));
     }
-    return { urgent, daily: dailyAuthorizations };
+    return { urgent, daily: dailyAuthorizations, hourlyBlogs };
   });
 }
 
@@ -556,7 +598,9 @@ export async function verificationCandidateIds(
     const newsNeedsVerification = newsPolicy.requiresVerification;
     const selectedDaily = dailyIds.has(record.canonicalId);
     const dailyNeedsVerification = selectedDaily && !corroboration.satisfied;
-    if (!urgentNeedsVerification && !newsNeedsVerification && !dailyNeedsVerification) return [];
+    const hourlyBlogNeedsVerification = eligibleForRoutineHourlyBlog(record, decision, now) &&
+      !corroboration.satisfied && !hasCurrentOfficialVerification(decision, record, now);
+    if (!urgentNeedsVerification && !newsNeedsVerification && !dailyNeedsVerification && !hourlyBlogNeedsVerification) return [];
     const maxAge = urgentNeedsVerification ? 30 * 60 * 1000 : record.freshnessClass === 'evergreen' ? 30 * DAY_MS : DAY_MS;
     if (official?.status === 'verified' && checkedAt !== undefined && now.getTime() - checkedAt <= maxAge) return [];
     if (official?.status === 'conflicting') return [];
@@ -567,7 +611,7 @@ export async function verificationCandidateIds(
       const retryAfter = unavailableAttempts <= 1 ? 6 * 60 * 60 * 1000 : DAY_MS;
       if (now.getTime() - checkedAt < retryAfter) return [];
     }
-    return [{ id: record.canonicalId, priority: urgentNeedsVerification ? 3 : newsNeedsVerification ? 2 : 1, score: record.effectivePriority }];
+    return [{ id: record.canonicalId, priority: urgentNeedsVerification ? 4 : newsNeedsVerification ? 3 : hourlyBlogNeedsVerification ? 2 : 1, score: record.effectivePriority }];
   });
   return candidates.sort((left, right) => right.priority - left.priority || right.score - left.score)
     .slice(0, limit).map((item) => item.id);
