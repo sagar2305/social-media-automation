@@ -16,6 +16,7 @@ import {
   type VisualPlanRecord,
 } from './pipeline-types.js';
 import { buildCreddyVideoScript } from './video-stage.js';
+import { decisionFingerprint, officialVerificationFingerprint } from './rolling-editorial.js';
 
 function draft(): ContentDraftRecord {
   const articleBody = Array.from({ length: 55 }, () =>
@@ -171,6 +172,58 @@ test('Agent 6 creates an article-only package without any video jobs', async () 
   assert.equal(result.createdPackages, 1);
   assert.equal(result.createdVideoJobs, 0);
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+});
+
+test('Agent 6 preserves explicit article-only authorization for a verified current decision', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-authorized-article-production-'));
+  await initializeCreddyDataRoot(root);
+  const selected = decision();
+  selected.analysisBatchId = 'batch-current';
+  selected.analysisInputHash = 'hash-current';
+  selected.verificationGate = {
+    portfolioRank: 1, selectedAt: '2026-08-19T12:25:00.000Z', socialStatus: 'verified',
+    official: {
+      version: 1, id: 'official-1', decisionId: selected.id, canonicalId: selected.canonicalId,
+      checkedAt: '2026-08-19T12:24:00.000Z', status: 'verified', attemptedUrls: ['https://official.example/terms'],
+      evidence: [{ url: 'https://official.example/terms', owner: 'Official program', sourceType: 'loyalty_program' }],
+      claimOutcomes: [{ field: 'bonus', status: 'verified', officialUrls: ['https://official.example/terms'], notes: 'Confirmed.' }],
+      remainingRequirements: [], failureReasons: [],
+    },
+  };
+  const authorization = {
+    version: 1 as const, id: 'authorization-hourly-blog-1', canonicalId: selected.canonicalId, decisionId: selected.id,
+    analysisInputHash: selected.analysisInputHash, decisionHash: decisionFingerprint(selected),
+    officialVerificationHash: officialVerificationFingerprint(selected), selectedAt: '2026-08-19T12:26:00.000Z',
+    lane: 'hourly_blog' as const, distributionMode: 'article_only' as const,
+    reason: 'Hourly blog.', approvalMode: 'human_review' as const, selectionRunId: 'run-hourly',
+  };
+  selected.productionAuthorization = authorization;
+  const articleDraft = draft();
+  articleDraft.analysisBatchId = selected.analysisBatchId;
+  articleDraft.productionAuthorization = authorization;
+  articleDraft.verificationGate = selected.verificationGate;
+  articleDraft.distributionMode = 'article_only';
+  articleDraft.textScenes = [];
+  articleDraft.narrationScript = '';
+  articleDraft.instagramCaption = '';
+  articleDraft.tiktokCaption = '';
+  articleDraft.hashtags = [];
+  const articlePlan = visualPlan();
+  articlePlan.analysisBatchId = selected.analysisBatchId;
+  articlePlan.productionAuthorization = authorization;
+  articlePlan.verificationGate = selected.verificationGate;
+  articlePlan.distributionMode = 'article_only';
+  articlePlan.format = 'article';
+  articlePlan.scenes = [];
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), selected);
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-1.json'), selected);
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${articleDraft.id}.json`), articleDraft);
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${articlePlan.id}.json`), articlePlan);
+  assert.equal((await listPendingProductionTasks(root))[0]?.draft.distributionMode, 'article_only');
+  const result = await prepareProductionPackages(root, new Date('2026-08-19T13:00:00Z'));
+  assert.equal(result.createdPackages, 1);
+  assert.equal(result.createdVideoJobs, 0);
 });
 
 test('Agent 6 ignores legacy and no-longer-verified visual plans', async () => {

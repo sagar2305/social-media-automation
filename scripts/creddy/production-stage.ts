@@ -18,7 +18,7 @@ import {
   type VideoJobRecord,
   type VisualPlanRecord,
 } from './pipeline-types.js';
-import { isVerifiedSocialDecision, listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
+import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 
 export interface ProductionTaskRecord {
   draft: ContentDraftRecord;
@@ -52,9 +52,7 @@ export async function listProductionTasks(root: string): Promise<ProductionTaskR
   const decisions = await listPublicationDecisions(root);
   const modesByAnalysisId = new Map(decisions.flatMap((decision) => {
     const article = articleById.get(decision.canonicalId);
-    const mode = isVerifiedSocialDecision(decision)
-      ? 'article_and_social' as const
-      : article && publicationModeForOpportunity(decision, article);
+    const mode = article && publicationModeForOpportunity(decision, article);
     return mode ? [[decision.id, mode] as const] : [];
   }));
   const draftPaths = topLevelJson(

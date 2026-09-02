@@ -6,8 +6,8 @@ import test from 'node:test';
 
 import { initializeCreddyDataRoot, pathExists, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import { CREDDY_PIPELINE_VERSION, type ContentBankRecord, type ContentDraftRecord, type ContentPackageRecord, type VisualPlanRecord } from './pipeline-types.js';
-import type { CreddyArticleReadySlackEvent } from './slack-notifications.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
+import { runArticleContentBankHandoff } from './video-stage.js';
 
 const expressions = ['neutral', 'waving', 'thinking', 'confused', 'celebrate', 'pointing'] as const;
 const files = ['001-neutral-friendly.png', '002-happy-waving.png', '074-thinking-left.png', '012-confused.png', '100-celebratory-face.png'];
@@ -74,7 +74,7 @@ test('Agent 7 accepts only a varied six-slide locked-template slideshow', async 
   assert.equal(notifications, 1, 'a persisted receipt prevents duplicate Slack messages');
 });
 
-test('Agent 7 sends an independent article review without changing slideshow notification', async () => {
+test('Agent 7 keeps article publishing separate from slideshow review', async () => {
   const { root } = await fixture();
   const articleDirectory = safeDataPath(root, '06-content-packages', 'articles');
   await mkdir(articleDirectory, { recursive: true });
@@ -86,12 +86,17 @@ test('Agent 7 sends an independent article review without changing slideshow not
   await writeJsonAtomic(packagePath, {
     version: CREDDY_PIPELINE_VERSION,
     id: 'package-1',
+    analysisId: 'analysis-1',
+    canonicalId: 'canonical-1',
+    contentDraftId: 'draft-1',
+    visualPlanId: 'plan-1',
+    distributionMode: 'article_and_social',
     articleReadiness: 'ready_for_review',
     articlePreviewPath,
     article: {
       id: 'article-independent-benefit-guide',
       title: 'How Credit Card Benefit Resets Work',
-      seoTitle: 'Generic Rewards Guide',
+      seoTitle: 'How Credit Card Benefit Resets Work — Creddy',
       seoDescription: 'Learn how credit card benefit resets work, when the value renews, and what to verify before relying on a benefit in your budget.',
       dek: 'Verified credit card benefit reset guidance.',
       excerpt: 'A practical credit card benefit reset summary.',
@@ -120,13 +125,6 @@ test('Agent 7 sends an independent article review without changing slideshow not
     },
   });
   let socialNotifications = 0;
-  const articleNotifications: Array<{ seo?: string; publish?: string }> = [];
-  const articleNotifier = async (event: CreddyArticleReadySlackEvent) => {
-    articleNotifications.push({ seo: event.seoReviewStatus, publish: event.publishStatus });
-    assert.equal(event.title, 'How Credit Card Benefit Resets Work');
-    assert.deepEqual(event.articleImagePaths, articleImagePaths);
-    return { sent: true, channel: 'C123', messageTs: `article.${articleNotifications.length}`, fileIds: [] };
-  };
   let articlePublishCalls = 0;
   const articleAutoPublisher = async (id: string) => {
     articlePublishCalls += 1;
@@ -136,6 +134,20 @@ test('Agent 7 sends an independent article review without changing slideshow not
     await writeJsonAtomic(path, bank);
     return true;
   };
+  assert.equal(await runArticleContentBankHandoff(root, new Date(), {
+    autoPublisher: articleAutoPublisher,
+  }), 1);
+  const articleId = 'article-package-1';
+  const early = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `${articleId}.json`));
+  assert.equal(early.mediaType, 'article');
+  assert.equal(early.articleReview?.status, 'published');
+  assert.equal(articlePublishCalls, 1);
+  assert.equal(socialNotifications, 0);
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json'), {
+    version: CREDDY_PIPELINE_VERSION, id: 'slideshow-plan-1', contentPackageId: 'package-1',
+    createdAt: new Date().toISOString(), status: 'changes_requested', revision: 1,
+    articlePreviewPath, articleReview: { status: 'pending_review', blockers: [] },
+  });
   const result = await runSlideshowContentBankHandoff(
     root,
     new Date(),
@@ -143,47 +155,23 @@ test('Agent 7 sends an independent article review without changing slideshow not
       socialNotifications += 1;
       return { sent: true, channel: 'C123', messageTs: 'social.1', fileIds: [] };
     },
-    articleNotifier,
-    articleAutoPublisher,
   );
   assert.equal(socialNotifications, 1);
-  assert.deepEqual(articleNotifications, [{ seo: 'needs_changes', publish: undefined }]);
   assert.equal(result.slackNotificationsSent, 1);
-  assert.equal(result.articleSlackNotificationsSent, 1);
-  assert.equal(result.articleAutoPublished, 0);
-  assert.equal(result.articleAutoPublishFailed, 0);
   const reviewed = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json'));
-  assert.equal(reviewed.articleReview?.seoReview?.status, 'needs_changes');
-  assert.equal(await pathExists(reviewed.articleReview!.seoReview!.reportPath), true);
-
-  const corrected = await readJson<ContentPackageRecord>(packagePath);
-  corrected.article!.seoTitle = 'How Credit Card Benefit Resets Work — Creddy';
-  await writeJsonAtomic(packagePath, corrected);
-  const correctedRun = await runSlideshowContentBankHandoff(
-    root,
-    new Date(),
-    async () => { throw new Error('social notification must be idempotent'); },
-    articleNotifier,
-    articleAutoPublisher,
-  );
-  assert.equal(correctedRun.slackNotificationsSkipped, 1);
-  assert.equal(correctedRun.articleSlackNotificationsSent, 1);
-  assert.equal(correctedRun.articleAutoPublished, 1);
+  assert.equal(reviewed.status, 'changes_requested');
+  assert.equal(reviewed.contentPackageId, 'package-1');
+  assert.equal(reviewed.articleReview, undefined);
+  assert.equal(reviewed.articlePreviewPath, undefined);
   assert.equal(articlePublishCalls, 1);
-  assert.deepEqual(articleNotifications, [
-    { seo: 'needs_changes', publish: undefined },
-    { seo: 'pass', publish: 'published' },
-  ]);
 
   const unchangedRun = await runSlideshowContentBankHandoff(
     root,
     new Date(),
     async () => { throw new Error('social notification must be idempotent'); },
-    async () => { throw new Error('article notification must be idempotent'); },
   );
   assert.equal(unchangedRun.slackNotificationsSkipped, 1);
-  assert.equal(unchangedRun.articleSlackNotificationsSkipped, 1);
-  assert.equal(articleNotifications.length, 2);
+  assert.equal(articlePublishCalls, 1);
 });
 
 test('Agent 7 keeps already-rendered legacy expression manifests readable', async () => {

@@ -223,15 +223,83 @@ test('standalone news branch consumes its own evidence root and records a report
   await writeJsonAtomic(safeDataPath(root, '01-raw', 'test.json'), article);
   await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'test.json'), decision);
   let ingested = 0;
-  const service = { ingest: async (input: { error: string | null }) => { assert.equal(input.error, null); ingested++; return item(); } } as unknown as NewsService;
-  const skipped = await runAppNewsStage(root, { env, service, notify: async () => {}, canonicalIds: ['not-selected'] });
+  let current: NewsItem | undefined;
+  let notifications = 0;
+  const service = {
+    findByIdentity: async () => current,
+    ingest: async (input: { error: string | null }) => {
+      assert.equal(input.error, null);
+      ingested++;
+      current ??= item();
+      return current;
+    },
+  } as unknown as NewsService;
+  const notify = async () => {
+    notifications++;
+    current!.slack_revision = current!.revision;
+  };
+  const skipped = await runAppNewsStage(root, { env, service, notify, canonicalIds: ['not-selected'] });
   assert.equal(skipped.published, 0); assert.equal(ingested, 0);
+  const result = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(ingested, 1); assert.equal(result.published, 1); assert.equal(result.publishedNew, 1);
+  assert.equal(result.publishedChanged, 0); assert.equal(result.publishedReconciled, 0);
+  assert.equal(result.publishedUnchanged, 0); assert.deepEqual(result.failures, []);
+  const rerun = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(rerun.published, 1); assert.equal(rerun.publishedNew, 0);
+  assert.equal(rerun.publishedChanged, 0); assert.equal(rerun.publishedReconciled, 0);
+  assert.equal(rerun.publishedUnchanged, 1);
+  assert.equal(notifications, 1, 'an unchanged row with a current Slack revision is not claimed again');
+  current!.slack_revision = 0;
+  const failedReconciliation = await runAppNewsStage(root, {
+    env,
+    service,
+    notify: async () => { throw new Error('Slack delivery failed'); },
+  });
+  assert.equal(failedReconciliation.published, 1);
+  assert.equal(failedReconciliation.publishedUnchanged, 1);
+  assert.equal(failedReconciliation.publishedReconciled, 0);
+  assert.equal(failedReconciliation.failures.length, 1);
+  assert.equal(current!.slack_revision, 0, 'a failed delivery remains retryable');
+  const reconciled = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(reconciled.published, 1); assert.equal(reconciled.publishedNew, 0);
+  assert.equal(reconciled.publishedChanged, 0); assert.equal(reconciled.publishedReconciled, 1);
+  assert.equal(reconciled.publishedUnchanged, 0); assert.equal(notifications, 2);
+});
+test('News reports an existing withheld item becoming published as changed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-news-stage-change-'));
+  await initializeCreddyDataRoot(root);
+  const { article, decision } = fixtures();
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'test.json'), article);
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'test.json'), article);
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'test.json'), decision);
+  const previous = { ...item(), status: 'not_published' as const, validation_error: 'Waiting for evidence' };
+  const changed = { ...item(), revision: previous.revision + 1, updated_at: new Date().toISOString() };
+  const service = {
+    findByIdentity: async () => previous,
+    ingest: async () => changed,
+  } as unknown as NewsService;
   const result = await runAppNewsStage(root, { env, service, notify: async () => {} });
-  assert.equal(ingested, 1); assert.equal(result.published, 1); assert.deepEqual(result.failures, []);
+  assert.equal(result.published, 1); assert.equal(result.publishedNew, 0);
+  assert.equal(result.publishedChanged, 1); assert.equal(result.publishedReconciled, 0);
+  assert.equal(result.publishedUnchanged, 0);
 });
 test('server errors never reveal upstream bodies or credentials', async () => {
   const service = new NewsService('https://example.com', 'test-key', async () => new Response('private upstream payload', { status: 500 }));
   await assert.rejects(service.get('test'), error => error instanceof Error && !error.message.includes('private upstream payload') && !error.message.includes('test-key'));
+});
+test('News identity lookup falls back from canonical id to an exact source key', async () => {
+  const expected = item();
+  const queries: string[] = [];
+  const service = new NewsService('https://example.com', 'test-key', async (input) => {
+    const url = new URL(String(input));
+    queries.push(url.search);
+    const rows = url.searchParams.has('id') ? [] : [expected];
+    return new Response(JSON.stringify(rows), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  const found = await service.findByIdentity('different-id', expected.source_key);
+  assert.equal(found?.id, expected.id);
+  assert.equal(queries.length, 2);
+  assert.equal(new URLSearchParams(queries[1]).get('source_key'), `eq.${expected.source_key}`);
 });
 
 test('Slack edit opens promptly and loads the latest revision into the form', async () => {

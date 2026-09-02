@@ -580,13 +580,7 @@ async function main(): Promise<void> {
       autoPublisher: autoPublishArticle,
       notifier: notifyCreddyArticleReady,
     });
-    const slideshow = await runSlideshowContentBankHandoff(
-      root,
-      new Date(),
-      undefined,
-      undefined,
-      autoPublishArticle,
-    );
+    const slideshow = await runSlideshowContentBankHandoff(root, new Date());
     const urgentSocial = await autoApproveAndSubmitUrgentSocial({ root });
     const bank = await Promise.all(
       (await listJsonFiles(safeDataPath(root, '09-pending-approval')))

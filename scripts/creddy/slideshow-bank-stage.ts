@@ -12,13 +12,11 @@ import { CREDDY_PIPELINE_VERSION } from './pipeline-types.js';
 import type { ContentBankRecord, ContentDraftRecord, ContentPackageRecord, VisualPlanRecord } from './pipeline-types.js';
 import { validateIndependentSlideshowCopy } from './copy-stage.js';
 import { CREDDY_LEGACY_TEMPLATE_FILES, creddyExpressionFile } from './expression-library.js';
-import { creddyArticleReadyReceiptName, notifyCreddyArticleReady, notifyCreddyContentReady } from './slack-notifications.js';
+import { notifyCreddyContentReady } from './slack-notifications.js';
 import type {
-  CreddyArticleReadySlackEvent,
   CreddyContentReadySlackEvent,
   CreddyContentReadySlackResult,
 } from './slack-notifications.js';
-import { persistCreddyArticleSeoReview } from './article-seo-review.js';
 
 type SlideshowManifest = {
   version: 1;
@@ -80,22 +78,11 @@ export type SlideshowBankResult = {
   slackNotificationsSent: number;
   slackNotificationsSkipped: number;
   slackNotificationFailures: string[];
-  articleSlackNotificationsSent: number;
-  articleSlackNotificationsSkipped: number;
-  articleSlackNotificationFailures: string[];
-  articleAutoPublished: number;
-  articleAutoPublishFailed: number;
 };
 
 export type ContentReadyNotifier = (
   event: CreddyContentReadySlackEvent,
 ) => Promise<CreddyContentReadySlackResult>;
-
-export type ArticleReadyNotifier = (
-  event: CreddyArticleReadySlackEvent,
-) => Promise<CreddyContentReadySlackResult>;
-
-export type ArticleAutoPublisher = (id: string) => Promise<boolean>;
 
 function validateId(id: string, label: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(id)) throw new Error(`Invalid ${label}`);
@@ -236,8 +223,6 @@ export async function runSlideshowContentBankHandoff(
   root: string,
   now = new Date(),
   notifier: ContentReadyNotifier = notifyCreddyContentReady,
-  articleNotifier: ArticleReadyNotifier = notifyCreddyArticleReady,
-  articleAutoPublisher?: ArticleAutoPublisher,
 ): Promise<SlideshowBankResult> {
   const manifests = (await listJsonFiles(safeDataPath(root, '07-slideshow-renders')))
     .filter((path) => path.endsWith('/manifest.json'));
@@ -250,11 +235,6 @@ export async function runSlideshowContentBankHandoff(
     slackNotificationsSent: 0,
     slackNotificationsSkipped: 0,
     slackNotificationFailures: [],
-    articleSlackNotificationsSent: 0,
-    articleSlackNotificationsSkipped: 0,
-    articleSlackNotificationFailures: [],
-    articleAutoPublished: 0,
-    articleAutoPublishFailed: 0,
   };
 
   for (const manifestPath of manifests) {
@@ -279,143 +259,41 @@ export async function runSlideshowContentBankHandoff(
       const production = await pathExists(productionPath)
         ? await readJson<ContentPackageRecord>(productionPath)
         : undefined;
-      const articleBlockers = production?.article
-        ? production.articleReadiness === 'ready_for_review'
-          ? []
-          : ['One or more Agent 05 article visuals do not have approved asset files yet.']
-        : [];
-      let seoReviewSummary: NonNullable<ContentBankRecord['articleReview']>['seoReview'];
-      if (production?.article) {
-        const seo = await persistCreddyArticleSeoReview({
-          root,
-          contentBankId: id,
-          revision: existing?.revision ?? 1,
-          checkedAt: now,
-          article: production.article,
-          visuals: production.articleVisuals,
-          verificationGate: production.verificationGate ?? draft.verificationGate,
-        });
-        seoReviewSummary = seo.summary;
-        articleBlockers.push(...seo.review.hardFailures.map((failure) => `SEO review: ${failure}`));
-      }
-      const previousArticleReview = existing?.articleReview && existing.articleReview.status !== 'needs_assets'
-        ? existing.articleReview
-        : undefined;
-      const preserveTerminalArticleStatus = previousArticleReview &&
-        ['published', 'publishing', 'publish_failed', 'unpublished'].includes(previousArticleReview.status);
-      const nextArticleStatus = seoReviewSummary?.status === 'needs_changes'
-        ? 'changes_requested' as const
-        : articleBlockers.length
-          ? 'needs_assets' as const
-          : 'pending_review' as const;
+      const completesRevision = existing?.status === 'rendering_revision';
       const record: ContentBankRecord = {
         ...existing,
         version: CREDDY_PIPELINE_VERSION,
         analysisBatchId: production?.analysisBatchId ?? draft.analysisBatchId,
         productionAuthorization: production?.productionAuthorization ?? draft.productionAuthorization,
         id,
-        contentPackageId: contentDraftId,
+        contentPackageId: production?.id ?? contentDraftId,
         mediaType: 'slideshow',
         contentDraftId,
         visualPlanId,
         slideshowManifestPath: manifestPath,
         slideImagePaths,
         slideCount: 6,
-        articlePreviewPath: production?.articlePreviewPath,
+        articlePreviewPath: undefined,
+        articleReview: undefined,
         verificationGate: existing?.verificationGate?.factsVerifiedAt &&
           existing.verificationGate.official.id === (production?.verificationGate ?? draft.verificationGate)?.official.id &&
           existing.verificationGate.factsVerificationRevision === existing.revision
           ? existing.verificationGate
           : production?.verificationGate ?? draft.verificationGate,
-        articleReview: production?.article ? {
-          ...previousArticleReview,
-          status: preserveTerminalArticleStatus ? previousArticleReview.status : nextArticleStatus,
-          blockers: articleBlockers,
-          seoReview: seoReviewSummary,
-        } : undefined,
         createdAt: existing?.createdAt ?? now.toISOString(),
-        status: 'pending_review',
+        status: completesRevision ? 'pending_review' : existing?.status ?? 'pending_review',
         revision: existing?.revision ?? 1,
-        changeRequest: undefined,
-        approvedBy: undefined,
-        approvedAt: undefined,
-        destinations: undefined,
-        rejectedBy: undefined,
-        rejectedAt: undefined,
-        rejectionReason: undefined,
+        changeRequest: completesRevision ? undefined : existing?.changeRequest,
+        approvedBy: completesRevision ? undefined : existing?.approvedBy,
+        approvedAt: completesRevision ? undefined : existing?.approvedAt,
+        destinations: completesRevision ? undefined : existing?.destinations,
+        rejectedBy: completesRevision ? undefined : existing?.rejectedBy,
+        rejectedAt: completesRevision ? undefined : existing?.rejectedAt,
+        rejectionReason: completesRevision ? undefined : existing?.rejectionReason,
       };
       await writeJsonAtomic(destination, record);
       if (existing) result.updated += 1;
       else result.created += 1;
-
-      if (
-        production?.article &&
-        production.articlePreviewPath &&
-        production.articleReadiness === 'ready_for_review' &&
-        production.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))
-      ) {
-        let articleState = record.articleReview;
-        if (articleAutoPublisher && articleState?.status !== 'unpublished' && articleState?.seoReview?.status === 'pass') {
-          try {
-            if (await articleAutoPublisher(id)) result.articleAutoPublished += 1;
-          } catch {
-            result.articleAutoPublishFailed += 1;
-          }
-          articleState = (await readJson<ContentBankRecord>(destination)).articleReview;
-        }
-        const articleReceiptPath = safeDataPath(
-          root,
-          'reports',
-          'slack-article-ready',
-          creddyArticleReadyReceiptName({
-            id,
-            revision: record.revision,
-            seoContentSha256: articleState?.seoReview?.contentSha256,
-            seoReviewStatus: articleState?.seoReview?.status,
-            publishStatus: articleState?.status === 'published' || articleState?.status === 'publish_failed' || articleState?.status === 'publishing' || articleState?.status === 'unpublished'
-              ? articleState.status
-              : undefined,
-          }),
-        );
-        if (await pathExists(articleReceiptPath)) {
-          result.articleSlackNotificationsSkipped += 1;
-        } else {
-          const notification = await articleNotifier({
-            id,
-            title: production.article.title,
-            dek: production.article.dek,
-            excerpt: production.article.excerpt,
-            category: production.article.category,
-            readingMinutes: production.article.readingMinutes,
-            sourceUrls: production.article.sourceUrls,
-            articleImagePaths: production.articleVisuals.assets.map((asset) => asset.assetPath!),
-            articlePreviewPath: production.articlePreviewPath,
-            publishStatus: articleState?.status === 'published' || articleState?.status === 'publish_failed' || articleState?.status === 'publishing' || articleState?.status === 'unpublished'
-              ? articleState.status
-              : undefined,
-            publishedUrl: articleState?.publishedUrl,
-            publishError: articleState?.publishError,
-            seoReviewStatus: articleState?.seoReview?.status,
-            seoWarnings: articleState?.seoReview?.warnings ?? [],
-          });
-          if (notification.sent) {
-            await writeJsonAtomic(articleReceiptPath, {
-              version: 1,
-              id,
-              revision: record.revision,
-              sentAt: now.toISOString(),
-              channel: notification.channel,
-              messageTs: notification.messageTs,
-              fileIds: notification.fileIds ?? [],
-            });
-            result.articleSlackNotificationsSent += 1;
-          } else if (notification.error?.includes('is missing')) {
-            result.articleSlackNotificationsSkipped += 1;
-          } else {
-            result.articleSlackNotificationFailures.push(`${id}: ${notification.error ?? 'Slack article notification failed'}`);
-          }
-        }
-      }
 
       const receiptPath = safeDataPath(root, 'reports', 'slack-content-ready', `${id}-revision-${record.revision}.json`);
       if (await pathExists(receiptPath)) {
@@ -423,7 +301,7 @@ export async function runSlideshowContentBankHandoff(
       } else {
         const priorReceipts = (await listJsonFiles(safeDataPath(root, 'reports', 'slack-content-ready')))
           .filter((path) => path.includes(`/${id}-revision-`));
-        if (existing && priorReceipts.length === 0) {
+        if (existing?.slideshowManifestPath && priorReceipts.length === 0) {
           // Slack review notifications were added after the first Content Bank
           // backlog already existed. Baseline those revisions instead of
           // flooding the channel; a later revision has a new receipt key and

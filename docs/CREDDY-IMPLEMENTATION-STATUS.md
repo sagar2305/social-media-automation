@@ -13,10 +13,11 @@
 4. Hourly Codex analysis uses the `creddy-ranking-v3` viral rubric, channel-fit
    predictions, freshness, product fit, importance, and confidence to calculate
    editorial priority. Editorial upside stays independent of evidence readiness;
-   the stage maintains a rolling queue and persists up to five diversified daily
-   stories on the first run after 06:00 America/New_York. A ranking cannot reach
+   the stage maintains a rolling queue, authorizes uncapped hourly blogs, and
+   persists up to five diversified daily social stories on the first run after
+   06:00 America/New_York. Every News-qualified story is also a blog. A ranking cannot reach
    Agent 04 until an explicit hash-bound production authorization exists. The
-   bounded hourly official-first pass prioritizes urgent, app News, then daily
+   bounded hourly official-first pass prioritizes urgent, app News, hourly blog, then daily social
    candidates. Unavailable or inconclusive
    checks continue privately through production; a known official contradiction
    blocks both blog and social.
@@ -34,7 +35,8 @@
    `thebrewapps/video-factory` cream/gold templates, supplied mascot pose pack,
    editorial theme, and approved cloned-voice reference. It also supports the
    text-plus-licensed-music format and constrains output for safe Blotato upload.
-8. Both completed formats enter the Creddy Content Bank. Authenticated staff can
+8. Completed social formats enter a social-only Creddy Content Bank record, while
+   each website article has one stable independent article record. Authenticated staff can
    preview videos and evidence, approve destinations/times, request revisions, and
    drag pending posts across a seven-day calendar.
    Blog release may proceed when verification is unavailable or inconclusive;
@@ -53,8 +55,8 @@
 
 ## Isolation and safety
 
-- `CREDDY_PIPELINE_ENABLED=false` remains the safe example default; the local
-  `.env.local` explicitly enables the Creddy pipeline for controlled testing.
+- `CREDDY_PIPELINE_ENABLED=false` remains the safe stored default; scheduled
+  runs scope it to true only for their own commands without changing the file.
 - Existing MinuteWise/Roast AI entrypoints, posting, analytics, and runtime data
   were not changed by the Creddy implementation.
 - Every filesystem write is contained under the configured absolute Creddy data
@@ -62,14 +64,16 @@
 - API keys remain server-only and error messages redact provider keys.
 - The supplied Creddy anon key is optional and read-only; no Creddy service-role
   access is required by the file-first MVP.
-- The Supabase migration is additive and remains unapplied.
+- This hourly News-to-blog policy uses the existing Supabase contract and needs
+  no schema, Cron, or Edge Function migration.
 - Live local Video Factory verification was completed. Publishing remains gated,
   so no Blotato post was created by this template/voice test.
 
 ## Scheduled task
 
 The replacement design uses one hourly Codex task for the entire workflow. The
-daily selection gate is internal and timezone-aware; app News is a projection of
+social-only daily selection gate is internal and timezone-aware; News and blogs
+do not wait for it. App News is a projection of
 the shared ledger rather than a second recurring collector. The task must not be
 created or activated until this code is merged and the activation checklist is
 approved. See `docs/CREDDY-SCHEDULED-TASKS.md` for the exact sequence.
@@ -81,7 +85,7 @@ their own provider keys and credits.
 
 ## Verified
 
-- 152 automated unit/integration tests pass.
+- 257 Creddy and 29 News automated unit/integration tests pass.
 - Root TypeScript type-check passes.
 - Changed dashboard files pass TypeScript and ESLint.
 - Next.js 16 dashboard production build passes with its Webpack fallback.

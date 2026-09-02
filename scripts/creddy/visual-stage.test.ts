@@ -8,10 +8,23 @@ import { initializeCreddyDataRoot, listJsonFiles, safeDataPath, writeJsonAtomic 
 import {
   CREDDY_PIPELINE_VERSION,
   type AnalysisDecisionRecord,
+  type CanonicalNewsRecord,
   type ContentDraftRecord,
   type VisualPlanRecord,
 } from './pipeline-types.js';
 import { acceptVisualPlan, listPendingVisualTasks, selectCreddyExpression, validateVisualPlan } from './visual-stage.js';
+import { decisionFingerprint, officialVerificationFingerprint } from './rolling-editorial.js';
+
+function canonical(): CanonicalNewsRecord {
+  return {
+    version: 1, id: 'raw-1', runId: 'run-1', sourceId: 'awardwallet', sourceName: 'AwardWallet', sourceTier: 'B',
+    factualUse: 'discovery_and_confirmation', originalUrl: 'https://awardwallet.com/blog/bonus',
+    canonicalUrl: 'https://awardwallet.com/blog/bonus', title: 'Transfer planning guide', markdown: 'A practical guide.',
+    contentHash: 'a'.repeat(64), titleFingerprint: 'transfer planning guide', fetchedAt: '2026-08-19T12:00:00.000Z',
+    providerMetadata: {}, qualification: { qualifies: true, matchedKeywords: ['points'] }, canonicalId: 'canonical-1',
+    evidenceRecordIds: ['raw-1'], cleanedMarkdown: 'A practical guide.', deduplicatedAt: '2026-08-19T12:10:00.000Z',
+  };
+}
 
 function draft(): ContentDraftRecord {
   return {
@@ -100,10 +113,47 @@ function plan(): VisualPlanRecord {
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'creddy-visual-'));
   await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
   await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
   await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
   return root;
 }
+
+test('Agent 5 honors an explicit article-only authorization on an otherwise social-ready decision', async () => {
+  const root = await fixture();
+  const selected = decision();
+  selected.analysisBatchId = 'batch-current';
+  selected.analysisInputHash = 'hash-current';
+  selected.verificationGate = {
+    portfolioRank: 1, selectedAt: '2026-08-19T12:25:00.000Z', socialStatus: 'verified',
+    official: {
+      version: 1, id: 'official-1', decisionId: selected.id, canonicalId: selected.canonicalId,
+      checkedAt: '2026-08-19T12:24:00.000Z', status: 'verified', attemptedUrls: ['https://official.example/terms'],
+      evidence: [{ url: 'https://official.example/terms', owner: 'Official program', sourceType: 'loyalty_program' }],
+      claimOutcomes: [{ field: 'bonus', status: 'verified', officialUrls: ['https://official.example/terms'], notes: 'Confirmed.' }],
+      remainingRequirements: [], failureReasons: [],
+    },
+  };
+  const authorization = {
+    version: 1 as const, id: 'authorization-hourly-blog-1', canonicalId: selected.canonicalId, decisionId: selected.id,
+    analysisInputHash: selected.analysisInputHash, decisionHash: decisionFingerprint(selected),
+    officialVerificationHash: officialVerificationFingerprint(selected), selectedAt: '2026-08-19T12:26:00.000Z',
+    lane: 'hourly_blog' as const, distributionMode: 'article_only' as const,
+    reason: 'Hourly blog.', approvalMode: 'human_review' as const, selectionRunId: 'run-hourly',
+  };
+  selected.productionAuthorization = authorization;
+  const articleDraft = draft();
+  articleDraft.analysisBatchId = selected.analysisBatchId;
+  articleDraft.productionAuthorization = authorization;
+  articleDraft.verificationGate = selected.verificationGate;
+  articleDraft.distributionMode = 'article_only';
+  articleDraft.textScenes = [];
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), selected);
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-1.json'), selected);
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${articleDraft.id}.json`), articleDraft);
+  const [task] = await listPendingVisualTasks(root);
+  assert.equal(task?.draft.distributionMode, 'article_only');
+});
 
 test('Agent 5 accepts a manifest-safe plan without creating video jobs', async () => {
   const root = await fixture();

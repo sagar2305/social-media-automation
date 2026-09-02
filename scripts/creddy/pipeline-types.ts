@@ -345,8 +345,7 @@ export interface AnalysisDecisionRecord {
   productionAuthorization?: CreddyProductionAuthorization;
   /** Copied immutably from an audited conflict-reanalysis task. */
   correctionContext?: AnalysisTaskRecord['correctionContext'];
-  /** Present only after this decision was selected in the top-five slate and
-   * its bounded official verification attempt completed. */
+  /** Present only after a bounded official-verification task completed. */
   verificationGate?: CreddyVerificationGate;
 }
 
@@ -360,7 +359,7 @@ export interface CreddyProductionAuthorization {
   officialVerificationHash: string;
   selectedAt: string;
   expiresAt?: string;
-  lane: 'urgent' | 'daily';
+  lane: 'urgent' | 'daily' | 'hourly_blog';
   distributionMode: CreddyDistributionMode;
   reason: string;
   approvalMode: 'auto_urgent' | 'human_review';
