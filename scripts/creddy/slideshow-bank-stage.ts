@@ -308,13 +308,14 @@ export async function runSlideshowContentBankHandoff(
         : articleBlockers.length
           ? 'needs_assets' as const
           : 'pending_review' as const;
+      const completesRevision = existing?.status === 'rendering_revision';
       const record: ContentBankRecord = {
         ...existing,
         version: CREDDY_PIPELINE_VERSION,
         analysisBatchId: production?.analysisBatchId ?? draft.analysisBatchId,
         productionAuthorization: production?.productionAuthorization ?? draft.productionAuthorization,
         id,
-        contentPackageId: contentDraftId,
+        contentPackageId: production?.id ?? contentDraftId,
         mediaType: 'slideshow',
         contentDraftId,
         visualPlanId,
@@ -334,15 +335,15 @@ export async function runSlideshowContentBankHandoff(
           seoReview: seoReviewSummary,
         } : undefined,
         createdAt: existing?.createdAt ?? now.toISOString(),
-        status: 'pending_review',
+        status: completesRevision ? 'pending_review' : existing?.status ?? 'pending_review',
         revision: existing?.revision ?? 1,
-        changeRequest: undefined,
-        approvedBy: undefined,
-        approvedAt: undefined,
-        destinations: undefined,
-        rejectedBy: undefined,
-        rejectedAt: undefined,
-        rejectionReason: undefined,
+        changeRequest: completesRevision ? undefined : existing?.changeRequest,
+        approvedBy: completesRevision ? undefined : existing?.approvedBy,
+        approvedAt: completesRevision ? undefined : existing?.approvedAt,
+        destinations: completesRevision ? undefined : existing?.destinations,
+        rejectedBy: completesRevision ? undefined : existing?.rejectedBy,
+        rejectedAt: completesRevision ? undefined : existing?.rejectedAt,
+        rejectionReason: completesRevision ? undefined : existing?.rejectionReason,
       };
       await writeJsonAtomic(destination, record);
       if (existing) result.updated += 1;
@@ -355,7 +356,8 @@ export async function runSlideshowContentBankHandoff(
         production.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))
       ) {
         let articleState = record.articleReview;
-        if (articleAutoPublisher && articleState?.status !== 'unpublished' && articleState?.seoReview?.status === 'pass') {
+        if (articleAutoPublisher && !['published', 'unpublished'].includes(articleState?.status ?? '') &&
+            articleState?.seoReview?.status === 'pass') {
           try {
             if (await articleAutoPublisher(id)) result.articleAutoPublished += 1;
           } catch {
@@ -423,7 +425,7 @@ export async function runSlideshowContentBankHandoff(
       } else {
         const priorReceipts = (await listJsonFiles(safeDataPath(root, 'reports', 'slack-content-ready')))
           .filter((path) => path.includes(`/${id}-revision-`));
-        if (existing && priorReceipts.length === 0) {
+        if (existing?.slideshowManifestPath && priorReceipts.length === 0) {
           // Slack review notifications were added after the first Content Bank
           // backlog already existed. Baseline those revisions instead of
           // flooding the channel; a later revision has a new receipt key and

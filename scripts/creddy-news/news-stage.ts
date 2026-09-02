@@ -80,12 +80,18 @@ export async function runAppNewsStage(root: string, options: {
 } = {}) {
   const env = options.env ?? process.env;
   if (env.CREDDY_NEWS_ENABLED !== 'true') return {
-    disabled: true, published: 0, notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [],
+    disabled: true, published: 0, publishedNew: 0, publishedChanged: 0, publishedReconciled: 0,
+    publishedUnchanged: 0,
+    notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [],
   };
   const service = options.service ?? configuredNewsService(env);
   const result = {
     disabled: false,
     published: 0,
+    publishedNew: 0,
+    publishedChanged: 0,
+    publishedReconciled: 0,
+    publishedUnchanged: 0,
     notPublished: 0,
     deleted: 0,
     publishedIds: [] as string[],
@@ -125,16 +131,34 @@ export async function runAppNewsStage(root: string, options: {
         firstSeen.get(decision.canonicalId),
       );
       if (!Number.isFinite(prepared.content.published_at)) prepared.content.published_at = 0;
+      const previous = await service.findByIdentity(id, sourceKey);
       const item = await service.ingest({ id, sourceKey, ...prepared });
-      if (item.status === 'published') { result.published++; result.publishedIds.push(decision.canonicalId); }
+      let unchangedPublished = false;
+      if (item.status === 'published') {
+        result.published++;
+        result.publishedIds.push(decision.canonicalId);
+        if (!previous) result.publishedNew++;
+        else if (item.revision !== previous.revision) result.publishedChanged++;
+        else { unchangedPublished = true; result.publishedUnchanged++; }
+      }
       else if (item.status === 'deleted') result.deleted++;
       else {
         result.notPublished++;
         result.withheld.push({ id: decision.canonicalId, headline: item.content.headline, reason: item.validation_error ?? 'Did not pass final News eligibility.' });
       }
       const notifyMode = options.notifyMode ?? 'all';
-      if (notifyMode === 'all' || (notifyMode === 'published_only' && item.status === 'published')) {
+      const notificationPending = item.slack_revision < item.revision;
+      let reconciledNotification = false;
+      if (notificationPending &&
+          (notifyMode === 'all' || (notifyMode === 'published_only' && item.status === 'published'))) {
         await (options.notify ?? notifyNews)(service, item.id, env);
+        reconciledNotification = unchangedPublished;
+      }
+      if (unchangedPublished) {
+        if (reconciledNotification) {
+          result.publishedUnchanged--;
+          result.publishedReconciled++;
+        }
       }
     } catch (error) { result.failures.push({ id: decision.canonicalId, reason: (error as Error).message }); }
   }

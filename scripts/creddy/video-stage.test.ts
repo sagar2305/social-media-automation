@@ -175,7 +175,7 @@ test('two Video Factory formats become one pending Content Bank item', async () 
   );
 });
 
-test('article-only packages enter review and can be approved without videos', async () => {
+test('ready articles hand off without videos while paired social remains rendering', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-article-bank-'));
   await initializeCreddyDataRoot(root);
   const previewPath = join(root, 'article-preview.html');
@@ -229,6 +229,54 @@ test('article-only packages enter review and can be approved without videos', as
   assert.equal(approved.articleReview?.status, 'approved');
   assert.equal(approved.articleReview?.seoReview?.status, 'pass');
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+  approved.articleReview!.status = 'published';
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `${bankId}.json`), approved);
+
+  const socialContent: ContentPackageRecord = {
+    ...content,
+    id: 'production-analysis-article-social',
+    analysisId: 'analysis-article-social',
+    canonicalId: 'canonical-article-social',
+    contentDraftId: 'copy-analysis-article-social',
+    visualPlanId: 'visual-copy-analysis-article-social',
+    distributionMode: 'article_and_social',
+  };
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', `${socialContent.id}.json`), socialContent);
+  let autoPublishedId: string | undefined;
+  assert.equal(await runArticleContentBankHandoff(root, new Date('2026-08-19T15:00:00.000Z'), {
+    autoPublisher: async (id) => { autoPublishedId = id; return true; },
+    notifier: async () => ({ sent: false, fileIds: [] }),
+  }), 1);
+  const socialBankId = `slideshow-${socialContent.visualPlanId}`;
+  const socialBank = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `${socialBankId}.json`));
+  assert.equal(autoPublishedId, socialBankId);
+  assert.equal(socialBank.mediaType, 'slideshow');
+  assert.equal(socialBank.status, 'rendering_revision');
+  assert.equal(socialBank.articleReview?.seoReview?.status, 'pass');
+  assert.equal(socialBank.slideshowManifestPath, undefined);
+  assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+  socialBank.status = 'changes_requested';
+  socialBank.changeRequest = { requestedBy: 'editor@example.com', requestedAt: '2026-08-19T15:05:00.000Z', notes: 'Revise slide two.' };
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `${socialBankId}.json`), socialBank);
+  await runArticleContentBankHandoff(root, new Date('2026-08-19T16:00:00.000Z'));
+  const preserved = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `${socialBankId}.json`));
+  assert.equal(preserved.status, 'changes_requested');
+  assert.deepEqual(preserved.changeRequest, socialBank.changeRequest);
+  assert.equal(preserved.updatedAt, '2026-08-19T16:00:00.000Z');
+  preserved.articleReview!.status = 'publishing';
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `${socialBankId}.json`), preserved);
+  let recoveryCalls = 0;
+  await runArticleContentBankHandoff(root, new Date('2026-08-19T17:00:00.000Z'), {
+    autoPublisher: async () => { recoveryCalls += 1; return true; },
+  });
+  assert.equal(recoveryCalls, 1, 'an interrupted publishing state remains retryable');
+  preserved.articleReview!.status = 'published';
+  await writeJsonAtomic(safeDataPath(root, '09-pending-approval', `${socialBankId}.json`), preserved);
+  let publishedCalls = 0;
+  await runArticleContentBankHandoff(root, new Date('2026-08-19T18:00:00.000Z'), {
+    autoPublisher: async () => { publishedCalls += 1; return true; },
+  });
+  assert.equal(publishedCalls, 0);
 });
 
 test('Agent 7 blocks an SEO failure, sends it for review, and preserves terminal publication state', async () => {

@@ -177,7 +177,8 @@ export async function runHourlyRouting(input: {
   const newsIds = await newsProjectionCandidateIds(input.root, now);
   const news = newsIds.length
     ? await runAppNewsStage(input.root, { env, canonicalIds: newsIds, notifyMode: 'published_only' })
-    : { disabled: env.CREDDY_NEWS_ENABLED !== 'true', published: 0, notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [] };
+    : { disabled: env.CREDDY_NEWS_ENABLED !== 'true', published: 0, publishedNew: 0, publishedChanged: 0,
+      publishedReconciled: 0, publishedUnchanged: 0, notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [] };
   let withheldSlack: { sent: boolean; ts?: string; error?: string } = { sent: false };
   const digestKey = now.toISOString().slice(0, 13);
   const receiptPath = safeDataPath(input.root, 'reports', 'news-withheld-slack', `${digestKey}.json`);

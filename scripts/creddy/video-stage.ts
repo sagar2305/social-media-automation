@@ -310,8 +310,12 @@ export async function runArticleContentBankHandoff(
     .filter((path) => /\/production-[^/]+\.json$/.test(path) && !path.includes('/legacy/'));
   for (const path of packagePaths) {
     const content = await readJson<ContentPackageRecord>(path);
-    if (content.distributionMode !== 'article_only' || !content.article || !content.articlePreviewPath) continue;
-    const id = `article-${content.id}`;
+    if (!['article_only', 'article_and_social'].includes(content.distributionMode ?? '') ||
+        !content.article || !content.articlePreviewPath) continue;
+    if (content.distributionMode === 'article_and_social' && !content.visualPlanId) continue;
+    const id = content.distributionMode === 'article_and_social'
+      ? `slideshow-${content.visualPlanId}`
+      : `article-${content.id}`;
     const destination = safeDataPath(root, '09-pending-approval', `${id}.json`);
     const existing = await pathExists(destination) ? await readJson<ContentBankRecord>(destination) : undefined;
     if (existing && !['pending_review', 'changes_requested', 'rendering_revision'].includes(existing.status)) continue;
@@ -345,7 +349,7 @@ export async function runArticleContentBankHandoff(
       productionAuthorization: content.productionAuthorization,
       id,
       contentPackageId: content.id,
-      mediaType: 'article',
+      mediaType: content.distributionMode === 'article_and_social' ? 'slideshow' : 'article',
       contentDraftId: content.contentDraftId,
       visualPlanId: content.visualPlanId,
       articlePreviewPath: content.articlePreviewPath,
@@ -361,18 +365,14 @@ export async function runArticleContentBankHandoff(
         seoReview: seo.summary,
       },
       createdAt: existing?.createdAt ?? now.toISOString(),
-      status: 'pending_review',
+      updatedAt: now.toISOString(),
+      status: existing?.status ?? (content.distributionMode === 'article_and_social' ? 'rendering_revision' : 'pending_review'),
       revision: existing?.revision ?? 1,
-      changeRequest: undefined,
-      approvedBy: undefined,
-      approvedAt: undefined,
-      destinations: undefined,
-      rejectedBy: undefined,
-      rejectedAt: undefined,
-      rejectionReason: undefined,
     };
     await writeJsonAtomic(destination, record);
-    if (!blockers.length && options.autoPublisher && record.articleReview?.status !== 'unpublished' && record.articleReview?.seoReview?.status === 'pass') {
+    if (!blockers.length && options.autoPublisher &&
+        !['published', 'unpublished'].includes(record.articleReview?.status ?? '') &&
+        record.articleReview?.seoReview?.status === 'pass') {
       try { await options.autoPublisher(id); } catch { /* Durable publish_failed state is the observable result. */ }
     }
     const articleAssetsReady = content.articleReadiness === 'ready_for_review' &&

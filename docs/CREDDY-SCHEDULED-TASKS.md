@@ -23,7 +23,9 @@ later tick.
   authorization. Safety budgets are two urgent blogs per New York day and one
   urgent Instagram+TikTok package per rolling six hours.
 - Normal daily social remains in Slack human review. Trusted-source blogs do not
-  require routine official re-verification. A known conflict blocks both.
+  require routine official re-verification. A selected blog may publish as soon
+  as its article and approved visuals are ready; it never waits for the paired
+  social slideshow or video. A known conflict blocks both.
 
 Freshness horizons are deterministic: breaking content hard-expires after 72
 hours (and qualifies for urgent treatment only within six hours), time-sensitive
@@ -66,7 +68,10 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
     configured specialist publication (no daily cap) and posts it to Slack.
     The feed uses a provenance-labeled first-seen timestamp while retaining any
     publisher date separately. News never waits for 06:00. Actual conflict/high-risk failures
-    appear in one idempotent hourly Slack digest, not as a message flood.
+    appear in one idempotent hourly Slack digest, not as a message flood. Hourly
+    reports distinguish newly inserted, changed, notification-reconciled, and
+    unchanged published rows;
+    the aggregate `published` count remains the number observed as published.
 
 ## Exact scheduled-task sequence
 
