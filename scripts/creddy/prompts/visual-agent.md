@@ -72,7 +72,21 @@ editorial illustration, data visualization, licensed photography, and approved
 Creddy product captures. Product captures must be supplied real screenshots;
 never generate fake app UI. Licensed photos require provenance.
 
-Default to authentic brand-led editorial composition, not generated 3D art.
+Prefer one story-relevant real photograph for the hero when a suitable reviewed
+asset exists. `agent-5-prepare` lists `editorialPhotos` separately from brands.
+Choose one exact `photoAssetId`, `generationMode: compose`, `assetType: licensed_photo`,
+and `usage: hero`; omit `brandAssetIds`. Read its exact subject and usage notes.
+A brand mention is not enough to select a particular property, cabin or aircraft.
+Do not imply current award availability, amenities or eligibility from an archive
+photograph. Agent 06 crops the reviewed source, preserves its credit/license,
+and includes those links in the public blog. Do not use these photos for inline
+or comparison slots in this rollout, and do not repeat the hero three times.
+Use exact approved card art for card stories when available; never invent it.
+If no reviewed photograph fits, use the existing brand composition below.
+News retains its independent brand-image path; photographs are not automatically
+selected for News, where required public photo credits are not yet supported.
+
+For non-photo visuals, use authentic brand-led editorial composition, not generated 3D art.
 `agent-5-prepare` lists the reviewed `editorialBrands` registry. For brands
 explicitly discussed in that image's section, set `generationMode: compose`,
 `assetType: editorial_illustration`, and `brandAssetIds` to up to four exact

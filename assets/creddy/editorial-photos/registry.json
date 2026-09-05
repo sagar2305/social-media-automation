@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "photos": [
+    {
+      "id": "hilton-waikiki",
+      "file": "hilton-waikiki.jpg",
+      "sha256": "772437fc69739d3ab5a6568d59d4419e6ef2afc752bd61ab40f46c2104011134",
+      "subject": "Hilton Hawaiian Village beside Duke Kahanamoku Lagoon, Waikiki (2013)",
+      "usageNotes": "Archive photograph, suitable as clearly labeled illustrative Hilton travel imagery. Not evidence of current amenities, award availability, prices or offer eligibility. Do not use for a different named property.",
+      "focalPoint": { "x": 0.5, "y": 0.5 },
+      "credit": {
+        "creator": "Bernard Spragg. NZ",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Hilton_Waikiki_Hawaii._(16545672009).jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "klm-787",
+      "file": "klm-787.jpg",
+      "sha256": "1ef90bf222f64d6fc52f5c585b58199e7ba1d2e25bbed24e56f47a5f9289a6d3",
+      "subject": "KLM Boeing 787 PH-BHI, photographed in 2019",
+      "usageNotes": "Illustrative KLM or Flying Blue coverage only. Not evidence of an aircraft, cabin or seat on a specific flight. Preserve the whole aircraft in the crop. Derivative image remains CC BY-SA 4.0; source and license links must be visible wherever used.",
+      "focalPoint": { "x": 0.5, "y": 0.5 },
+      "credit": {
+        "creator": "Styyx",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:KLM_787.jpg",
+        "license": "CC-BY-SA-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "modifications": "Cropped to 16:9 and resized. This adapted image is also CC BY-SA 4.0."
+      }
+    },
+    {
+      "id": "marriott-st-kitts",
+      "file": "marriott-st-kitts.jpg",
+      "sha256": "106adb95b9c7f3f717d04e6a5992136204012355911b7fdcf482a93ed7acb7c6",
+      "subject": "Beach cabanas at St. Kitts Marriott Resort (2014)",
+      "usageNotes": "Archive photograph, suitable as clearly labeled illustrative Marriott resort imagery. Not a depiction of every Marriott, current amenities, award availability or offer eligibility. Do not use for a different named property.",
+      "focalPoint": { "x": 0.5, "y": 0.58 },
+      "credit": {
+        "creator": "NoTalkMan",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Marriott_Resort_Beach,_St._Kitts.JPG",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    }
+  ]
+}

@@ -474,6 +474,9 @@ export interface CreddyArticleDraft {
 }
 
 export type CreddyArticleVisualAsset = {
+  /** Explicit reviewed photograph, separate from broad brand matching. Hero only. */
+  photoAssetId?: string;
+  photoCredit?: import('./editorial-photos.js').EditorialPhotoCredit;
   /** Explicit reviewed source IDs for deterministic composition; [] is a flat unbranded fallback. */
   brandAssetIds?: string[];
   id: string;
