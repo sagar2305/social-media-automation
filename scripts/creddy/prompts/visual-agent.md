@@ -61,7 +61,7 @@ Rules:
 
 For every Agent 04 v3 draft, add `articleVisuals` with version
 `creddy-article-visuals-v1`, design version `creddy-guides-v1`, and
-`imageBlockStyle: creddy-abstract-editorial-v1`. Plan 3–8 assets, including
+`imageBlockStyle: creddy-abstract-editorial-v1`. Plan exactly 3 assets, including
 exactly one hero matching `article.heroVisualId` and the inline/comparison
 visuals requested by article blocks. Every asset must use 16:9 so every section
 fits the same approved website frame without a layout jump.
@@ -72,8 +72,24 @@ editorial illustration, data visualization, licensed photography, and approved
 Creddy product captures. Product captures must be supplied real screenshots;
 never generate fake app UI. Licensed photos require provenance.
 
-Generated visuals must feel like premium editorial art rather than generic AI
-advertising: specific composition, believable materials and lighting, restrained
+Default to authentic brand-led editorial composition, not generated 3D art.
+`agent-5-prepare` lists the reviewed `editorialBrands` registry. For brands
+explicitly discussed in that image's section, set `generationMode: compose`,
+`assetType: editorial_illustration`, and `brandAssetIds` to up to four exact
+registry IDs. Include source attribution in `provenance`. Never substitute a
+specific card for a different card or infer a transfer partnership from a logo.
+Agent 06 places those exact source pixels without recoloring or redrawing.
+Use `brandAssetIds: []` for a restrained flat topic illustration when no suitable
+reviewed asset exists. News imagery is independent and never waits for a blog.
+Use a recognizable hero, a distinct section illustration, and a useful
+comparison composition; do not repeat the same bitmap three times. Keep logos
+and important subjects readable at 320px thumbnail width. For supplied photos,
+record reuse permission; a publisher's scraped image URL is not permission.
+
+Generated visuals are an exceptional unbranded fallback, not the default.
+Use natural editorial photography or restrained flat 2D illustration, never
+glossy 3D models, toy planes, floating coins, fake logos, or artificial card art.
+Use specific composition, believable materials and lighting, restrained
 Creddy cream/gold/coral palette, natural imperfections, and useful negative
 space. Exclude text, logos, watermarks, bank-card designs, fake screenshots,
 public figures, distorted anatomy, duplicate objects, plastic skin, oversaturated

@@ -19,6 +19,7 @@ import {
   type VisualPlanRecord,
 } from './pipeline-types.js';
 import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
+import { composeEditorialImage } from './brand-asset-registry.js';
 
 export interface ProductionTaskRecord {
   draft: ContentDraftRecord;
@@ -32,6 +33,7 @@ export interface ProductionPreparationResult {
   createdVideoJobs: number;
   skippedCount: number;
   packageIds: string[];
+  assetFailures?: Array<{ visualPlanId: string; reason: string }>;
 }
 
 export interface ArticlePreviewRefreshResult {
@@ -191,7 +193,11 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
     sourceUrls: draft.sourceUrls,
     factualClaims: draft.factualClaims,
     verificationGate: draft.verificationGate,
-    article: draft.article,
+    article: draft.article && { ...draft.article, blocks: draft.article.blocks.map(block => {
+      if (block.type !== 'visual') return block;
+      const asset = visualPlan.articleVisuals?.assets.find(asset => asset.id === block.visualId && asset.generationMode === 'compose' && asset.brandAssetIds);
+      return asset ? { ...block, caption: asset.caption } : block;
+    }) },
     articleVisuals: visualPlan.articleVisuals,
     articleReadiness: draft.article && visualPlan.articleVisuals?.assets.every((asset) => Boolean(asset.assetPath))
       ? 'ready_for_review'
@@ -221,6 +227,30 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     packageIds: [],
   };
   for (const task of tasks) {
+    // Existing supplied/generated assets remain immutable. Only explicit new
+    // brand composition plans are rendered; social scenes are untouched.
+    let composed = false;
+    try {
+    for (const asset of task.visualPlan.articleVisuals?.assets ?? []) {
+      if (asset.generationMode !== 'compose' || !asset.brandAssetIds || asset.assetPath) continue;
+      const section = task.draft.article!.blocks.find(block => block.id === asset.articleBlockId);
+      const context = section && ('text' in section ? section.text : 'caption' in section ? section.caption : 'title' in section ? section.title : '');
+      const image = await composeEditorialImage({ root, title: `${task.draft.article!.title} ${context || ''}`,
+        usage: asset.usage, brandIds: asset.brandAssetIds });
+      asset.assetPath = image.assetPath;
+      asset.altText = image.altText;
+      asset.caption = image.caption;
+      asset.provenance = image.provenanceText;
+      composed = true;
+    }
+    if (composed) await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${task.visualPlan.id}.json`), task.visualPlan);
+    } catch {
+      const failure = { visualPlanId: task.visualPlan.id, reason: 'Brand image composition failed; source plan retained for retry.' };
+      (result.assetFailures ??= []).push(failure);
+      result.skippedCount++;
+      await writeJsonAtomic(safeDataPath(root, 'reports', 'brand-image-failures', `${task.visualPlan.id}.json`), failure);
+      continue;
+    }
     const content = buildProductionPackage(task, now);
     const destination = safeDataPath(root, '06-content-packages', `${content.id}.json`);
     if (await pathExists(destination)) {

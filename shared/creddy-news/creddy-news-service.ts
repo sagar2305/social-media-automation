@@ -1,6 +1,12 @@
 // Server-side only: imported by API routes and pipeline, never client components.
 import type { NewsContent, NewsItem, NewsPatch } from './creddy-news-types';
-import { validateNewsContent, validateNewsPatch } from './creddy-news-types';
+import { publicHttps, validateNewsContent, validateNewsPatch } from './creddy-news-types';
+
+export type NewsImageReplacement = {
+  url: string;
+  rights: 'licensed' | 'owned' | 'publisher_permission' | 'editorial_reference';
+  attribution: string;
+};
 
 export class NewsService {
   constructor(private readonly url: string, private readonly key: string, private readonly fetcher = fetch) {}
@@ -44,6 +50,16 @@ export class NewsService {
     if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1) throw new Error('Invalid news identity.');
     if (action === 'edit') { if (!patch) throw new Error('News text is required.'); validateNewsPatch(patch); }
     return this.request('rpc/creddy_news_manage', 'POST', { p_id: id, p_revision: revision, p_action: action, p_patch: patch, p_actor: actor });
+  }
+  async setImage(id: string, revision: number, image: NewsImageReplacement, actor: string): Promise<NewsItem> {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1) throw new Error('Invalid news identity.');
+    if (!publicHttps(image.url) || new URL(image.url).search || new URL(image.url).hash
+      || !['licensed', 'owned', 'publisher_permission', 'editorial_reference'].includes(image.rights)
+      || typeof image.attribution !== 'string' || !image.attribution.trim() || image.attribution.length > 4000
+      || typeof actor !== 'string' || !actor.trim() || actor.length > 200) throw new Error('An approved public image and attribution are required.');
+    return this.request('rpc/creddy_news_set_image', 'POST', {
+      p_id: id, p_revision: revision, p_image_url: image.url, p_image_provenance: image, p_actor: actor,
+    });
   }
   async claimNotification(id: string): Promise<NewsItem | undefined> {
     return (await this.request<NewsItem[]>('rpc/creddy_news_claim_notification', 'POST', { p_id: id }))[0];

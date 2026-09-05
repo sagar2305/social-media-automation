@@ -108,20 +108,21 @@ export function codexArticleImagePrompt(asset: CreddyArticleVisualAsset): string
     throw new Error('Codex receives only validated generated article assets');
   }
   return [
-    'Use case: stylized-concept',
+    'Use case: editorial illustration',
     'Asset type: responsive 16:9 image for a premium consumer-finance editorial article',
     `Primary request: ${asset.prompt}`,
     `Style/medium: ${asset.seriesStyle}`,
     `Composition/framing: ${asset.aspectRatio} ${asset.usage} composition; keep the important subject inside the central 78% safe area`,
     'Text: none',
     'Constraints: generate only clean standalone artwork; preserve the approved series style; no website frame or presentation chrome',
-    `Avoid: ${asset.negativePrompt}; cream gallery mat; coin cluster; travel route; card outline; starburst; words; badges; typography; watermarks`,
+    `Avoid: ${asset.negativePrompt}; artificial 3D rendering; glossy plastic; toy planes; metallic coins; fake logos; cream gallery mat; coin cluster; travel route; card outline; starburst; words; badges; typography; watermarks`,
   ].join('\n');
 }
 
 export function codexArticleImageFingerprint(visualPlanId: string, asset: CreddyArticleVisualAsset): string {
   return createHash('sha256').update(JSON.stringify({
     version: CODEX_ARTICLE_IMAGE_REQUEST_VERSION,
+    assembledPrompt: codexArticleImagePrompt(asset),
     visualPlanId,
     assetId: asset.id,
     usage: asset.usage,

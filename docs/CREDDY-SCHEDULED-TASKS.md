@@ -89,6 +89,12 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
 
 ## Delivery health
 
+Blogs and News follow [editorial imagery](CREDDY-EDITORIAL-IMAGES.md): use the
+reviewed authentic brand registry and flat editorial fallback, not generated
+logos or artificial 3D artwork. The existing News stage repairs up to five
+durable pending image updates per pass without holding up new News text.
+Missing images and confirmed image/Slack repairs are reported separately.
+
 `reports/latest/hourly-editorial.json` and `app-news.json` distinguish completed,
 disabled, and degraded News processing. A News setup/service failure is retained
 as a sanitized retryable failure while already-authorized blog/social queues
@@ -147,6 +153,6 @@ revalidates authorization expiry, ranking input hash, decision hash, official
 verification hash, official-check age, content binding, and output-specific
 verification immediately before delivery.
 
-This workflow requires no new Supabase migration, database Cron, Edge Function,
-queue service, or second scheduler. The existing app News schema remains the only
-database boundary.
+The editorial-image rollout adds one image-only RPC migration in the existing
+app News schema. It requires no database Cron, Edge Function, queue service, or
+second scheduler. The existing app News schema remains the database boundary.

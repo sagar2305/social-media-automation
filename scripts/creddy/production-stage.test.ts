@@ -118,6 +118,32 @@ function visualPlan(): VisualPlanRecord {
   };
 }
 
+test('brand composition is idempotent and a failed plan does not block an unrelated plan', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-brand-production-'));
+  await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
+  const plan = visualPlan();
+  for (const asset of plan.articleVisuals!.assets) {
+    asset.generationMode = 'compose'; asset.assetType = 'editorial_illustration';
+    asset.aspectRatio = '16:9'; asset.brandAssetIds = [];
+  }
+  const broken = structuredClone(plan); broken.id = 'visual-broken';
+  broken.articleVisuals!.assets[0]!.brandAssetIds = ['not-approved'];
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${broken.id}.json`), broken);
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${plan.id}.json`), plan);
+  const first = await prepareProductionPackages(root);
+  assert.equal(first.assetFailures?.length, 1);
+  assert.equal(first.createdPackages, 1);
+  const preserved = await readJson<VisualPlanRecord>(safeDataPath(root, '06-visual-plans', `${broken.id}.json`));
+  assert.deepEqual(preserved, broken);
+  const saved = await readJson<VisualPlanRecord>(safeDataPath(root, '06-visual-plans', `${plan.id}.json`));
+  assert.ok(saved.articleVisuals!.assets.every(asset => asset.assetPath));
+  assert.deepEqual(saved.scenes, plan.scenes);
+  assert.equal((await prepareProductionPackages(root)).updatedArticlePackages, 0);
+});
+
 test('Agent 6 assembles one immutable package and exactly two render jobs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-production-'));
   await initializeCreddyDataRoot(root);
