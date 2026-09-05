@@ -120,6 +120,31 @@ test('validates and renders the unified Creddy website article', () => {
   assert.match(html, /box-shadow:none/);
 });
 
+test('reviewed photos are explicit licensed heroes and retain public attribution in previews', () => {
+  const plan = visuals();
+  const hero = plan.assets[0]!;
+  hero.generationMode = 'compose'; hero.assetType = 'licensed_photo'; hero.photoAssetId = 'klm-787';
+  hero.provenance = 'Reviewed photograph with a documented license';
+  assert.doesNotThrow(() => validateCreddyArticleVisuals(plan, article(), claims));
+  hero.brandAssetIds = [];
+  assert.throws(() => validateCreddyArticleVisuals(plan, article(), claims), /single explicit/);
+  delete hero.brandAssetIds;
+  hero.assetPath = '/tmp/photo.png';
+  assert.throws(() => validateCreddyArticleVisuals(plan, article(), claims), /verified creator/);
+  hero.photoCredit = { creator: 'Styyx', sourceUrl: 'https://commons.wikimedia.org/wiki/File:KLM_787.jpg',
+    license: 'CC-BY-SA-4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    modifications: 'Cropped and resized; adapted image CC BY-SA 4.0.' };
+  assert.doesNotThrow(() => validateCreddyArticleVisuals(plan, article(), claims));
+  const html = renderCreddyArticlePreview(article(), {
+    [hero.id]: { src: 'assets/photo.png', altText: 'KLM aircraft', photoCredit: hero.photoCredit },
+  });
+  assert.match(html, /Photo: Styyx/);
+  assert.match(html, /href="https:\/\/creativecommons.org\/licenses\/by-sa\/4.0\/"/);
+  assert.match(html, /adapted image CC BY-SA 4.0/);
+  hero.usage = 'inline';
+  assert.throws(() => validateCreddyArticleVisuals(plan, article(), claims), /single explicit/);
+});
+
 test('requires one identical art direction across pending generated article images', () => {
   const inconsistent = visuals();
   inconsistent.assets[1]!.seriesStyle = 'A completely different glossy neon 3D render series with saturated purple lighting, plastic materials, extreme contrast, and an ultra-wide synthetic camera perspective.';

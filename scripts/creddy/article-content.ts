@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path';
+import { validatePhotoCredit, type EditorialPhotoCredit } from './editorial-photos.js';
 
 import type {
   CreddyArticleBlock,
@@ -220,6 +221,13 @@ export function validateCreddyArticleVisuals(
       throw new Error(`Visual ${asset.id} requires concise descriptive alt text`);
     }
     if (!asset.caption.trim() || asset.caption.length > 220) throw new Error(`Visual ${asset.id} requires a caption`);
+    if (asset.photoAssetId !== undefined && (!/^[a-z0-9-]+$/.test(asset.photoAssetId)
+        || asset.usage !== 'hero' || asset.id !== article.heroVisualId
+        || asset.generationMode !== 'compose' || asset.assetType !== 'licensed_photo'
+        || asset.brandAssetIds !== undefined)) {
+      throw new Error('Reviewed photo must be a single explicit licensed hero, without brand composition');
+    }
+    if (asset.photoAssetId && asset.assetPath) validatePhotoCredit(asset.photoCredit!);
     if (asset.generationMode === 'generate') {
       if (!asset.assetPath) {
         const seriesStyle = asset.seriesStyle?.replace(/\s+/g, ' ').trim();
@@ -266,7 +274,7 @@ const APP_STORE_ICON = '<svg class="app-store-icon" aria-hidden="true" viewBox="
 const PLAY_STORE_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24"><path class="play-blue" d="M4.8 3.4 14 12l-9.2 8.6a2 2 0 0 1-.3-1V4.4c0-.4.1-.7.3-1Z"/><path class="play-green" d="m5.7 2.8 11.1 6.3-2.8 2.7-9.2-8.6c.3-.4.6-.5.9-.4Z"/><path class="play-yellow" d="m14 12 2.8 2.7-11.1 6.4c-.4.2-.7 0-.9-.4L14 12Z"/><path class="play-red" d="m16.8 9.1 2.1 1.2c.8.5.8 1.4 0 1.9l-2.1 1.2-2.8-2.7 2.8-1.6Z"/></svg>';
 const ARTICLE_DOWNLOAD_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>';
 
-export type CreddyArticlePreviewVisual = { src: string; altText: string };
+export type CreddyArticlePreviewVisual = { src: string; altText: string; photoCredit?: EditorialPhotoCredit };
 
 function renderBlock(
   block: CreddyArticleBlock,
@@ -283,7 +291,10 @@ function renderBlock(
       const media = asset
         ? `<img src="${escapeHtml(asset.src)}" alt="${escapeHtml(asset.altText)}" loading="eager">`
         : `<div class="visual-placeholder">Visual · ${escapeHtml(block.visualId)}</div>`;
-      return `<figure class="visual" data-visual-id="${escapeHtml(block.visualId)}"><div class="visual-ornaments" aria-hidden="true"><span class="ornament-coins"></span><span class="ornament-route"></span><span class="ornament-card"></span><span class="ornament-star"></span></div><div class="visual-frame">${media}</div><figcaption>${escapeHtml(block.caption)}</figcaption></figure>`;
+      const credit = asset?.photoCredit;
+      if (credit) validatePhotoCredit(credit);
+      const attribution = credit ? ` Photo: ${escapeHtml(credit.creator)}. <a href="${escapeHtml(credit.sourceUrl)}">Source</a> / <a href="${escapeHtml(credit.licenseUrl)}">${escapeHtml(credit.license)}</a>. ${escapeHtml(credit.modifications)}` : '';
+      return `<figure class="visual" data-visual-id="${escapeHtml(block.visualId)}"><div class="visual-ornaments" aria-hidden="true"><span class="ornament-coins"></span><span class="ornament-route"></span><span class="ornament-card"></span><span class="ornament-star"></span></div><div class="visual-frame">${media}</div><figcaption>${escapeHtml(block.caption)}${attribution}</figcaption></figure>`;
     }
     case 'referral_card': return `<aside class="referral"><div><span>Recommended option</span><strong>${escapeHtml(block.title)}</strong><p>${escapeHtml(block.body)}</p></div><a href="#referral-${escapeHtml(block.referralId)}">${escapeHtml(block.ctaLabel)}</a></aside>`;
     case 'faq': return `<section class="faq"><h2>Frequently asked questions</h2>${block.items.map((item) => `<details><summary>${escapeHtml(item.question)}</summary><p>${escapeHtml(item.answer)}</p></details>`).join('')}</section>`;

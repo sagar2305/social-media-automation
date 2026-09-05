@@ -20,6 +20,7 @@ import {
 } from './pipeline-types.js';
 import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 import { composeEditorialImage } from './brand-asset-registry.js';
+import { composeEditorialPhoto } from './editorial-photos.js';
 
 export interface ProductionTaskRecord {
   draft: ContentDraftRecord;
@@ -105,7 +106,7 @@ function partitionNarration(narration: string, count: number): string[] {
 async function writeArticlePreview(root: string, content: ContentPackageRecord): Promise<string> {
   if (!content.article) throw new Error('Article preview requires article content');
   const previewPath = safeDataPath(root, '06-content-packages', 'articles', content.id, 'index.html');
-  const visualAssets: Record<string, { src: string; altText: string }> = {};
+  const visualAssets: Record<string, import('./article-content.js').CreddyArticlePreviewVisual> = {};
   for (const asset of content.articleVisuals?.assets ?? []) {
     if (!asset.assetPath || !(await pathExists(asset.assetPath))) continue;
     const sourceExtension = extname(asset.assetPath).toLowerCase();
@@ -114,7 +115,7 @@ async function writeArticlePreview(root: string, content: ContentPackageRecord):
     const destination = safeDataPath(root, '06-content-packages', 'articles', content.id, 'assets', filename);
     await mkdir(dirname(destination), { recursive: true });
     await copyFile(asset.assetPath, destination);
-    visualAssets[asset.id] = { src: `assets/${filename}`, altText: asset.altText };
+    visualAssets[asset.id] = { src: `assets/${filename}`, altText: asset.altText, ...(asset.photoCredit ? { photoCredit: asset.photoCredit } : {}) };
   }
   await mkdir(dirname(previewPath), { recursive: true });
   await writeFile(previewPath, renderCreddyArticlePreview(content.article, visualAssets));
@@ -195,7 +196,7 @@ export function buildProductionPackage(task: ProductionTaskRecord, now = new Dat
     verificationGate: draft.verificationGate,
     article: draft.article && { ...draft.article, blocks: draft.article.blocks.map(block => {
       if (block.type !== 'visual') return block;
-      const asset = visualPlan.articleVisuals?.assets.find(asset => asset.id === block.visualId && asset.generationMode === 'compose' && asset.brandAssetIds);
+      const asset = visualPlan.articleVisuals?.assets.find(asset => asset.id === block.visualId && asset.generationMode === 'compose' && (asset.brandAssetIds || asset.photoAssetId));
       return asset ? { ...block, caption: asset.caption } : block;
     }) },
     articleVisuals: visualPlan.articleVisuals,
@@ -232,15 +233,24 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     let composed = false;
     try {
     for (const asset of task.visualPlan.articleVisuals?.assets ?? []) {
-      if (asset.generationMode !== 'compose' || !asset.brandAssetIds || asset.assetPath) continue;
+      if (asset.generationMode !== 'compose' || (!asset.brandAssetIds && !asset.photoAssetId)) continue;
+      // A supplied path must never bypass registry resolution or trusted photo credits.
+      if (asset.assetPath && !asset.photoAssetId) continue;
+      if (asset.photoAssetId && (asset.brandAssetIds !== undefined || asset.assetType !== 'licensed_photo'
+          || asset.usage !== 'hero' || asset.id !== task.draft.article!.heroVisualId)) {
+        throw new Error('Photo composition requires one explicitly selected licensed hero');
+      }
       const section = task.draft.article!.blocks.find(block => block.id === asset.articleBlockId);
       const context = section && ('text' in section ? section.text : 'caption' in section ? section.caption : 'title' in section ? section.title : '');
-      const image = await composeEditorialImage({ root, title: `${task.draft.article!.title} ${context || ''}`,
-        usage: asset.usage, brandIds: asset.brandAssetIds });
+      const image = asset.photoAssetId
+        ? await composeEditorialPhoto({ root, photoId: asset.photoAssetId, usage: asset.usage })
+        : await composeEditorialImage({ root, title: `${task.draft.article!.title} ${context || ''}`,
+          usage: asset.usage, brandIds: asset.brandAssetIds! });
       asset.assetPath = image.assetPath;
       asset.altText = image.altText;
       asset.caption = image.caption;
       asset.provenance = image.provenanceText;
+      if ('photoCredit' in image) asset.photoCredit = image.photoCredit;
       composed = true;
     }
     if (composed) await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${task.visualPlan.id}.json`), task.visualPlan);

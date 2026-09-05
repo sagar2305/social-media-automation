@@ -144,6 +144,32 @@ test('brand composition is idempotent and a failed plan does not block an unrela
   assert.equal((await prepareProductionPackages(root)).updatedArticlePackages, 0);
 });
 
+test('photo composition re-resolves prepopulated paths and isolates unknown photo IDs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-photo-production-'));
+  await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
+  const plan = visualPlan();
+  const hero = plan.articleVisuals!.assets[0]!;
+  hero.generationMode = 'compose'; hero.photoAssetId = 'klm-787';
+  hero.assetPath = '/tmp/unrelated-prepopulated-photo.png';
+  const broken = structuredClone(plan); broken.id = 'visual-broken-photo';
+  broken.articleVisuals!.assets[0]!.photoAssetId = 'not-reviewed';
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${broken.id}.json`), broken);
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${plan.id}.json`), plan);
+  const first = await prepareProductionPackages(root);
+  assert.equal(first.assetFailures?.length, 1);
+  assert.equal(first.createdPackages, 1);
+  assert.deepEqual(await readJson(safeDataPath(root, '06-visual-plans', `${broken.id}.json`)), broken);
+  const saved = await readJson<VisualPlanRecord>(safeDataPath(root, '06-visual-plans', `${plan.id}.json`));
+  assert.notEqual(saved.articleVisuals!.assets[0]!.assetPath, hero.assetPath);
+  assert.equal(saved.articleVisuals!.assets[0]!.photoCredit?.creator, 'Styyx');
+  assert.equal((await prepareProductionPackages(root)).updatedArticlePackages, 0);
+  const previews = await refreshArticlePreviews(root);
+  assert.match(await readFile(previews.previewPaths[0]!, 'utf8'), /Photo: Styyx/);
+});
+
 test('Agent 6 assembles one immutable package and exactly two render jobs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-production-'));
   await initializeCreddyDataRoot(root);
