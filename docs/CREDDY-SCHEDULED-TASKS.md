@@ -79,6 +79,28 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
     reports distinguish newly inserted, changed, notification-reconciled, and
     unchanged published rows;
     the aggregate `published` count remains the number observed as published.
+    Policy exclusions are listed in the hourly report; ordinary age/score
+    exclusions do not trigger Slack alerts. Verification exceptions and confirmed
+    conflicts use the existing deduplicated digest. A confirmed material conflict
+    on an existing News item invokes the revision-checked soft-delete operation:
+    the row, content, and audit trail remain, but the item disappears from the
+    public feed and cannot be automatically republished. Merely aging past the
+    72-hour acquisition window never removes historical News.
+
+## Delivery health
+
+`reports/latest/hourly-editorial.json` and `app-news.json` distinguish completed,
+disabled, and degraded News processing. A News setup/service failure is retained
+as a sanitized retryable failure while already-authorized blog/social queues
+continue. A completed hourly lease means orchestration finished; inspect delivery
+health and item failures before interpreting it as successful publication.
+
+Rolling status includes a reporting-only `delivery` field alongside authorization
+`channels`. Current News receipts live under `reports/news-delivery/`; blogs and
+social use their existing CMS, Content Bank, and Slack receipts. Old or unbound
+receipts produce unknown/pending status, not evidence of current delivery. Slack
+reconciliation is counted only after a confirmed notification revision receipt.
+The scheduled test command includes the News regression suite.
 
 ## Exact scheduled-task sequence
 

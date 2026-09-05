@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { beginHourlyRun, finishHourlyRun, recordWithheldNewsItems, selectNewWithheldNewsItems } from './hourly-orchestrator.js';
+import { beginHourlyRun, finishHourlyRun, recordWithheldNewsItems, selectNewWithheldNewsItems, runHourlyNewsProjection } from './hourly-orchestrator.js';
 import { initializeCreddyDataRoot, listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import type { AnalysisDecisionRecord, CanonicalNewsRecord } from './pipeline-types.js';
 import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
@@ -16,12 +16,52 @@ import {
   passesUrgentPreGate,
   reconcileRollingEditorialLedger,
   newsProjectionCandidateIds,
+  newsProjectionPlan,
   selectDailyEditorialSlate,
   verificationCandidateIds,
   type RollingEditorialRecord,
 } from './rolling-editorial.js';
 
 const NOW = new Date('2026-09-01T12:00:00.000Z'); // 08:00 America/New_York
+
+test('News plan reports ordinary exclusions and retains conflicts for maintenance', async () => {
+  const root = await rootWith(3);
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-1.json'),
+    { ...decision(1), editorialDisposition: 'defer', route: 'defer' });
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-2.json'),
+    { ...decision(2), materialConflict: true });
+  const plan = await newsProjectionPlan(root, NOW);
+  assert.deepEqual(plan.eligibleIds, ['canonical-0']);
+  assert.deepEqual(plan.conflictIds, ['canonical-2']);
+  assert.equal(plan.excluded.find((item) => item.id === 'canonical-1')?.actionable, false);
+  assert.equal(plan.excluded.find((item) => item.id === 'canonical-2')?.actionable, true);
+  assert.match(plan.excluded[0]!.reason, /ranking/i);
+});
+
+test('News configuration failure returns a durable degraded result without aborting authorized work', async () => {
+  const root = await rootWith(1);
+  const authorization = await authorizeRollingProduction(root, NOW);
+  const plan = await newsProjectionPlan(root, NOW);
+  const result = await runHourlyNewsProjection(root, { CREDDY_NEWS_ENABLED: 'true' }, plan);
+  assert.equal(result.status, 'degraded');
+  assert.equal(result.failures[0]?.id, 'news-stage');
+  assert.deepEqual((await readJson<any>(safeDataPath(root, 'reports', 'latest', 'app-news.json'))).failures, result.failures);
+  assert.ok(authorization.daily.length + authorization.hourlyBlogs.length > 0);
+  const retained = await readJson<AnalysisDecisionRecord>(safeDataPath(root, '04-analysis-queue', 'completed', 'canonical-0.json'));
+  assert.ok(retained.productionAuthorization);
+});
+
+test('an idle News pass replaces stale reports and retains routine exclusion reasons', async () => {
+  const root = await rootWith(0);
+  await writeJsonAtomic(safeDataPath(root, 'reports', 'latest', 'app-news.json'), { publishedNew: 9 });
+  const excluded = [{ id: 'old-story', headline: 'Old story', reason: 'Outside the acquisition window.', actionable: false }];
+  await runHourlyNewsProjection(root, { CREDDY_NEWS_ENABLED: 'true' }, { eligibleIds: [], conflictIds: [], excluded });
+  const report = await readJson<{status: string; publishedNew: number; excluded: typeof excluded}>(
+    safeDataPath(root, 'reports', 'latest', 'app-news.json'));
+  assert.equal(report.status, 'completed');
+  assert.equal(report.publishedNew, 0);
+  assert.deepEqual(report.excluded, excluded);
+});
 
 function article(index: number): CanonicalNewsRecord {
   return {

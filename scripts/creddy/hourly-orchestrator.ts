@@ -22,7 +22,7 @@ import {
 } from './pipeline-store.js';
 import {
   authorizeRollingProduction,
-  newsProjectionCandidateIds,
+  newsProjectionPlan,
   officialVerificationFingerprint,
   rollingEditorialStatus,
   selectDailyEditorialSlate,
@@ -40,6 +40,32 @@ export interface HourlyOrchestratorLease {
 }
 
 const LEASE_PATH = ['05-editorial-ledger', 'hourly-runs', 'current.json'] as const;
+
+/** A News service outage must not prevent authorized blog/social delivery.
+ * Persist an explicitly degraded result rather than a healthy-looking no-op. */
+export async function runHourlyNewsProjection(root: string, env: NodeJS.ProcessEnv,
+  suppliedPlan?: Awaited<ReturnType<typeof newsProjectionPlan>>, now = new Date()) {
+  let plan = suppliedPlan;
+  const empty = { disabled: env.CREDDY_NEWS_ENABLED !== 'true', published: 0, publishedNew: 0,
+    publishedChanged: 0, publishedReconciled: 0, publishedUnchanged: 0, notPublished: 0,
+    deleted: 0, publishedIds: [] as string[], withheld: [] as Array<{ id: string; headline: string; reason: string }>,
+    failures: [] as Array<{ id: string; reason: string }> };
+  try {
+    plan ??= await newsProjectionPlan(root, now);
+    const result = plan.eligibleIds.length || plan.conflictIds.length
+      ? await runAppNewsStage(root, { env, canonicalIds: plan.eligibleIds,
+        conflictIds: plan.conflictIds, notifyMode: 'published_only' }) : empty;
+    const reported = { ...result, status: result.disabled ? 'disabled' : result.failures.length ? 'degraded' : 'completed',
+      excluded: plan.excluded };
+    await writeJsonAtomic(safeDataPath(root, 'reports', 'latest', 'app-news.json'), reported);
+    return reported;
+  } catch {
+    const result = { ...empty, status: 'degraded', excluded: plan?.excluded ?? [],
+      failures: [{ id: 'news-stage', reason: 'News stage failed; check configuration and local inputs. Delivery remains retryable.' }] };
+    await writeJsonAtomic(safeDataPath(root, 'reports', 'latest', 'app-news.json'), result);
+    return result;
+  }
+}
 
 type WithheldNewsItem = { id: string; headline: string; reason: string; fingerprint: string };
 
@@ -174,16 +200,14 @@ export async function runHourlyRouting(input: {
   const verificationIds = await verificationCandidateIds(input.root, now, 5, dailySelection ?? null);
   const verificationTasks = await prepareRollingOfficialVerificationTasks(input.root, verificationIds, now);
   const authorizations = await authorizeRollingProduction(input.root, now, dailySelection ?? null);
-  const newsIds = await newsProjectionCandidateIds(input.root, now);
-  const news = newsIds.length
-    ? await runAppNewsStage(input.root, { env, canonicalIds: newsIds, notifyMode: 'published_only' })
-    : { disabled: env.CREDDY_NEWS_ENABLED !== 'true', published: 0, publishedNew: 0, publishedChanged: 0,
-      publishedReconciled: 0, publishedUnchanged: 0, notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [] };
+  const news = await runHourlyNewsProjection(input.root, env, undefined, now);
   let withheldSlack: { sent: boolean; ts?: string; error?: string } = { sent: false };
   const digestKey = now.toISOString().slice(0, 13);
   const receiptPath = safeDataPath(input.root, 'reports', 'news-withheld-slack', `${digestKey}.json`);
   const withheldCandidates = [
     ...news.withheld,
+    ...news.excluded.filter((item) => item.actionable && !news.disabled &&
+      !news.withheld.some((withheld) => withheld.id === item.id)),
     ...news.failures.map((item) => ({ id: item.id, headline: item.id, reason: 'Processing failed; inspect the local hourly report.' })),
   ];
   const withheldItems = await selectNewWithheldNewsItems(input.root, withheldCandidates);
@@ -206,6 +230,7 @@ export async function runHourlyRouting(input: {
   }
   const result = {
     runId: input.runId,
+    status: news.status === 'degraded' || withheldSlack.error ? 'degraded' : 'completed',
     dailySelection,
     dailySelectionDeferred: !dailySelection && analysisPending > 0,
     verificationCandidateIds: verificationIds,

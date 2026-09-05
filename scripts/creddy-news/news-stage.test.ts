@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { calculateEditorialPriorityScore, calculateViralPotentialScore } from '../creddy/analysis-stage.js';
 import { newsHeadlineWithoutPublisherSuffix, prepareAppNews, newsSourceKey, runAppNewsStage } from './news-stage.js';
 import { CREDDY_PIPELINE_VERSION, type AnalysisDecisionRecord, type CanonicalNewsRecord } from '../creddy/pipeline-types.js';
-import { initializeCreddyDataRoot, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
+import { initializeCreddyDataRoot, readJson, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
 import { NewsService } from '../../shared/creddy-news/creddy-news-service.js';
 import { authorizeNewsSlack, handleNewsSlack, newsMessage, newsSlackAcknowledgement, notifyNews, notifyWithheldNewsDigest, type NewsSlackPayload } from '../../shared/creddy-news/creddy-news-slack.js';
 import { publicHttps, validateNewsPatch, type NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
@@ -227,6 +227,7 @@ test('standalone news branch consumes its own evidence root and records a report
   let notifications = 0;
   const service = {
     findByIdentity: async () => current,
+    get: async () => current!,
     ingest: async (input: { error: string | null }) => {
       assert.equal(input.error, null);
       ingested++;
@@ -237,6 +238,8 @@ test('standalone news branch consumes its own evidence root and records a report
   const notify = async () => {
     notifications++;
     current!.slack_revision = current!.revision;
+    current!.slack_channel = 'CNEWS';
+    current!.slack_ts = '1.2';
   };
   const skipped = await runAppNewsStage(root, { env, service, notify, canonicalIds: ['not-selected'] });
   assert.equal(skipped.published, 0); assert.equal(ingested, 0);
@@ -260,6 +263,11 @@ test('standalone news branch consumes its own evidence root and records a report
   assert.equal(failedReconciliation.publishedReconciled, 0);
   assert.equal(failedReconciliation.failures.length, 1);
   assert.equal(current!.slack_revision, 0, 'a failed delivery remains retryable');
+  assert.equal((await readJson<{ status: string }>(safeDataPath(root, 'reports', 'news-delivery', `${decision.canonicalId}.json`))).status,
+    'published', 'Slack failure does not invalidate a confirmed News publication');
+  const leased = await runAppNewsStage(root, { env, service, notify: async () => {} });
+  assert.equal(leased.publishedReconciled, 0, 'a notifier no-op does not prove delivery');
+  assert.equal(leased.publishedUnchanged, 1);
   const reconciled = await runAppNewsStage(root, { env, service, notify });
   assert.equal(reconciled.published, 1); assert.equal(reconciled.publishedNew, 0);
   assert.equal(reconciled.publishedChanged, 0); assert.equal(reconciled.publishedReconciled, 1);
@@ -276,12 +284,129 @@ test('News reports an existing withheld item becoming published as changed', asy
   const changed = { ...item(), revision: previous.revision + 1, updated_at: new Date().toISOString() };
   const service = {
     findByIdentity: async () => previous,
+    get: async () => changed,
     ingest: async () => changed,
   } as unknown as NewsService;
   const result = await runAppNewsStage(root, { env, service, notify: async () => {} });
   assert.equal(result.published, 1); assert.equal(result.publishedNew, 0);
   assert.equal(result.publishedChanged, 1); assert.equal(result.publishedReconciled, 0);
   assert.equal(result.publishedUnchanged, 0);
+});
+test('confirmed conflicts withhold existing News while preserving content and deleted records', async () => {
+  for (const route of ['rejected', 'missing']) {
+    const root = await mkdtemp(join(tmpdir(), 'creddy-news-conflict-'));
+    await initializeCreddyDataRoot(root);
+    const { article, decision } = fixtures();
+    decision.materialConflict = true;
+    decision.route = 'rejected';
+    article.fetchedAt = '2020-01-01T00:00:00.000Z';
+    if (route !== 'missing') await writeJsonAtomic(safeDataPath(root, '03-canonical-news', route, 'test.json'), article);
+    await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'test.json'), decision);
+    const previous = { ...item(), manually_edited: true };
+    previous.content.headline = 'An editor maintained this historical headline';
+    let current: NewsItem | undefined = previous;
+    let ingested = 0;
+    const service = {
+      findByIdentity: async () => current,
+      // Mirrors the live ingest guard: published or human-edited rows are immutable here.
+      ingest: async () => previous,
+      manage: async (id: string, revision: number, action: string, patch: unknown, actor: string) => {
+        ingested++;
+        assert.equal(id, previous.id);
+        assert.equal(revision, previous.revision);
+        assert.equal(action, 'delete');
+        assert.equal(patch, null);
+        assert.equal(actor, 'pipeline:confirmed-conflict');
+        return { ...previous, status: 'deleted', revision: 2 };
+      },
+    } as unknown as NewsService;
+    const options = { env, service, canonicalIds: [], conflictIds: [decision.canonicalId], notifyMode: 'published_only' as const };
+    const result = await runAppNewsStage(root, options);
+    assert.equal(ingested, 1);
+    assert.equal(result.withheld.length, 1);
+    assert.equal(result.deleted, 1);
+    assert.equal(result.withheld[0].headline, previous.content.headline);
+    assert.deepEqual(result.failures, []);
+    assert.equal((await readJson<{ status: string }>(safeDataPath(root, 'reports', 'news-delivery', `${decision.canonicalId}.json`))).status, 'deleted');
+    current = undefined;
+    await runAppNewsStage(root, options);
+    assert.equal(ingested, 1, 'never create a rejected story solely to withhold it');
+    current = { ...previous, status: 'deleted' };
+    await runAppNewsStage(root, options);
+    assert.equal(ingested, 1, 'deleted items stay deleted');
+    current = { ...previous, status: 'not_published' };
+    const unpublished = await runAppNewsStage(root, options);
+    assert.equal(ingested, 1, 'never-published items remain retryable rather than tombstoned');
+    assert.equal(current.status, 'not_published');
+    assert.equal(unpublished.notPublished, 1);
+    assert.match(unpublished.withheld[0].reason, /material conflict/);
+    current = previous;
+    decision.materialConflict = false;
+    await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'test.json'), decision);
+    await runAppNewsStage(root, options);
+    assert.equal(ingested, 1, 'age or rejection alone does not remove historical News');
+  }
+});
+test('per-item failures are sanitized and do not abort remaining News candidates', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-news-failure-'));
+  await initializeCreddyDataRoot(root);
+  const { article, decision } = fixtures();
+  for (const suffix of ['one', 'two']) {
+    const canonicalId = `canonical-${suffix}`;
+    await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', `${suffix}.json`), { ...article, canonicalId });
+    await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', `${suffix}.json`), { ...decision, canonicalId });
+  }
+  let attempts = 0;
+  const service = { findByIdentity: async () => { attempts++; throw new Error('private-body secret-token'); } } as unknown as NewsService;
+  const result = await runAppNewsStage(root, { env, service });
+  assert.equal(attempts, 2);
+  assert.equal(result.failures.length, 2);
+  assert.doesNotMatch(JSON.stringify(result), /private-body|secret-token/);
+  assert.equal((await readJson<{ status: string }>(safeDataPath(root, 'reports', 'news-delivery', 'canonical-one.json'))).status, 'failed');
+});
+test('conflict withdrawal revision races stay retryable and do not stop the queue', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-news-conflict-race-'));
+  await initializeCreddyDataRoot(root);
+  const { decision } = fixtures();
+  const conflictIds = ['canonical-one', 'canonical-two'];
+  for (const canonicalId of conflictIds) {
+    await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', `${canonicalId}.json`), {
+      ...decision, canonicalId, materialConflict: true,
+    });
+  }
+  let attempts = 0;
+  const previous = item();
+  const service = {
+    findByIdentity: async () => previous,
+    manage: async () => {
+      if (++attempts === 1) throw new Error('News changed. Reload before editing.');
+      return { ...previous, status: 'deleted', revision: previous.revision + 1 };
+    },
+  } as unknown as NewsService;
+  const result = await runAppNewsStage(root, { env, service, canonicalIds: [], conflictIds, notifyMode: 'published_only' });
+  assert.equal(attempts, 2);
+  assert.equal(result.failures.length, 1);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.withheld.length, 1);
+  assert.equal(previous.status, 'published');
+});
+test('an unchanged older publication cannot confirm delivery of the current decision', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-news-old-publication-'));
+  await initializeCreddyDataRoot(root);
+  const { article, decision } = fixtures();
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'test.json'), article);
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'test.json'), article);
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'test.json'), decision);
+  const previous = item();
+  previous.content.headline = 'A previous version retained by the publication guard';
+  const service = {
+    findByIdentity: async () => previous,
+    ingest: async () => previous,
+  } as unknown as NewsService;
+  await runAppNewsStage(root, { env, service, notifyMode: 'none' });
+  const receipt = await readJson<{ status: string; decisionHash?: string }>(safeDataPath(root, 'reports', 'news-delivery', `${decision.canonicalId}.json`));
+  assert.equal(receipt.status, 'published');
+  assert.equal(receipt.decisionHash, undefined);
 });
 test('server errors never reveal upstream bodies or credentials', async () => {
   const service = new NewsService('https://example.com', 'test-key', async () => new Response('private upstream payload', { status: 500 }));
