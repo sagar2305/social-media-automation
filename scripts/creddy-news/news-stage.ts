@@ -6,6 +6,8 @@ import { listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from '../credd
 import { validateAnalysisDecision } from '../creddy/analysis-stage.js';
 import { evaluateTrustedNewsPolicy } from '../creddy/news-policy.js';
 import { decisionFingerprint } from '../creddy/rolling-editorial.js';
+import { prepareNewsBrandImage } from '../creddy/editorial-image-delivery.js';
+import { reconcilePendingNewsImages } from './news-image-repair.js';
 import type { AnalysisDecisionRecord, CanonicalNewsRecord, RawArticleRecord } from '../creddy/pipeline-types.js';
 
 export function newsSourceKey(value: string): string {
@@ -31,7 +33,7 @@ export function newsHeadlineWithoutPublisherSuffix(headline: string, publisher: 
   ).trim();
 }
 
-export type ApprovedNewsImage = { url: string; rights: 'licensed' | 'owned' | 'publisher_permission'; attribution: string };
+export type ApprovedNewsImage = { url: string; rights: 'licensed' | 'owned' | 'publisher_permission' | 'editorial_reference'; attribution: string };
 export function prepareAppNews(
   decision: AnalysisDecisionRecord,
   article: CanonicalNewsRecord,
@@ -58,7 +60,7 @@ export function prepareAppNews(
   try { validateNewsContent(content, now); } catch (error) { errors.push((error as Error).message); }
   // Only an operator-maintained rights registry may authorize an image. Scraped metadata cannot.
   const image = approvedImage;
-  if (image && ['licensed', 'owned', 'publisher_permission'].includes(image.rights ?? '') && image.attribution?.trim() && publicHttps(image.url)) content.image_url = image.url;
+  if (image && ['licensed', 'owned', 'publisher_permission', 'editorial_reference'].includes(image.rights ?? '') && image.attribution?.trim() && publicHttps(image.url)) content.image_url = image.url;
   return { content, error: errors.length ? errors.join(' ') : null, provenance: {
     canonicalId: article.canonicalId, analysisId: decision.id, evidenceRecordIds: decision.evidenceRecordIds,
     claims: decision.claims, imageRights: content.image_url ? image : null,
@@ -80,12 +82,13 @@ export async function runAppNewsStage(root: string, options: {
   /** Existing publications with a confirmed conflict, including aged/rejected stories. */
   conflictIds?: string[];
   notifyMode?: 'all' | 'published_only' | 'none';
+  prepareImage?: typeof prepareNewsBrandImage;
 } = {}) {
   const env = options.env ?? process.env;
   if (env.CREDDY_NEWS_ENABLED !== 'true') return {
     disabled: true, published: 0, publishedNew: 0, publishedChanged: 0, publishedReconciled: 0,
     publishedUnchanged: 0,
-    notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [],
+    notPublished: 0, deleted: 0, publishedIds: [], withheld: [], failures: [], imageWithheld: [],
   };
   const service = options.service ?? configuredNewsService(env);
   const result = {
@@ -100,7 +103,13 @@ export async function runAppNewsStage(root: string, options: {
     publishedIds: [] as string[],
     withheld: [] as Array<{ id: string; headline: string; reason: string }>,
     failures: [] as Array<{ id: string; reason: string }>,
+    imageWithheld: [] as Array<{ id: string; newsId?: string; reason: string }>,
+    imageRepairs: undefined as Awaited<ReturnType<typeof reconcilePendingNewsImages>> | undefined,
   };
+  // Independent maintenance of previously published images, never selection or
+  // authorization of new content. New failures are retried on the next run.
+  try { result.imageRepairs = await reconcilePendingNewsImages(root, { service, env, prepareImage: options.prepareImage, notify: options.notify }); }
+  catch { result.failures.push({ id: 'news-image-repair', reason: 'Optional image repair could not run; its durable records remain available.' }); }
   const canonicals = new Map<string, CanonicalNewsRecord>();
   for (const route of ['rejected', 'archived', 'slack-review', 'reverify', 'deferred', 'approved']) {
     for (const path of await listJsonFiles(safeDataPath(root, '03-canonical-news', route))) {
@@ -151,8 +160,19 @@ export async function runAppNewsStage(root: string, options: {
           images[sourceKey],
           firstSeen.get(decision.canonicalId),
         );
+        if (!prepared.error && !prepared.content.image_url && (!previous || previous.status === 'not_published' && !previous.manually_edited)) {
+          try {
+            const image = await (options.prepareImage ?? prepareNewsBrandImage)(root, `${prepared.content.headline} ${prepared.content.summary}`, env);
+            if (image) { prepared.content.image_url = image.url; prepared.provenance.imageRights = image; }
+            else result.imageWithheld.push({ id: decision.canonicalId, reason: 'No reviewed brand asset matches this headline; News does not wait for imagery.' });
+          } catch {
+            result.imageWithheld.push({ id: decision.canonicalId, reason: 'Optional brand image failed; News text can publish. Retained for editorial-image-refresh backfill.' });
+          }
+        }
         if (!Number.isFinite(prepared.content.published_at)) prepared.content.published_at = 0;
         item = await service.ingest({ id: previous?.id ?? id, sourceKey: previous?.source_key ?? sourceKey, ...prepared });
+        const imagePending = result.imageWithheld.find(pending => pending.id === decision.canonicalId);
+        if (imagePending) imagePending.newsId = item.id;
         // Ingest may return an older publication or a human edit unchanged.
         // Only bind the current decision when the returned content matches it.
         reflectsCurrentDecision = (Object.keys(prepared.content) as Array<keyof NewsContent>)
@@ -206,6 +226,9 @@ export async function runAppNewsStage(root: string, options: {
       });
     }
   }
+  for (const item of result.imageWithheld) await writeJsonAtomic(safeDataPath(root, 'reports', 'news-image-pending', `${item.id}.json`), {
+    ...item, status: 'pending_image_refresh', recordedAt: new Date().toISOString(),
+  });
   await writeJsonAtomic(safeDataPath(root, 'reports', 'latest', 'app-news.json'), result);
   return result;
 }

@@ -1,0 +1,252 @@
+{
+  "version": 1,
+  "brands": [
+    {
+      "id": "amex",
+      "label": "American Express",
+      "aliases": [
+        "American Express",
+        "Amex"
+      ],
+      "file": "amex.png",
+      "sha256": "1e430c1c289788fc3c2d714b02a89b02f68997fe0ecd1dd8be552da7a2e6d2fa",
+      "sourceUrl": "https://www.aexp-static.com/cdaas/one/statics/axp-static-assets/1.8.0/package/dist/img/logos/dls-logo-bluebox-solid.svg",
+      "provenance": "Official americanexpress.com homepage logo. Original SVG rasterized at 1000px with geometry/colors preserved. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "atmos",
+      "label": "Atmos Rewards",
+      "aliases": [
+        "Atmos Rewards",
+        "Atmos"
+      ],
+      "file": "atmos.png",
+      "sha256": "03e7cc87f5cafcecab022829feca39228141d47f9883ec4aff1bf06304be4bcc",
+      "sourceUrl": "https://news.alaskaair.com/wp-content/uploads/2024/08/ATMOS-rewards.svg",
+      "provenance": "Official Alaska Airlines Atmos Rewards press kit. Original white mark preserved on navy backing for contrast. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "bilt",
+      "label": "Bilt",
+      "aliases": [
+        "Bilt",
+        "Bilt Rewards"
+      ],
+      "file": "bilt.png",
+      "sha256": "ca94edecd6342eb576b0cad72d6e10ef53e18e3425889338ecd1c758c8d2cc30",
+      "sourceUrl": "https://www.bilt.com/",
+      "provenance": "Official homepage inline logo; exact SVG geometry and original white mark rasterized on navy backing for contrast. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "chase",
+      "label": "Chase",
+      "aliases": [
+        "Chase",
+        "Chase Ultimate Rewards"
+      ],
+      "file": "chase.png",
+      "sha256": "818527848f58a851f19c9bcb7c21abb3875b63932ac55a80bb750a6414767cbf",
+      "sourceUrl": "https://www.chase.com/content/dam/unified-assets/logo/chase/chase-logo/additional-file-formats/logo_chase_headerfooter.svg",
+      "provenance": "Official Chase header/footer logo; exact original geometry/colors rasterized. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "flying-blue",
+      "label": "Flying Blue",
+      "aliases": [
+        "Flying Blue",
+        "FlyingBlue"
+      ],
+      "file": "flying-blue.png",
+      "sha256": "574f73ed5ffe2b785e1520e1980b7add1ee17308ae906f710ab6a57bd12db03f",
+      "sourceUrl": "https://www.flyingblue.com/en",
+      "provenance": "Official homepage Flying Blue / Air France / KLM logo; exact inline SVG geometry/colors rasterized. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "marriott-bonvoy",
+      "label": "Marriott Bonvoy",
+      "aliases": [
+        "Marriott Bonvoy",
+        "Marriott",
+        "Bonvoy"
+      ],
+      "file": "marriott-bonvoy.jpg",
+      "sha256": "9e7e2a4b1bfd11d2c2a072d3706ad823a5b8c6bdca59d0cc2d42161880353be8",
+      "sourceUrl": "https://mma.prnewswire.com/media/808904/BONVOY_Logo.jpg",
+      "provenance": "Original JPEG from Marriott International issuer press release: https://www.prnewswire.com/news-releases/marriott-international-anuncia-marriott-bonvoy-el-nuevo-nombre-de-su-programa-de-lealtad-877592643.html Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "delta",
+      "label": "Delta Air Lines",
+      "aliases": [
+        "Delta",
+        "Delta Air Lines",
+        "SkyMiles"
+      ],
+      "file": "delta.png",
+      "sha256": "c52dc69e2eb34fa9d1e664c7e59f19e7b954e4e5ec5e5269cd7f2e6f7ed68a66",
+      "sourceUrl": "https://news.delta.com/sites/default/files/2021-11/delta_c_r.png",
+      "provenance": "Unmodified official full-color PNG from https://news.delta.com/delta-air-lines-logos-and-brand-guidelines. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "hyatt",
+      "label": "Hyatt",
+      "aliases": [
+        "Hyatt",
+        "World of Hyatt"
+      ],
+      "file": "hyatt.png",
+      "sha256": "1a32a35490686775f2cf9ee221cf99f4faa90d3287be020cdd2d67e8cda22a58",
+      "sourceUrl": "https://newsroom.hyatt.com/download/Hyatt+company+logo.png",
+      "provenance": "Unmodified corporate logo from official Hyatt Press Kit: https://newsroom.hyatt.com/Press-Kit. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "chase-sapphire-preferred",
+      "label": "Chase Sapphire Preferred",
+      "aliases": [
+        "Chase Sapphire Preferred",
+        "Sapphire Preferred"
+      ],
+      "file": "chase-sapphire-preferred.png",
+      "sha256": "15fa052f4c9e5dfa07d0f1628b334885e72e40cd1c0122e90a4dbbfc9ebf2db3",
+      "sourceUrl": "https://www.chase.com/content/dam/unified-assets/sapphire-cards/personal/preferred/aaa-bbb-ccc-assets/card_sapphirePref_VS.png",
+      "provenance": "Unmodified official card artwork from https://www.chase.com/sapphire-cards/personal/preferred. Only for this exact product. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "capital-one",
+      "label": "Capital One",
+      "aliases": [
+        "Capital One",
+        "CapitalOne"
+      ],
+      "file": "capital-one.png",
+      "sha256": "533e9c1bf7b2feacb1f9258df24afc0a1ccba3dca5f354ad7bd9134dad501bd6",
+      "sourceUrl": "https://www.capitalone.com/",
+      "provenance": "Official homepage inline SVG labeled Capital One Home, rasterized with original geometry/colors preserved. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "american-airlines",
+      "label": "American Airlines",
+      "aliases": [
+        "American Airlines",
+        "AAdvantage"
+      ],
+      "file": "american-airlines.png",
+      "sha256": "861d28fc97223c7bb81a71c56f64c33204d958ef600f6d454bdd58907e3fb3b0",
+      "sourceUrl": "https://americanairlines.gcs-web.com/sites/g/files/knoqqb18171/themes/site/nir_pid1666/dist/images/aa-logo.png",
+      "provenance": "Original PNG linked by official American Airlines investor relations https://americanairlines.gcs-web.com/. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "united",
+      "label": "United Airlines",
+      "aliases": [
+        "United Airlines",
+        "United MileagePlus",
+        "MileagePlus"
+      ],
+      "file": "united.png",
+      "sha256": "e0dfeb24b78bb5651f72fe5406e1e155634940614271d0da4482bfd7e17f38a2",
+      "sourceUrl": "https://ir.united.com/sites/g/files/knoqqb101196/themes/site/client_site_301/dist/images/footer_logo.svg",
+      "provenance": "Official airline logo linked by https://ir.united.com/. Original white mark preserved on navy backing; geometry/colors unchanged. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "virgin-atlantic",
+      "label": "Virgin Atlantic",
+      "aliases": [
+        "Virgin Atlantic",
+        "Virgin Flying Club"
+      ],
+      "file": "virgin-atlantic.png",
+      "sha256": "7e96d034f5e992638f392afd0c50d9cdeceaa61f3359b920cdf3774f52349678",
+      "sourceUrl": "https://www.virginatlantic.com/",
+      "provenance": "Official homepage SVG titled Virgin Atlantic Logo; exact geometry and original CSS source colors. Captured SVG and CSS preserved in sources/. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "southwest",
+      "label": "Southwest Airlines",
+      "aliases": [
+        "Southwest",
+        "Southwest Airlines",
+        "Rapid Rewards"
+      ],
+      "file": "southwest.png",
+      "sha256": "3eace8539ad83184a59f560699e47e191a90f2fdf1fd27b73c4807606daa53d3",
+      "sourceUrl": "https://history.southwest.com/wp-content/uploads/2023/05/Southwest_online_rgb-01.png",
+      "provenance": "Original header PNG from official Southwest history site https://history.southwest.com/our-stories/pure-heart-the-evolution-of-the-southwest-corporate-logo/. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "accor-all",
+      "label": "ALL Accor",
+      "aliases": [
+        "Accor",
+        "ALL Accor",
+        "Accor Live Limitless"
+      ],
+      "file": "accor-all.png",
+      "sha256": "7971c6f4ac07ee2bcbba09ebea70741edaac40492528dbb734f1b004d64d3ce5",
+      "sourceUrl": "https://all.accor.com/a/content/dam/all/global-marketing/brand-identity/logos/all-accor/blue/vertical/Logo%20ALL%20ACCOR_BLUE_Vertical_RGB.svg",
+      "provenance": "Official ALL Accor homepage logo; original SVG rasterized preserving geometry/colors. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "rove",
+      "label": "Rove",
+      "aliases": [
+        "Rove",
+        "Rove Miles"
+      ],
+      "file": "rove.png",
+      "sha256": "bc4bac1b7d8f78129cadd4bbbf50e5f530c248252a198536efe3575682328e5a",
+      "sourceUrl": "https://preview.rovecdn.com/images/logo.svg",
+      "provenance": "Official logo linked by https://www.rove.com/; identity verified with rovemiles.com and help.rove.com. Original light SVG and gradient preserved on navy backing. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "hilton-honors",
+      "label": "Hilton Honors",
+      "aliases": [
+        "Hilton",
+        "Hilton Honors"
+      ],
+      "file": "hilton-honors.png",
+      "sha256": "95b842d27d37b0b7e9ca44d3946276a99422ab1f960a278ae8d6eb9bc5300f12",
+      "sourceUrl": "https://hilton-newsroom-preprod.go-vip.net/wp-content/uploads/2022/04/BrandBarLogo-20.png",
+      "provenance": "Unmodified original PNG linked directly by official https://stories.hilton.com/hilton-honors-fact-sheet. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "citi",
+      "label": "Citi",
+      "aliases": [
+        "Citi",
+        "Citibank",
+        "Citi ThankYou"
+      ],
+      "file": "citi.png",
+      "sha256": "7b98ea555c55456ce130a6a39fb566cf9a010d3280c90c093d40308b9ed61d4c",
+      "sourceUrl": "https://www.citigroup.com/",
+      "provenance": "Official homepage Citi logo decoded from its embedded SVG and rasterized with original geometry/colors. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "carnival",
+      "label": "Carnival Cruise Line",
+      "aliases": [
+        "Carnival",
+        "Carnival Cruise Line"
+      ],
+      "file": "carnival.png",
+      "sha256": "1eab0022877e834f620bd3a7e0351728731277d688df207104ceea5417040b70",
+      "sourceUrl": "https://www.carnival-news.com/_gallery/get_file/?file_ext=.jpg&file_id=65a05cf13d63321dea1158db&page_id=6527068c3d633253db1b3522",
+      "provenance": "Official press asset from https://www.carnival-news.com/assets/file/carnival-cruise-line-logo?display=lightbox. Transcoded full-color JPEG to PNG without geometry/color edits; original preserved in sources. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    },
+    {
+      "id": "copa",
+      "label": "Copa Airlines",
+      "aliases": [
+        "Copa",
+        "Copa Airlines",
+        "ConnectMiles"
+      ],
+      "file": "copa.png",
+      "sha256": "1e5e778dca3400cbfa2259adf54ef137ba71edab9e6d6d79be65a2e33f3c597e",
+      "sourceUrl": "https://ir.copaair.com/sites/g/files/knoqqb87291/themes/site/nir_pid1833/client/images/copalogomain_XL.svg",
+      "provenance": "Official Copa Airlines logo linked by https://ir.copaair.com/. Original white SVG preserved on navy backing; geometry/colors unchanged. Third-party trademark used for editorial identification under the user's approved direction; no ownership, sponsorship, or blanket license claimed."
+    }
+  ]
+}

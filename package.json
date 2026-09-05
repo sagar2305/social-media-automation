@@ -28,6 +28,7 @@
     "creddy:test": "node --import tsx --test scripts/creddy/*.test.ts scripts/creddy-news/*.test.ts",
     "creddy:news": "node --import tsx scripts/creddy-news/cli.ts",
     "creddy:news:test": "node --import tsx --test scripts/creddy-news/*.test.ts",
+    "creddy:editorial-images": "node --import tsx scripts/creddy/editorial-image-refresh-cli.ts",
     "creddy:sync:cloud": "node scripts/creddy-sync-cloud.mjs",
     "creddy:slack:socket": "node --import tsx scripts/creddy/slack-socket.ts",
     "creddy:deploy:validate": "node --import tsx scripts/creddy/validate-deployment.ts"
@@ -42,6 +43,7 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.102.1"
+    "@supabase/supabase-js": "^2.102.1",
+    "sharp": "0.35.4"
   }
 }

@@ -59,7 +59,8 @@ test('Agent 6 writes durable Codex image requests from approved Agent 5 prompts'
   assert.equal(request.provider, 'codex-imagegen');
   assert.equal(request.assets[0]!.assetId, 'hero-benefit');
   assert.equal(request.assets[0]!.promptFingerprint, codexArticleImageFingerprint(plan.id, plan.articleVisuals!.assets[0]!));
-  assert.match(request.assets[0]!.prompt, /Use case: stylized-concept/);
+  assert.match(request.assets[0]!.prompt, /Use case: editorial illustration/);
+  assert.match(request.assets[0]!.prompt, /artificial 3D rendering/);
   assert.match(request.assets[0]!.prompt, /Text: none/);
   assert.doesNotMatch(request.assets[0]!.prompt, /Gemini/i);
 });

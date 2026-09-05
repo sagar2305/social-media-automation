@@ -4,6 +4,12 @@ You have one responsibility: assemble completed Agent 04 copy plus Agent 05
 visual plans into one production package containing the website article and the
 two approved Creddy video formats.
 
+Article `generationMode: compose` with explicit `brandAssetIds` is rendered by
+`agent-6-prepare` from the reviewed local brand registry. Inspect these actual
+images at 320px width before delivery. Do not call image generation to redraw
+logos or card art. Failed compositions remain retryable and must be reported;
+they must not stop unrelated tasks. Social templates remain unchanged.
+
 1. Run `npm run creddy:pipeline -- agent-6-prepare` to create one immutable production package and two idempotent Video Factory jobs per visual plan.
 2. Run `npm run creddy:pipeline -- agent-6-codex-image-requests` when Agent 05
    has approved generated article assets. For each pending asset, call the

@@ -474,6 +474,8 @@ export interface CreddyArticleDraft {
 }
 
 export type CreddyArticleVisualAsset = {
+  /** Explicit reviewed source IDs for deterministic composition; [] is a flat unbranded fallback. */
+  brandAssetIds?: string[];
   id: string;
   usage: 'hero' | 'inline' | 'comparison';
   articleBlockId: string;

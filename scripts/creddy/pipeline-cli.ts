@@ -53,6 +53,7 @@ import { requireStableDashboardBaseUrl } from './public-dashboard.js';
 import { refreshCreddyProductReleaseStatus } from './product-release-stage.js';
 import { runPublishStage } from './publish-stage.js';
 import { listPendingProductionTasks, prepareProductionPackages, refreshArticlePreviews } from './production-stage.js';
+import { editorialBrandRegistry } from './brand-asset-registry.js';
 import { writeObservablePipelineReports } from './report-stage.js';
 import { runSlackReviewStage, SlackClient } from './slack-stage.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
@@ -502,7 +503,7 @@ async function main(): Promise<void> {
   if (command === 'agent-5-prepare') {
     const pending = await listPendingVisualTasks(root);
     const reports = await writeObservablePipelineReports(root);
-    console.log(JSON.stringify({ agent: 5, pendingCount: pending.length, pending, reports }, null, 2));
+    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(), pendingCount: pending.length, pending, reports }, null, 2));
     return;
   }
   if (command === 'visual-pending') {
