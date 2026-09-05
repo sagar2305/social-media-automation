@@ -30,7 +30,12 @@ Each registry entry links to the file description and license. Integrity checks
 reject changed bytes, unsafe paths, animated/vector files and insufficient detail.
 
 The website must render creator, source and license links, plus modification
-disclosure, on the listing and article. Deploy the companion website PR before
+disclosure, beside the photo inside the article. Listing cards have no visible
+source line; the entire photo/card links directly to that credited public article.
+The article must include its credited hero, not merely store its metadata.
+CC BY-SA 4.0 section 3(a)(2) permits reasonable linked-resource attribution:
+https://creativecommons.org/licenses/by-sa/4.0/legalcode.en#s3a
+Deploy the companion website PR before
 activating photo selection. Attribution stored only in provenance is not enough.
 Attribution-required photographs use the existing Creddy sharing image instead
 in Open Graph, Twitter and article JSON-LD; CC0 images may be shared directly.
