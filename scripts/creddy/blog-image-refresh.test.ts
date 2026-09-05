@@ -8,9 +8,10 @@ import test from 'node:test';
 import { createClient } from '@supabase/supabase-js';
 
 import { CREDDY_ARTICLE_IMAGE_BLOCK, CREDDY_ARTICLE_THEME } from './article-content.js';
-import { refreshPublishedBlogImages, replaceBlogVisuals, type BlogVisualReplacement } from './blog-image-refresh.js';
+import { refreshPublishedBlogImages, replaceBlogVisuals, validatePhotoRefreshPreview, type BlogVisualReplacement } from './blog-image-refresh.js';
 import type { CreddyBlogCmsRow } from './website-cms-stage.js';
 import type { WebsiteRegistryPayload } from './website-sync-stage.js';
+import { composeEditorialPhoto, resolveEditorialPhoto } from './editorial-photos.js';
 
 const replacements: BlogVisualReplacement[] = ['hero', 'detail', 'summary'].map((id) => ({
   id, assetPath: `https://assets.example.com/blogs/new-${id}.webp`,
@@ -97,6 +98,61 @@ test('replacement rejects incomplete IDs, duplicates and unsafe asset URLs', () 
   assert.throws(() => replaceBlogVisuals(content, [replacements[0]!, replacements[0]!, replacements[2]!]), /each existing/);
   for (const assetPath of ['http://example.com/a.png', 'https://user:password@example.com/a.png', 'https://example.com/a.png?token=secret']) {
     assert.throws(() => replaceBlogVisuals(content, replacements.map((item) => ({ ...item, assetPath }))), /public HTTPS/);
+  }
+});
+
+test('reviewed photo refresh changes only the rendered hero and its caption', async () => {
+  const original = fixture();
+  const { entry } = await resolveEditorialPhoto('marriott-st-kitts');
+  const photo = { ...replacements[0]!, photoAssetId: entry.id, photoCredit: entry.credit };
+  const updated = replaceBlogVisuals(original.content, [photo]);
+  assert.deepEqual(updated.visuals.assets.slice(1), original.content.visuals.assets.slice(1));
+  assert.deepEqual(updated.article.blocks.filter(block => block.id !== 'hero-block'), original.content.article.blocks.filter(block => block.id !== 'hero-block'));
+  assert.equal(updated.visuals.assets[0]!.assetType, 'licensed_photo');
+  assert.equal(updated.visuals.assets[0]!.brandAssetIds, undefined);
+  assert.deepEqual(updated.visuals.assets[0]!.photoCredit, entry.credit);
+  const cms = fakeCms(original);
+  const root = await mkdtemp(join(tmpdir(), 'photo-refresh-test-'));
+  const result = await refreshPublishedBlogImages({ client: cms.client, slug: original.slug, expectedHash: original.content_sha256, replacements: [photo], root });
+  assert.equal(result.status, 'updated');
+  assert.equal(cms.row().published_at, original.published_at);
+  assert.equal(cms.row().approved_at, original.approved_at);
+  assert.equal(cms.row().content.article.updatedAt, original.content.article.updatedAt);
+  assert.deepEqual(cms.row().content.visuals.assets.slice(1), original.content.visuals.assets.slice(1));
+  const again = await refreshPublishedBlogImages({ client: cms.client, slug: original.slug, expectedHash: original.content_sha256, replacements: [photo], root });
+  assert.equal(again.status, 'noop');
+  assert.equal(cms.writes.length, 1);
+  const illustration = replaceBlogVisuals(updated, replacements);
+  assert.equal(illustration.visuals.assets[0]!.photoCredit, undefined);
+  assert.equal(illustration.visuals.assets[0]!.photoAssetId, undefined);
+});
+
+test('photo refresh rejects inline, unrendered, unknown and forged-credit photos before writing', async () => {
+  const original = fixture();
+  const { entry } = await resolveEditorialPhoto('marriott-st-kitts');
+  const photo = { ...replacements[0]!, photoAssetId: entry.id, photoCredit: entry.credit };
+  assert.throws(() => replaceBlogVisuals(original.content, [{ ...photo, id: 'detail' }]), /rendered article hero/);
+  assert.throws(() => replaceBlogVisuals(original.content, [photo, ...replacements.slice(1)]), /only one hero/);
+  const unrendered = structuredClone(original.content);
+  unrendered.article.blocks = unrendered.article.blocks.filter(block => block.id !== 'hero-block');
+  assert.throws(() => replaceBlogVisuals(unrendered, [photo]), /rendered article hero/);
+  const cms = fakeCms(original);
+  const root = await mkdtemp(join(tmpdir(), 'photo-invalid-test-'));
+  for (const replacement of [{ ...photo, photoAssetId: 'unknown' }, { ...photo, photoCredit: { ...entry.credit, creator: 'Imitation' } }]) {
+    await assert.rejects(refreshPublishedBlogImages({ client: cms.client, slug: original.slug, expectedHash: original.content_sha256, replacements: [replacement], root }), /photo|Photo/);
+  }
+  assert.equal(cms.writes.length, 0);
+});
+
+test('photo preview revalidation rejects tampered bytes hash and metadata before upload', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'photo-preview-test-'));
+  const photo = await composeEditorialPhoto({ root, photoId: 'marriott-st-kitts', usage: 'hero' });
+  const image = { id: 'hero', path: photo.assetPath, sha256: createHash('sha256').update(await readFile(photo.assetPath)).digest('hex'),
+    photoAssetId: 'marriott-st-kitts', photoCredit: photo.photoCredit, altText: photo.altText, caption: photo.caption, provenance: photo.provenanceText };
+  await validatePhotoRefreshPreview(image, root);
+  for (const mutation of [{ sha256: '0'.repeat(64) }, { altText: 'Different subject' }, { caption: 'Changed caption' },
+    { provenance: 'Invented license' }, { photoCredit: { ...photo.photoCredit, creator: 'Imitation' } }]) {
+    await assert.rejects(validatePhotoRefreshPreview({ ...image, ...mutation }, root), /registry composition/);
   }
 });
 
