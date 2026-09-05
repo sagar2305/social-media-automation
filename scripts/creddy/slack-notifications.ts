@@ -38,6 +38,8 @@ export type CreddyArticleReadySlackEvent = {
   readingMinutes: number;
   sourceUrls: string[];
   articleImagePaths: string[];
+  /** Explicit preview filename -> approved source; source basenames are not asset IDs. */
+  articleImages?: Array<{ previewFilename: string; assetPath: string }>;
   articlePreviewPath: string;
   publishStatus?: 'published' | 'publish_failed' | 'publishing' | 'unpublished';
   publishedUrl?: string;
@@ -177,14 +179,20 @@ export async function selfContainedArticlePreview(
   event: CreddyArticleReadySlackEvent,
 ): Promise<Uint8Array> {
   let html = await readFile(event.articlePreviewPath, 'utf8');
-  for (const path of event.articleImagePaths) {
-    const filename = basename(path);
+  const images = event.articleImages ?? event.articleImagePaths.map(path => ({ previewFilename: basename(path), assetPath: path }));
+  const seen = new Set<string>();
+  for (const { previewFilename: filename, assetPath: path } of images) {
+    if (basename(filename) !== filename || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(filename)
+      || seen.has(filename) || !event.articleImagePaths.includes(path)) {
+      throw new Error('Invalid or ambiguous approved article image mapping');
+    }
+    seen.add(filename);
     const extension = filename.toLowerCase().split('.').at(-1);
     const mimeType = extension === 'png'
       ? 'image/png'
       : extension === 'jpg' || extension === 'jpeg'
         ? 'image/jpeg'
-        : undefined;
+        : extension === 'webp' ? 'image/webp' : undefined;
     if (!mimeType) throw new Error(`Unsupported Slack article image: ${filename}`);
     const marker = `src="assets/${filename}"`;
     if (!html.includes(marker)) throw new Error(`Article preview does not reference approved image: ${filename}`);

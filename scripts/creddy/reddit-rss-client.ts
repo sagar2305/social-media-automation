@@ -84,6 +84,9 @@ export async function fetchRedditRss(
       });
       if (!response.ok) {
         errors.push(`${rssUrl.hostname} HTTP ${response.status}`);
+        // Respect access denial and throttling. The next hourly run may retry;
+        // do not switch hosts to retry the same restricted request immediately.
+        if (response.status === 403 || response.status === 429) break;
         continue;
       }
       const entries = parseRedditAtom(await response.text(), limit);

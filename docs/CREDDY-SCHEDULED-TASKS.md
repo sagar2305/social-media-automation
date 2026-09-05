@@ -89,11 +89,25 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
 
 ## Delivery health
 
+The test commands install a test-only fetch guard: fixtures must inject mocked
+clients and cannot issue real Slack, CMS, or social HTTP requests merely because
+the protected environment was sourced. Never remove this guard to make a test pass.
+
+`reports/latest/06-production-preparation.json` explicitly lists `revisionRequired`
+packages when current evidence or authorization differs from an existing package.
+They remain pending; preparation cannot relabel old content with fresh permission
+or reuse its approvals. Historical slideshow render revisions are audit records,
+not active handoff inputs. Existing remote social submission IDs can be reconciled
+without recreating their old packages; new delivery still requires all current
+approval and verification checks. TikTok inbox delivery is not public publication.
+
 Blogs and News follow [editorial imagery](CREDDY-EDITORIAL-IMAGES.md): use the
 reviewed authentic brand registry and flat editorial fallback, not generated
 logos or artificial 3D artwork. The existing News stage repairs up to five
 durable pending image updates per pass without holding up new News text.
-Missing images and confirmed image/Slack repairs are reported separately.
+Missing images and confirmed image/Slack repairs are reported separately. When
+no reviewed brand matches, use the existing Creddy-owned flat illustration with
+truthful owned-image provenance, never an invented logo or unlicensed photo.
 
 `reports/latest/hourly-editorial.json` and `app-news.json` distinguish completed,
 disabled, and degraded News processing. A News setup/service failure is retained
@@ -113,7 +127,12 @@ The scheduled test command includes the News regression suite.
 The task runs from the repository root with the protected `.env.local` already
 installed. Never display secret values.
 
-1. Run `npm run creddy:validate` and `npm run creddy:test`.
+1. After the clean-main/remote preflight, and before sourcing secrets, synchronize
+   the checked-in lockfile with `npm ci --ignore-scripts --no-audit --no-fund`.
+   Do not change package manifests or the lockfile. If an hourly lease is active,
+   leave its dependencies alone and report the active run instead. An install
+   failure stops the run before any pipeline mutation. Then source the protected
+   environment and run `npm run creddy:validate` and `npm run creddy:test`.
 2. Run `npm run creddy:pipeline -- hourly-prepare`. If `started` is false, report
    the active lease and stop successfully. Otherwise retain the returned `runId`.
 3. Run `analysis-pending`; independently produce and accept every Agent 03 record

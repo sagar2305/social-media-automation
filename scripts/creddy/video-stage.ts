@@ -1,5 +1,6 @@
 import { copyFile } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
+import { articlePreviewImageFilename } from './article-content.js';
 
 import { CREDDY_CAMPAIGN_SLUG } from './config.js';
 import { persistCreddyArticleSeoReview } from './article-seo-review.js';
@@ -384,6 +385,10 @@ export async function runArticleContentBankHandoff(
           readingMinutes: content.article.readingMinutes,
           sourceUrls: content.article.sourceUrls,
           articleImagePaths: content.articleVisuals!.assets.map((asset) => asset.assetPath!),
+          articleImages: content.articleVisuals!.assets.map(asset => ({
+            previewFilename: articlePreviewImageFilename({ id: asset.id, assetPath: asset.assetPath! }),
+            assetPath: asset.assetPath!,
+          })),
           articlePreviewPath: content.articlePreviewPath,
           publishStatus,
           publishedUrl: latest.articleReview?.publishedUrl,

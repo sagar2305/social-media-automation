@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { editorialImageObjectPath } from './editorial-image-delivery.js';
+import { editorialImageObjectPath, prepareNewsBrandImage } from './editorial-image-delivery.js';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 test('new uploads retain the live website CMS Storage path allowlist', () => {
   const bytes = Buffer.from('immutable-image-bytes');
@@ -11,4 +14,18 @@ test('new uploads retain the live website CMS Storage path allowlist', () => {
   assert.equal(editorialImageObjectPath('Flying Blue / Hero', bytes), path);
   assert.notEqual(editorialImageObjectPath('Flying Blue / Hero', Buffer.from('new-image')), path);
   assert.ok(!editorialImageObjectPath('../../secret?token=hidden', bytes).includes('..'));
+});
+
+test('unmatched News uses an owned neutral illustration, not an invented brand asset', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-news-neutral-'));
+  let uploads = 0;
+  const image = await prepareNewsBrandImage(root, 'Plan your next rewards trip', {}, async (_path, label) => {
+    uploads++;
+    assert.equal(label, 'creddy-neutral-editorial');
+    return 'https://example.com/owned.webp';
+  });
+  assert.equal(uploads, 1);
+  assert.ok(image);
+  assert.equal(image.rights, 'owned');
+  assert.match(image.attribution, /Original Creddy flat editorial illustration; no third-party brand imagery/);
 });

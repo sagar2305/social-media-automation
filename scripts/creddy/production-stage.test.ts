@@ -191,6 +191,29 @@ test('Agent 6 assembles one immutable package and exactly two render jobs', asyn
   assert.match(await readFile(refresh.previewPaths[0]!, 'utf8'), /width:min\(100%,1440px\)/);
 });
 
+test('changed production boundaries remain pending and explicitly require revision without overwriting prior content', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-production-revision-'));
+  await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${visualPlan().id}.json`), visualPlan());
+  await prepareProductionPackages(root);
+  const packagePath = safeDataPath(root, '06-content-packages', 'production-analysis-1.json');
+  const original = await readJson<ContentPackageRecord>(packagePath);
+  for (const field of ['analysisBatchId', 'productionAuthorization', 'verificationGate', 'factualClaims', 'distributionMode']) {
+    const stale = { ...original, [field]: field === 'factualClaims' ? [] : field === 'distributionMode' ? 'article_only' : 'old-value' };
+    await writeJsonAtomic(packagePath, stale);
+    const before = await readFile(packagePath, 'utf8');
+    const result = await prepareProductionPackages(root);
+    assert.equal(result.createdPackages, 0);
+    assert.equal(result.skippedCount, 0, 'blocked revision is not silently skipped');
+    assert.deepEqual(result.revisionRequired?.[0]?.changedFields, [field]);
+    assert.equal((await listPendingProductionTasks(root)).length, 1);
+    assert.equal(await readFile(packagePath, 'utf8'), before);
+  }
+});
+
 test('Agent 6 creates an article-only package without any video jobs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'creddy-article-production-'));
   await initializeCreddyDataRoot(root);

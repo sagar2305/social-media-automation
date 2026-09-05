@@ -1,7 +1,7 @@
 import { validateContentPackage, writeContentAndJobs } from './content-stage.js';
-import { renderCreddyArticlePreview, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
+import { articlePreviewImageFilename, renderCreddyArticlePreview, validateCreddyArticle, validateCreddyArticleVisuals } from './article-content.js';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, extname } from 'node:path';
+import { dirname } from 'node:path';
 import {
   listJsonFiles,
   pathExists,
@@ -35,6 +35,12 @@ export interface ProductionPreparationResult {
   skippedCount: number;
   packageIds: string[];
   assetFailures?: Array<{ visualPlanId: string; reason: string }>;
+  revisionRequired?: Array<{ packageId: string; changedFields: string[]; reason: string }>;
+}
+
+export function productionBoundaryChanges(existing: ContentPackageRecord, draft: ContentDraftRecord): string[] {
+  return (['distributionMode', 'analysisBatchId', 'productionAuthorization', 'verificationGate', 'factualClaims'] as const)
+    .filter(key => JSON.stringify(existing[key]) !== JSON.stringify(draft[key]));
 }
 
 export interface ArticlePreviewRefreshResult {
@@ -84,11 +90,7 @@ export async function listPendingProductionTasks(root: string): Promise<Producti
     const id = `production-${task.draft.analysisId}`;
     const destination = safeDataPath(root, '06-content-packages', `${id}.json`);
     const existing = await pathExists(destination) ? await readJson<ContentPackageRecord>(destination) : undefined;
-    if (!existing || existing.distributionMode !== task.draft.distributionMode ||
-        existing.analysisBatchId !== task.draft.analysisBatchId ||
-        JSON.stringify(existing.productionAuthorization) !== JSON.stringify(task.draft.productionAuthorization) ||
-        JSON.stringify(existing.verificationGate) !== JSON.stringify(task.draft.verificationGate) ||
-        JSON.stringify(existing.factualClaims) !== JSON.stringify(task.draft.factualClaims)) pending.push(task);
+    if (!existing || productionBoundaryChanges(existing, task.draft).length) pending.push(task);
   }
   return pending;
 }
@@ -109,9 +111,7 @@ async function writeArticlePreview(root: string, content: ContentPackageRecord):
   const visualAssets: Record<string, import('./article-content.js').CreddyArticlePreviewVisual> = {};
   for (const asset of content.articleVisuals?.assets ?? []) {
     if (!asset.assetPath || !(await pathExists(asset.assetPath))) continue;
-    const sourceExtension = extname(asset.assetPath).toLowerCase();
-    const extension = ['.png', '.jpg', '.jpeg', '.webp'].includes(sourceExtension) ? sourceExtension : '.png';
-    const filename = `${asset.id}${extension}`;
+    const filename = articlePreviewImageFilename({ id: asset.id, assetPath: asset.assetPath });
     const destination = safeDataPath(root, '06-content-packages', 'articles', content.id, 'assets', filename);
     await mkdir(dirname(destination), { recursive: true });
     await copyFile(asset.assetPath, destination);
@@ -228,6 +228,19 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     packageIds: [],
   };
   for (const task of tasks) {
+    try {
+    // Do not transplant new evidence onto the previously reviewed package, even
+    // when its article bytes also changed. Keep this item pending for revision.
+    const priorPath = safeDataPath(root, '06-content-packages', `production-${task.draft.analysisId}.json`);
+    if (await pathExists(priorPath)) {
+      const prior = await readJson<ContentPackageRecord>(priorPath);
+      const changedFields = productionBoundaryChanges(prior, task.draft);
+      if (changedFields.length) {
+        (result.revisionRequired ??= []).push({ packageId: prior.id, changedFields,
+          reason: 'Current evidence or authorization changed; a fresh reviewed revision is required. Historical package and approvals retained.' });
+        continue;
+      }
+    }
     // Existing supplied/generated assets remain immutable. Only explicit new
     // brand composition plans are rendered; social scenes are untouched.
     let composed = false;
@@ -317,6 +330,14 @@ export async function prepareProductionPackages(root: string, now = new Date()):
     result.createdPackages += 1;
     result.createdVideoJobs += jobs.length;
     result.packageIds.push(content.id);
+    } catch {
+      (result.assetFailures ??= []).push({ visualPlanId: task.visualPlan.id,
+        reason: 'Production validation failed; source draft and plan retained for correction.' });
+    }
   }
+  await writeJsonAtomic(safeDataPath(root, 'reports', 'latest', '06-production-preparation.json'), {
+    generatedAt: now.toISOString(), ...result,
+    status: result.revisionRequired?.length || result.assetFailures?.length ? 'degraded' : 'completed',
+  });
   return result;
 }
