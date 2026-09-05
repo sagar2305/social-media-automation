@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 
 import { calculateEditorialPriorityScore, validateAnalysisDecision } from './analysis-stage.js';
 import { evaluateTrustedNewsPolicy, trustedEditorialEvidence } from './news-policy.js';
+import { readDeliveryStatuses } from './delivery-status.js';
 import {
   createRunId,
   listJsonFiles,
@@ -620,13 +621,31 @@ export async function verificationCandidateIds(
 /** Explicit News projection list. The News publisher must never scan the whole
  * completed analysis directory in shared-workflow mode. */
 export async function newsProjectionCandidateIds(root: string, now = new Date()): Promise<string[]> {
+  return (await newsProjectionPlan(root, now)).eligibleIds;
+}
+
+/** Acquisition exclusions are reportable, not publication attempts. Conflicts
+ * have a separate maintenance lane so historical News can be withdrawn without
+ * treating the acquisition age limit as an instruction to remove old News. */
+export async function newsProjectionPlan(root: string, now = new Date()) {
   const [decisions, articles, evidence, records] = await Promise.all([
     decisionsByCanonical(root), articlesByCanonical(root), evidenceById(root), reconcileRollingEditorialLedger(root, now),
   ]);
   const recordByCanonical = new Map(records.map((record) => [record.canonicalId, record]));
-  return [...decisions.values()].flatMap((decision) => {
+  const eligibleIds: string[] = [];
+  const conflictIds: string[] = [];
+  const excluded: Array<{ id: string; headline: string; reason: string; actionable: boolean }> = [];
+  for (const decision of decisions.values()) {
+    const conflict = decision.materialConflict || decision.conflictChangesMessage ||
+      decision.verificationGate?.official.status === 'conflicting';
+    if (conflict) conflictIds.push(decision.canonicalId);
     const article = articles.get(decision.canonicalId);
-    if (!article) return [];
+    if (!article) {
+      excluded.push({ id: decision.canonicalId, headline: decision.headline,
+        reason: conflict ? 'A known material conflict blocks News publication.' : 'No approved canonical article is available.',
+        actionable: Boolean(conflict) });
+      continue;
+    }
     const policy = evaluateTrustedNewsPolicy({
       decision,
       article,
@@ -634,12 +653,17 @@ export async function newsProjectionCandidateIds(root: string, now = new Date())
       firstSeenAt: recordByCanonical.get(decision.canonicalId)?.firstSeenAt,
       now: now.getTime(),
     });
-    return policy.eligible ? [decision.canonicalId] : [];
-  });
+    if (policy.eligible) eligibleIds.push(decision.canonicalId);
+    else excluded.push({ id: decision.canonicalId, headline: decision.headline,
+      reason: policy.reason ?? 'The story does not qualify for News.',
+      actionable: Boolean(conflict || policy.requiresVerification) });
+  }
+  return { eligibleIds, conflictIds, excluded };
 }
 
 export async function rollingEditorialStatus(root: string, now = new Date()): Promise<Record<string, unknown>> {
   const records = await reconcileRollingEditorialLedger(root, now);
+  const delivery = await readDeliveryStatuses(root, records);
   return {
     active: records.filter((record) => record.effectiveFreshness > 0).length,
     expired: records.filter((record) => record.effectiveFreshness === 0).length,
@@ -649,6 +673,7 @@ export async function rollingEditorialStatus(root: string, now = new Date()): Pr
       effectivePriority: record.effectivePriority,
       hardExpiresAt: record.hardExpiresAt,
       channels: record.channels,
+      delivery: delivery.get(record.canonicalId),
     })),
   };
 }
