@@ -126,6 +126,18 @@ export interface FilteringProgressEvent {
   total?: number;
 }
 
+/** Compatibility for the retained supervised recovery import; never loosen runDate globally. */
+export function rawFilteringDate(raw: Pick<RawArticleRecord, 'runId' | 'fetchedAt'>): string {
+  if (raw.runId === 'creddy-seven-recovery-20260826T095500Z') {
+    const fetched = new Date(raw.fetchedAt);
+    if (!Number.isFinite(fetched.getTime()) || fetched.toISOString().slice(0, 10) !== '2026-08-26') {
+      throw new Error('Legacy recovery record has an invalid acquisition date');
+    }
+    return '2026-08-26';
+  }
+  return runDate(raw.runId);
+}
+
 export async function runFilterStage(
   root: string,
   now = new Date(),
@@ -162,7 +174,7 @@ export async function runFilterStage(
       try {
         const raw = await readJson<RawArticleRecord>(path);
         progress({ phase: 'record_started', message: `Checking: ${raw.title || raw.canonicalUrl}`, completed: manifest.inputCount - 1, total: rawPaths.length });
-        const filteredPath = safeDataPath(root, '02-filtered', runDate(raw.runId), raw.runId, `${raw.id}.json`);
+        const filteredPath = safeDataPath(root, '02-filtered', rawFilteringDate(raw), raw.runId, `${raw.id}.json`);
         const rejectedPath = safeDataPath(root, '03-canonical-news', 'rejected', `${raw.id}.json`);
         if ((await pathExists(filteredPath)) || (await pathExists(rejectedPath))) {
           manifest.skippedCount += 1;

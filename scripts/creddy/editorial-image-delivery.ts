@@ -28,10 +28,12 @@ export async function uploadEditorialImage(path: string, label: string, env = pr
 }
 
 /** Optional imagery is independent of blog production and never chooses News eligibility. */
-export async function prepareNewsBrandImage(root: string, title: string, env = process.env) {
+export async function prepareNewsBrandImage(root: string, title: string, env = process.env,
+  upload: typeof uploadEditorialImage = uploadEditorialImage): Promise<{
+    url: string; rights: 'editorial_reference' | 'owned'; attribution: string;
+  } | undefined> {
   const brands = matchEditorialBrands(title, await editorialBrandRegistry());
-  if (!brands.length) return undefined;
   const image = await composeEditorialImage({ root, title, usage: 'hero', brandIds: brands.map(brand => brand.id) });
-  return { url: await uploadEditorialImage(image.assetPath, brands.map(brand => brand.id).join('-'), env),
-    rights: 'editorial_reference' as const, attribution: image.provenanceText };
+  return { url: await upload(image.assetPath, brands.length ? brands.map(brand => brand.id).join('-') : 'creddy-neutral-editorial', env),
+    rights: brands.length ? 'editorial_reference' as const : 'owned' as const, attribution: image.provenanceText };
 }

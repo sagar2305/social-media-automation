@@ -11,6 +11,8 @@ import {
 import { CREDDY_PIPELINE_VERSION } from './pipeline-types.js';
 import type { ContentBankRecord, ContentDraftRecord, ContentPackageRecord, VisualPlanRecord } from './pipeline-types.js';
 import { validateIndependentSlideshowCopy } from './copy-stage.js';
+import { productionBoundaryChanges } from './production-stage.js';
+import { assertProductionAuthorizationCurrent } from './publication-policy.js';
 import { CREDDY_LEGACY_TEMPLATE_FILES, creddyExpressionFile } from './expression-library.js';
 import { notifyCreddyContentReady } from './slack-notifications.js';
 import type {
@@ -225,7 +227,7 @@ export async function runSlideshowContentBankHandoff(
   notifier: ContentReadyNotifier = notifyCreddyContentReady,
 ): Promise<SlideshowBankResult> {
   const manifests = (await listJsonFiles(safeDataPath(root, '07-slideshow-renders')))
-    .filter((path) => path.endsWith('/manifest.json'));
+    .filter(path => /^[^/]+\/manifest\.json$/.test(relative(safeDataPath(root, '07-slideshow-renders'), path)));
   const result: SlideshowBankResult = {
     eligible: manifests.length,
     created: 0,
@@ -241,6 +243,9 @@ export async function runSlideshowContentBankHandoff(
     try {
       const manifest = await readJson<SlideshowManifest>(manifestPath);
       const visualPlanId = validateId(manifest.visualPlanId, 'visual plan id');
+      if (dirname(manifestPath) !== safeDataPath(root, '07-slideshow-renders', visualPlanId)) {
+        throw new Error('Manifest is not in its current visual-plan folder');
+      }
       const plan = await readJson<VisualPlanRecord>(safeDataPath(root, '06-visual-plans', `${visualPlanId}.json`));
       const contentDraftId = validateId(plan.contentDraftId, 'content draft id');
       const draft = await readJson<ContentDraftRecord>(safeDataPath(root, '06-content-drafts', `${contentDraftId}.json`));
@@ -259,6 +264,12 @@ export async function runSlideshowContentBankHandoff(
       const production = await pathExists(productionPath)
         ? await readJson<ContentPackageRecord>(productionPath)
         : undefined;
+      if (!production || production.id !== `production-${draft.analysisId}`
+        || production.contentDraftId !== draft.id || production.visualPlanId !== plan.id
+        || production.analysisId !== draft.analysisId || production.canonicalId !== draft.canonicalId) {
+        throw new Error('Slideshow requires its matching production package; a draft ID is not a package');
+      }
+      if (productionBoundaryChanges(production, draft).length) throw new Error('Slideshow production package requires a fresh reviewed revision');
       const completesRevision = existing?.status === 'rendering_revision';
       const record: ContentBankRecord = {
         ...existing,
@@ -266,7 +277,7 @@ export async function runSlideshowContentBankHandoff(
         analysisBatchId: production?.analysisBatchId ?? draft.analysisBatchId,
         productionAuthorization: production?.productionAuthorization ?? draft.productionAuthorization,
         id,
-        contentPackageId: production?.id ?? contentDraftId,
+        contentPackageId: production.id,
         mediaType: 'slideshow',
         contentDraftId,
         visualPlanId,
@@ -291,6 +302,7 @@ export async function runSlideshowContentBankHandoff(
         rejectedAt: completesRevision ? undefined : existing?.rejectedAt,
         rejectionReason: completesRevision ? undefined : existing?.rejectionReason,
       };
+      await assertProductionAuthorizationCurrent(root, record, now);
       await writeJsonAtomic(destination, record);
       if (existing) result.updated += 1;
       else result.created += 1;

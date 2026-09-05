@@ -32,6 +32,10 @@ async function fixture(): Promise<{ root: string; manifest: Record<string, unkno
   };
   await writeJsonAtomic(safeDataPath(root, '06-content-drafts', 'draft-1.json'), draft);
   await writeJsonAtomic(safeDataPath(root, '06-visual-plans', 'plan-1.json'), plan);
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', 'production-analysis-1.json'), {
+    id: 'production-analysis-1', analysisId: draft.analysisId, canonicalId: draft.canonicalId,
+    contentDraftId: draft.id, visualPlanId: plan.id, factualClaims: draft.factualClaims,
+  });
   const directory = safeDataPath(root, '07-slideshow-renders', 'plan-1');
   await mkdir(directory, { recursive: true });
   for (let index = 1; index <= 6; index += 1) await writeFile(join(directory, `slide-${String(index).padStart(2, '0')}.png`), 'png');
@@ -74,6 +78,17 @@ test('Agent 7 accepts only a varied six-slide locked-template slideshow', async 
   assert.equal(notifications, 1, 'a persisted receipt prevents duplicate Slack messages');
 });
 
+test('slideshow handoff rejects a package whose internal ID would create a dangling reference', async () => {
+  const { root } = await fixture();
+  const path = safeDataPath(root, '06-content-packages', 'production-analysis-1.json');
+  const content = await readJson<ContentPackageRecord>(path);
+  await writeJsonAtomic(path, { ...content, id: 'nonexistent-package' });
+  const result = await runSlideshowContentBankHandoff(root);
+  assert.equal(result.created, 0);
+  assert.match(result.failures[0]!, /matching production package/);
+  assert.equal(await pathExists(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json')), false);
+});
+
 test('Agent 7 keeps article publishing separate from slideshow review', async () => {
   const { root } = await fixture();
   const articleDirectory = safeDataPath(root, '06-content-packages', 'articles');
@@ -85,8 +100,9 @@ test('Agent 7 keeps article publishing separate from slideshow review', async ()
   const packagePath = safeDataPath(root, '06-content-packages', 'production-analysis-1.json');
   await writeJsonAtomic(packagePath, {
     version: CREDDY_PIPELINE_VERSION,
-    id: 'package-1',
+    id: 'production-analysis-1',
     analysisId: 'analysis-1',
+    factualClaims: [],
     canonicalId: 'canonical-1',
     contentDraftId: 'draft-1',
     visualPlanId: 'plan-1',
@@ -124,6 +140,8 @@ test('Agent 7 keeps article publishing separate from slideshow review', async ()
       })),
     },
   });
+  const currentDraft = await readJson<ContentDraftRecord>(safeDataPath(root, '06-content-drafts', 'draft-1.json'));
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', 'draft-1.json'), { ...currentDraft, distributionMode: 'article_and_social' });
   let socialNotifications = 0;
   let articlePublishCalls = 0;
   const articleAutoPublisher = async (id: string) => {
@@ -137,14 +155,14 @@ test('Agent 7 keeps article publishing separate from slideshow review', async ()
   assert.equal(await runArticleContentBankHandoff(root, new Date(), {
     autoPublisher: articleAutoPublisher,
   }), 1);
-  const articleId = 'article-package-1';
+  const articleId = 'article-production-analysis-1';
   const early = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', `${articleId}.json`));
   assert.equal(early.mediaType, 'article');
   assert.equal(early.articleReview?.status, 'published');
   assert.equal(articlePublishCalls, 1);
   assert.equal(socialNotifications, 0);
   await writeJsonAtomic(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json'), {
-    version: CREDDY_PIPELINE_VERSION, id: 'slideshow-plan-1', contentPackageId: 'package-1',
+    version: CREDDY_PIPELINE_VERSION, id: 'slideshow-plan-1', contentPackageId: 'production-analysis-1',
     createdAt: new Date().toISOString(), status: 'changes_requested', revision: 1,
     articlePreviewPath, articleReview: { status: 'pending_review', blockers: [] },
   });
@@ -160,7 +178,7 @@ test('Agent 7 keeps article publishing separate from slideshow review', async ()
   assert.equal(result.slackNotificationsSent, 1);
   const reviewed = await readJson<ContentBankRecord>(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json'));
   assert.equal(reviewed.status, 'changes_requested');
-  assert.equal(reviewed.contentPackageId, 'package-1');
+  assert.equal(reviewed.contentPackageId, 'production-analysis-1');
   assert.equal(reviewed.articleReview, undefined);
   assert.equal(reviewed.articlePreviewPath, undefined);
   assert.equal(articlePublishCalls, 1);

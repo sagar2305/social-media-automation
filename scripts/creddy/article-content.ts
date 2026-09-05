@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path';
+import { extname, isAbsolute } from 'node:path';
 import { validatePhotoCredit, type EditorialPhotoCredit } from './editorial-photos.js';
 
 import type {
@@ -10,6 +10,11 @@ import type {
 
 export const CREDDY_ARTICLE_DISCLOSURE =
   'Advertiser disclosure: Creddy may earn a commission when you apply for a card through links on this site. This does not affect our recommendations, which are based on the published value of each card\'s benefits.';
+
+export function articlePreviewImageFilename(asset: { id: string; assetPath: string }): string {
+  const extension = extname(asset.assetPath).toLowerCase();
+  return `${asset.id}${['.png', '.jpg', '.jpeg', '.webp'].includes(extension) ? extension : '.png'}`;
+}
 
 export const CREDDY_ARTICLE_THEME = {
   background: '#FBFAF7',
