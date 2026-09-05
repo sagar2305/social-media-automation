@@ -52,5 +52,28 @@ photos to native News, Slack-only imagery, or other unverified surfaces.
    license links and unchanged copy/dates, then plan any requested archive refresh.
 5. Preserve preimages and use existing compare-and-swap refresh safeguards.
 
-No live image backfill is performed by this implementation. The stored pipeline
-flag and the one hourly schedule remain unchanged.
+## Approved archive refresh
+
+The existing archive command now accepts an explicit selection file:
+
+```json
+[{"slug":"selected-published-blog","photoAssetId":"marriott-st-kitts","reason":"Program-level coverage; the caption clearly identifies this illustrative archive property photo."}]
+```
+
+```sh
+npm run creddy:editorial-images -- plan-photos /absolute/path/to/selections.json
+# Inspect the returned hero previews and the exact selected subjects.
+npm run creddy:editorial-images -- apply /absolute/path/to/plan.json
+```
+
+This mode changes only the selected, rendered blog hero and its caption/credit.
+The two other assets, article prose, publication dates and approvals are retained.
+Planning and apply recheck the registry-derived image and metadata; application
+retains the existing content-hash guard, preimage and cache-revalidation receipts.
+Start with one CC0 canary and verify the live article before a wider refresh.
+No keyword-based photo matching or automatic archive rewriting is added.
+
+Future Agent 05 already prefers a suitable explicitly reviewed hero photo; no
+schedule or prompt change is needed. News continues its separate approved brand
+or owned-flat fallback and bounded image-repair queue. The stored pipeline flag
+and the one hourly schedule remain unchanged.

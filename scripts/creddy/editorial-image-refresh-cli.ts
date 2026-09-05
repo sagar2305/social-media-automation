@@ -11,8 +11,10 @@ import { createWebsiteRevalidator, type CreddyBlogCmsRow } from './website-cms-s
 import { configuredNewsService } from '../../shared/creddy-news/creddy-news-service.js';
 import { notifyNews } from '../../shared/creddy-news/creddy-news-slack.js';
 import type { NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
+import { composeEditorialPhoto } from './editorial-photos.js';
+import { replaceBlogVisuals, validatePhotoRefreshPreview, type BlogVisualReplacement } from './blog-image-refresh.js';
 
-type PlannedImage = { id: string; path: string; sha256: string; altText: string; caption: string; provenance: string };
+type PlannedImage = Omit<BlogVisualReplacement, 'assetPath'> & { path: string; sha256: string };
 type PlannedItem = { kind: 'blog' | 'news'; id: string; title: string; expectedHash?: string; expectedRevision?: number;
   brands: string[]; images: PlannedImage[]; status: 'ready' | 'pending'; reason?: string };
 type RefreshPlan = { version: 1; projectRef: string; items: PlannedItem[] };
@@ -20,12 +22,38 @@ const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 
 async function main() {
   const command = process.argv[2];
-  if (!['plan', 'apply'].includes(command)) throw new Error('Use editorial-images plan or apply <plan.json>');
+  if (!['plan', 'plan-photos', 'apply'].includes(command)) throw new Error('Use editorial-images plan, plan-photos <selections.json>, or apply <plan.json>');
   const credentials = resolveWebsiteCmsCredentials();
   const client = createClient(credentials.url, credentials.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }) } });
   const root = resolveCreddyDataRoot();
   const news = configuredNewsService();
+  if (command === 'plan-photos') {
+    if (!process.argv[3]) throw new Error('Explicit reviewed photo selections are required');
+    const selections = JSON.parse(await readFile(resolve(process.argv[3]), 'utf8')) as Array<{ slug: string; photoAssetId: string; reason: string }>;
+    if (!Array.isArray(selections) || !selections.length || new Set(selections.map(item => item.slug)).size !== selections.length
+        || selections.some(item => !/^[a-z0-9][a-z0-9-]{1,99}$/.test(item.slug) || !item.photoAssetId || !item.reason?.trim())) {
+      throw new Error('Each photo selection requires a unique slug, reviewed photo ID and editorial reason');
+    }
+    const plan: RefreshPlan = { version: 1, projectRef: credentials.projectRef, items: [] };
+    for (const selection of selections) {
+      const response = await client.from('creddy_blog_articles').select('*').eq('slug', selection.slug).eq('publish_state', 'published').maybeSingle();
+      if (response.error || !response.data) throw new Error('Selected published blog could not be read');
+      const blog = response.data as CreddyBlogCmsRow;
+      const rendered = await composeEditorialPhoto({ root, photoId: selection.photoAssetId, usage: 'hero' });
+      const image: PlannedImage = { id: blog.content.article.heroVisualId, path: rendered.assetPath, sha256: hash(await readFile(rendered.assetPath)),
+        photoAssetId: selection.photoAssetId, photoCredit: rendered.photoCredit,
+        altText: rendered.altText, caption: rendered.caption, provenance: rendered.provenanceText };
+      // Validate the hero/block boundary before creating an applicable plan.
+      replaceBlogVisuals(blog.content, [{ ...image, assetPath: 'https://preview.invalid/reviewed-photo.png' }]);
+      plan.items.push({ kind: 'blog', id: blog.slug, title: blog.title, expectedHash: blog.content_sha256,
+        brands: [], images: [image], status: 'ready', reason: selection.reason });
+    }
+    const path = safeDataPath(root, 'reports', 'editorial-image-refresh', randomUUID(), 'plan.json');
+    await writeJsonAtomic(path, plan);
+    console.log(JSON.stringify({ path, blogs: plan.items.length, images: plan.items.map(item => ({ slug: item.id, path: item.images[0]!.path })) }, null, 2));
+    return;
+  }
   if (command === 'plan') {
     const registry = await editorialBrandRegistry();
     const blogs: CreddyBlogCmsRow[] = [];
@@ -95,8 +123,13 @@ async function main() {
       const replacements = [];
       for (const image of item.images) {
         if (hash(await readFile(image.path)) !== image.sha256) throw new Error('Preview image changed after planning');
+        if (image.photoAssetId) {
+          if (item.kind !== 'blog' || item.images.length !== 1) throw new Error('Archive photos are blog hero only');
+          await validatePhotoRefreshPreview(image, root);
+        }
         replacements.push({ id: image.id, assetPath: await uploadEditorialImage(image.path, `${item.id}-${image.id}`),
-          altText: image.altText, caption: image.caption, provenance: image.provenance });
+          altText: image.altText, caption: image.caption, provenance: image.provenance,
+          photoAssetId: image.photoAssetId, photoCredit: image.photoCredit });
       }
       if (item.kind === 'blog') {
         const result = await refreshPublishedBlogImages({ client, slug: item.id, expectedHash: item.expectedHash!, replacements, root });

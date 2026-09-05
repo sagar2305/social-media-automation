@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import type { CreddyBlogCmsRow } from './website-cms-stage.js';
 import type { WebsiteRegistryPayload } from './website-sync-stage.js';
+import { composeEditorialPhoto, resolveEditorialPhoto, validatePhotoCredit, type EditorialPhotoCredit } from './editorial-photos.js';
 
 export type BlogVisualReplacement = {
   id: string;
@@ -14,7 +15,21 @@ export type BlogVisualReplacement = {
   altText: string;
   caption: string;
   provenance: string;
+  photoAssetId?: string;
+  photoCredit?: EditorialPhotoCredit;
 };
+
+/** Run before upload: a reviewed plan cannot change photo bytes, identity or credit. */
+export async function validatePhotoRefreshPreview(image: Omit<BlogVisualReplacement, 'assetPath'> & { path: string; sha256: string }, root: string): Promise<void> {
+  if (!image.photoAssetId) throw new Error('Reviewed photo ID is required');
+  const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const photo = await composeEditorialPhoto({ root, photoId: image.photoAssetId, usage: 'hero' });
+  if (hash(await readFile(image.path)) !== image.sha256 || hash(await readFile(photo.assetPath)) !== image.sha256
+      || image.altText !== photo.altText || image.caption !== photo.caption || image.provenance !== photo.provenanceText
+      || JSON.stringify(image.photoCredit) !== JSON.stringify(photo.photoCredit)) {
+    throw new Error('Photo plan no longer matches the reviewed registry composition');
+  }
+}
 
 /** Replace image metadata only; retain all article copy, dates and design fields. */
 export function replaceBlogVisuals(
@@ -22,13 +37,25 @@ export function replaceBlogVisuals(
   replacements: readonly BlogVisualReplacement[],
 ): WebsiteRegistryPayload {
   const ids = new Set(content.visuals.assets.map((asset) => asset.id));
-  if (content.visuals.assets.length !== 3 || ids.size !== 3 || replacements.length !== 3) {
+  const heroOnly = replacements.length === 1 && !!replacements[0]?.photoAssetId;
+  if (replacements.some(item => item.photoAssetId) && !heroOnly) throw new Error('Photo refresh changes only one hero');
+  if (content.visuals.assets.length !== 3 || ids.size !== 3 || (!heroOnly && replacements.length !== 3)) {
     throw new Error('Blog image refresh requires exactly three existing and replacement images');
   }
   const byId = new Map<string, BlogVisualReplacement>();
   for (const replacement of replacements) {
     if (!ids.has(replacement.id) || byId.has(replacement.id)) {
       throw new Error('Blog image replacements must cover each existing image ID exactly once');
+    }
+    if (replacement.photoAssetId) {
+      const asset = content.visuals.assets.find(asset => asset.id === replacement.id)!;
+      if (asset.id !== content.article.heroVisualId || asset.usage !== 'hero'
+          || !content.article.blocks.some(block => block.type === 'visual' && block.visualId === asset.id)) {
+        throw new Error('Photo refresh requires the rendered article hero');
+      }
+      validatePhotoCredit(replacement.photoCredit!);
+    } else if (replacement.photoCredit) {
+      throw new Error('Photo credit requires a reviewed photo ID');
     }
     let url: URL;
     try { url = new URL(replacement.assetPath); } catch { throw new Error('Blog image replacement requires a public HTTPS asset URL'); }
@@ -42,11 +69,15 @@ export function replaceBlogVisuals(
   }
   const updated = structuredClone(content);
   updated.visuals.assets = updated.visuals.assets.map((asset) => {
-    const replacement = byId.get(asset.id)!;
+    const replacement = byId.get(asset.id);
+    if (!replacement) return asset;
     return {
       ...asset,
       generationMode: 'compose',
-      assetType: 'editorial_illustration',
+      assetType: replacement.photoAssetId ? 'licensed_photo' : 'editorial_illustration',
+      photoAssetId: replacement.photoAssetId,
+      photoCredit: replacement.photoCredit,
+      brandAssetIds: undefined,
       prompt: undefined,
       negativePrompt: undefined,
       seriesStyle: undefined,
@@ -80,6 +111,13 @@ export async function refreshPublishedBlogImages(input: {
   root: string;
 }): Promise<BlogImageRefreshResult> {
   const { client, slug, expectedHash, replacements, root } = input;
+  for (const replacement of replacements) {
+    if (!replacement.photoAssetId) continue;
+    const { entry } = await resolveEditorialPhoto(replacement.photoAssetId);
+    if (JSON.stringify(replacement.photoCredit) !== JSON.stringify(entry.credit)) {
+      throw new Error('Photo credit must match the reviewed registry');
+    }
+  }
   if (!/^[a-z0-9][a-z0-9-]{1,99}$/.test(slug)) throw new Error('Blog image refresh requires a safe slug');
   if (!/^[a-f0-9]{64}$/.test(expectedHash)) throw new Error('Blog image refresh requires the expected content SHA-256');
   let row: CreddyBlogCmsRow;
