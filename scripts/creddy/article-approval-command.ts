@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     root,
     id,
     websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
-    publish: () => publishApprovedWebsiteArticlesImmediately({ env: process.env, repositoryRoot }),
+    publish: () => publishApprovedWebsiteArticlesImmediately({ env: process.env, repositoryRoot, contentBankId: id }),
   };
   const result = action === 'auto-publish' || action === 'repost'
     ? await autoPublishWebsiteArticle(publishInput)

@@ -284,7 +284,7 @@ export async function handleSlackAction(payload: SlackActionPayload): Promise<vo
       root: resolveCreddyDataRoot(),
       id: action.value,
       websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
-      publish: () => publishApprovedWebsiteArticlesImmediately(),
+      publish: () => publishApprovedWebsiteArticlesImmediately({ contentBankId: action.value }),
     });
     const text = `:white_check_mark: Website article approved by ${actor} and published at <${published.liveUrl}|Open live article>. The slideshow remains unchanged.`;
     await updateArticleMessage(payload, text, 'delete');

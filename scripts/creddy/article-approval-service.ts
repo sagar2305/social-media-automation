@@ -64,7 +64,7 @@ async function writeReviewRecord(root: string, path: string, record: ContentBank
 }
 
 async function articleSlug(root: string, record: ContentBankRecord): Promise<string> {
-  const sourcePath = record.contentDraftId
+  const sourcePath = record.contentDraftId && !record.contentPackageId.startsWith('production-')
     ? safeDataPath(root, '06-content-drafts', `${record.contentDraftId}.json`)
     : safeDataPath(root, '06-content-packages', `${record.contentPackageId}.json`);
   const source = await readJson<{ article?: { slug?: string } }>(sourcePath);
@@ -75,6 +75,7 @@ async function articleSlug(root: string, record: ContentBankRecord): Promise<str
 
 function safePublishError(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
+  if (message === 'The exported article does not match its SEO review. Rebuild and review the production article.') return message;
   if (/service.role|server credential|SUPABASE_SERVICE_ROLE_KEY/i.test(message)) return 'Website CMS server credential is not configured.';
   if (/project.*match|mismatch/i.test(message)) return 'Website CMS project configuration does not match.';
   if (/disabled|gate/i.test(message)) return 'Website CMS publishing is disabled.';

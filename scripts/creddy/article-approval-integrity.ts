@@ -22,6 +22,9 @@ export async function computeArticleApprovalFingerprint(
     ['preview', approvedFile(root, record.articlePreviewPath, 'Article preview')],
   ];
   if (record.contentDraftId) {
+    if (record.contentPackageId.startsWith('production-')) {
+      inputs.push(['production-package', safeDataPath(root, '06-content-packages', `${record.contentPackageId}.json`)]);
+    }
     inputs.push(['draft', safeDataPath(root, '06-content-drafts', `${record.contentDraftId}.json`)]);
     if (!record.visualPlanId) throw new Error('Article visual plan is missing');
     inputs.push(['visual-plan', safeDataPath(root, '06-visual-plans', `${record.visualPlanId}.json`)]);

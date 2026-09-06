@@ -58,13 +58,15 @@ export function creddyWebsiteAssetPath(slug: string, assetId: string, sourcePath
   return `/blogs/${slug}/${encodeURIComponent(`${safeAssetId}-${basename(sourcePath)}`)}`;
 }
 
-async function articleSource(root: string, bank: ContentBankRecord): Promise<{
+export async function articleSource(root: string, bank: ContentBankRecord): Promise<{
   article: CreddyArticleDraft;
   visuals: CreddyArticleVisualPlan;
   sourceUrls: string[];
   factualClaims: ContentDraftRecord['factualClaims'];
 }> {
-  if (bank.contentDraftId) {
+  // Production owns composed captions and the preview that Agent 07 reviewed.
+  // Never substitute the earlier draft for that frozen article.
+  if (bank.contentDraftId && !bank.contentPackageId.startsWith('production-')) {
     const draft = await readJson<ContentDraftRecord>(
       safeDataPath(root, '06-content-drafts', `${bank.contentDraftId}.json`),
     );
@@ -78,6 +80,10 @@ async function articleSource(root: string, bank: ContentBankRecord): Promise<{
   const content = await readJson<ContentPackageRecord>(
     safeDataPath(root, '06-content-packages', `${bank.contentPackageId}.json`),
   );
+  if (bank.contentPackageId.startsWith('production-') && (content.id !== bank.contentPackageId
+      || content.contentDraftId !== bank.contentDraftId || content.visualPlanId !== bank.visualPlanId)) {
+    throw new Error('Production article identity does not match the reviewed record');
+  }
   if (!content.article || !content.articleVisuals) throw new Error('Production package has no website article');
   return { article: content.article, visuals: content.articleVisuals, sourceUrls: content.sourceUrls, factualClaims: content.factualClaims };
 }
@@ -91,7 +97,7 @@ async function referralRegistry(path: string | undefined): Promise<Map<string, R
 
 export async function exportApprovedWebsiteArticles(
   root: string,
-  options: { referralRegistryPath?: string } = {},
+  options: { referralRegistryPath?: string; contentBankId?: string } = {},
 ): Promise<CreddyWebsiteExportResult> {
   const result: CreddyWebsiteExportResult = { reviewed: 0, exported: 0, skipped: 0, blockers: [], outputPaths: [] };
   const registry = await referralRegistry(options.referralRegistryPath);
@@ -99,6 +105,7 @@ export async function exportApprovedWebsiteArticles(
     (await listJsonFiles(safeDataPath(root, '09-pending-approval'))).map((path) => readJson<ContentBankRecord>(path)),
   );
   for (const bank of records) {
+    if (options.contentBankId && bank.id !== options.contentBankId) continue;
     if (!bank.articleReview) continue;
     result.reviewed += 1;
     if (!['approved', 'publishing'].includes(bank.articleReview.status)) {
