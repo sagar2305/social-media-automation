@@ -1,5 +1,14 @@
 # Creddy editorial imagery
 
+Agent 05 also reads the latest 20 published blog heroes when visual tasks are
+pending, so archive refreshes inform repeat avoidance. This optional five-second
+read returns compact photo IDs and subjects, not credentials or private paths.
+If unavailable it reports that fact and falls back to accepted-plan/batch hints.
+No additional history store or publication dependency is introduced. Story-seeded
+photo ordering breaks ties only after relevance and recent-use filtering; accepted
+covers remain stable. Avoid exact repeats when suitable alternatives exist, not
+through hard quotas or unrelated imagery. News and social are unchanged.
+
 Blogs and App News use recognizable, authentic brand assets in restrained 2D
 editorial compositions. No generated logos, invented card designs, glossy 3D
 coins, or toy-aircraft illustrations. Existing website frames and social

@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { blogPhotoCandidateOrder, publishedBlogCoverContext } from './blog-cover-context.js';
 import { resolveWebsiteCmsCredentials } from './instant-website-publish.js';
 
 import { recordAgent1Feedback } from './agent1-feedback.js';
@@ -504,7 +505,14 @@ async function main(): Promise<void> {
   if (command === 'agent-5-prepare') {
     const pending = await listPendingVisualTasks(root);
     const reports = await writeObservablePipelineReports(root);
-    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(), editorialPhotos: await editorialPhotoRegistry(), recentBlogCovers: await recentBlogCoverSelections(root), pendingCount: pending.length, pending, reports }, null, 2));
+    const editorialPhotos = await editorialPhotoRegistry();
+    const publishedBlogCovers = pending.length ? await publishedBlogCoverContext()
+      : { status: 'not_requested_no_pending_tasks', covers: [] };
+    const photoCandidateOrders = pending.map(task => ({ canonicalId: task.draft.canonicalId,
+      photoIds: blogPhotoCandidateOrder(task.draft.canonicalId, editorialPhotos.map(photo => photo.id)) }));
+    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(), editorialPhotos,
+      publishedBlogCovers, photoCandidateOrders, recentBlogCovers: await recentBlogCoverSelections(root),
+      pendingCount: pending.length, pending, reports }, null, 2));
     return;
   }
   if (command === 'visual-pending') {

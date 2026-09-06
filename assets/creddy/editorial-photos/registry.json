@@ -2,6 +2,96 @@
   "version": 1,
   "photos": [
     {
+      "id": "seattle-waterfront",
+      "file": "seattle-waterfront.jpg",
+      "sha256": "2406d4b3c7e519ea337a99dd719510e10b4856c37ed37bb448a69dbe56c7a027",
+      "subject": "Downtown Seattle waterfront and Great Wheel, Washington (2012)",
+      "usageNotes": "Seattle destination inspiration for broad Alaska/Atmos or travel-rewards coverage. Not proof of any airline route, award seat or hotel benefit. Pixabay CC0 license independently reviewed on Commons in January 2016.",
+      "credit": {
+        "creator": "katdavis733",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Seattle_Skyline-.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized; no subject alteration."
+      },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "tokyo-skyline",
+      "file": "tokyo-skyline.jpg",
+      "sha256": "9580160b17dd9cce2d3ce31de97b1ffb5fcc5dafeab955b22bc5f8632e204c69",
+      "subject": "Tokyo skyline, Japan (January 2015)",
+      "usageNotes": "Japan destination inspiration for broad JAL, Avios or transfer-planning articles, not a claim about route availability or redemption price. Flickr CC0 license review confirmed on Commons March 2022.",
+      "credit": {
+        "creator": "╬ಠ益ಠ)",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:2015-01-17_Skyline_in_Tokyo.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized; no subject alteration."
+      },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "new-york-skyline",
+      "file": "new-york-skyline.jpg",
+      "sha256": "206e55b0dfd7f39e680b3fea4036c71ba3f6b8323be58f5671f2323f174844e6",
+      "subject": "Manhattan skyline with the Empire State Building, New York (2011)",
+      "usageNotes": "US city-travel inspiration for broad airline loyalty or rewards planning, including JetBlue. Not proof of a current airline route, seat, offer or hotel benefit. Creator's own-work CC0 dedication on Commons.",
+      "credit": {
+        "creator": "Storylanding",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:New_York_City_skyline_with_Empire_State_Building_1.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized; no subject alteration."
+      },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "santa-fe-hotel-room",
+      "file": "santa-fe-hotel-room.jpg",
+      "sha256": "33784b779663c77c10035da600eca14234caf8ee29a629372072c9ef5bdd9cf6",
+      "subject": "Guest room at La Fonda hotel, Santa Fe, New Mexico (2015)",
+      "usageNotes": "Illustrative US hotel stay for general hotel-rewards education. Do not label as Hilton/Marriott or imply chain membership, current amenities, award availability or an included upgrade. Creator's own-work CC0 dedication.",
+      "credit": {
+        "creator": "Atakra",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:La_fonda_hotel_room.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized; no subject alteration."
+      },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "taipei-hotel-lobby",
+      "file": "taipei-hotel-lobby.jpg",
+      "sha256": "ebdfa788eec088a469e8b0d3a13ff16d720ff74b72845ce4f763a6d4e63827b2",
+      "subject": "Lobby seating at Hotel Metropolitan Premier Taipei, Taiwan (March 2024)",
+      "usageNotes": "Illustrative hotel interior for broad hotel-stay education. Not Hilton/Marriott, not an airport lounge, and not proof of a benefit or current amenity. Creator's own-work CC0 dedication on Commons.",
+      "credit": {
+        "creator": "Ounfs Robmmy 238",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:TW_台湾_Taipei_台北_Hotel_Metropolitan_Premier_Taipei_lobby_waiting_zone_March_2024_R12S_01.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized; no subject alteration."
+      },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
       "id": "jetblue-boston-2025",
       "file": "jetblue-boston-2025.jpg",
       "sha256": "e49edad4ba7fd49115129f61ebc652d5b6773a0241e2e0fa23dff59780200972",

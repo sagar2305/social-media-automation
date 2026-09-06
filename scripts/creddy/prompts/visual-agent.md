@@ -75,6 +75,17 @@ never generate fake app UI. Licensed photos require provenance.
 Prefer one story-relevant real photograph for the hero when a suitable reviewed
 asset exists. `agent-5-prepare` lists `editorialPhotos` separately from brands.
 Choose by the article's reader intent, not merely its airline or hotel name.
+First inspect `publishedBlogCovers`: the latest 20 actually published blog heroes,
+including archive image refreshes. Avoid their exact photo IDs when another
+equally relevant reviewed option exists. If status is unavailable, use the local
+hints below and say that published history was unavailable; do not assume no
+photo has been used or block the queue. Missing photo IDs mean unknown imagery.
+Filter candidates for truthful subject and relevance first, then recent exact
+reuse and neighboring subject repetition. Among equally suitable options, use
+the story's `photoCandidateOrders` as a stable pseudo-random tie-break (first
+remaining ID). This order is not a relevance ranking or permission to use an
+unrelated image. Keep the accepted choice fixed on retries. Reuse is allowed
+when there is no equally relevant alternative; the 20-story window is not a quota.
 Use `recentBlogCovers` (up to 12 accepted selections, not publication receipts)
 and choices already made in this batch to prefer a different photograph AND
 subject where an equally relevant reviewed alternative exists. Mix destinations,
