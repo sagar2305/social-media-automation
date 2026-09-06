@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { CREDDY_ARTICLE_IMAGE_BLOCK, CREDDY_ARTICLE_THEME } from './article-content.js';
+import { CREDDY_ARTICLE_IMAGE_BLOCK, CREDDY_ARTICLE_THEME, CREDDY_ARTICLE_DISCLOSURE } from './article-content.js';
 import { reviewCreddyArticleSeo } from './article-seo-review.js';
+import { autoPublishWebsiteArticle } from './article-approval-service.js';
+import { runArticleContentBankHandoff } from './video-stage.js';
 import { initializeCreddyDataRoot, readJson, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import { CREDDY_PIPELINE_VERSION, type ContentBankRecord } from './pipeline-types.js';
 import {
@@ -17,9 +19,49 @@ import {
 } from './website-cms-stage.js';
 import {
   CREDDY_WEBSITE_EXPORT_VERSION,
+  exportApprovedWebsiteArticles,
   creddyWebsiteAssetPath,
   type CreddyWebsiteExportPayload,
 } from './website-stage.js';
+
+test('Agent 07 composed article survives scoped approval, export and CMS SEO recheck', async () => {
+  const f = await approvedFixture();
+  const original = await readJson<CreddyWebsiteExportPayload>(f.exportPath);
+  const article = structuredClone(original.article);
+  article.referralDisclosure = CREDDY_ARTICLE_DISCLOSURE;
+  article.blocks.push(
+    { id: 'takeaways', type: 'key_takeaways', title: 'Benefit reset essentials', items: ['Check the reset date before using a credit card benefit.'], claimFields: [] },
+    { id: 'body', type: 'paragraph', text: Array.from({ length: 65 }, () => 'Check the benefit reset date and eligibility before relying on credit card rewards in your travel budget.').join(' '), claimFields: [] },
+    { id: 'subscribe', type: 'subscribe', title: 'Get rewards updates', body: 'Read practical rewards guidance.', consentLabel: 'I agree to receive editorial emails.' },
+    { id: 'download', type: 'download', title: 'Get Creddy', body: 'Track rewards.', iosUrl: 'https://apps.apple.com/app/id6768603911', androidUrl: 'https://play.google.com/store/apps/details?id=com.thebrewapps.creddy' },
+  );
+  const visuals = { ...original.visuals, assets: original.visuals.assets.map(a => ({ ...a, assetPath: a.sourceAssetPath,
+    generationMode: 'compose' as const, brandAssetIds: [], provenance: 'Original Creddy-owned editorial illustration.' })) };
+  const draftArticle = structuredClone(article);
+  const block = draftArticle.blocks.find(b => b.type === 'visual');
+  if (block?.type === 'visual') block.caption = 'Earlier draft caption, before composition.';
+  const id = 'production-cms-fixture';
+  await writeJsonAtomic(safeDataPath(f.root, '06-content-drafts', 'copy-cms.json'), { article: draftArticle, sourceUrls: article.sourceUrls, factualClaims: [] });
+  await writeJsonAtomic(safeDataPath(f.root, '06-visual-plans', 'visual-cms.json'), { articleVisuals: visuals });
+  await writeJsonAtomic(safeDataPath(f.root, '06-content-packages', `${id}.json`), {
+    version: 1, id, distributionMode: 'article_only', contentDraftId: 'copy-cms', visualPlanId: 'visual-cms',
+    article, articleVisuals: visuals, articlePreviewPath: original.previewPath, articleReadiness: 'ready_for_review', sourceUrls: article.sourceUrls, factualClaims: [],
+  });
+  await runArticleContentBankHandoff(f.root);
+  let uploaded = 0;
+  const result = await autoPublishWebsiteArticle({ root: f.root, id: `article-${id}`, publish: async () => {
+    const exported = await exportApprovedWebsiteArticles(f.root, { contentBankId: `article-${id}` });
+    assert.equal(exported.reviewed, 1, 'unrelated eligible bank record is outside scoped retry');
+    assert.deepEqual(exported.blockers, []);
+    assert.equal(exported.exported, 1);
+    return publishReadyWebsiteExportsToCms(f.root, exported.outputPaths, { allowCmsPublish: true, client: {
+      uploadAsset: async ({ objectPath }) => { uploaded++; return `https://example.com/${objectPath}`; },
+      upsertArticle: async row => { assert.deepEqual(row.content.article, article); },
+    } });
+  } });
+  assert.equal(result.publishState, 'published');
+  assert.equal(uploaded, 3);
+});
 
 function pngFixture(width: number, height: number): Uint8Array {
   const bytes = Buffer.alloc(12_000);

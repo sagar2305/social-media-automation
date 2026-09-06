@@ -574,7 +574,7 @@ async function main(): Promise<void> {
         root,
         id,
         websiteBaseUrl: process.env.CREDDY_WEBSITE_BASE_URL,
-        publish: () => publishApprovedWebsiteArticlesImmediately({ repositoryRoot: process.cwd() }),
+        publish: () => publishApprovedWebsiteArticlesImmediately({ repositoryRoot: process.cwd(), contentBankId: id }),
       });
       return true;
     };
@@ -695,6 +695,7 @@ async function main(): Promise<void> {
   if (command === 'agent-8-website-export') {
     const website = await exportApprovedWebsiteArticles(root, {
       referralRegistryPath: process.env.CREDDY_REFERRAL_REGISTRY_PATH,
+      contentBankId: process.env.CREDDY_WEBSITE_CONTENT_BANK_ID?.trim(),
     });
     let cms: Awaited<ReturnType<typeof publishReadyWebsiteExportsToCms>> | undefined;
     if (process.env.CREDDY_WEBSITE_CMS_PUBLISH_ENABLED?.trim().toLocaleLowerCase('en-US') === 'true') {

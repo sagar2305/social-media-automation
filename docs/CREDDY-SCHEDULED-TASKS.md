@@ -89,6 +89,13 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
 
 ## Delivery health
 
+Article release uses the finished production package that Agent 07 reviewed,
+including composed image captions, rather than exporting the earlier draft.
+The approval fingerprint covers the package, draft, visual plan and preview.
+Single-article retries are scoped to that Content Bank ID; normal hourly batch
+export remains available. Missing production packages and changed approvals
+fail closed. Never fix an SEO fingerprint mismatch by removing the comparison.
+
 The test commands install a test-only fetch guard: fixtures must inject mocked
 clients and cannot issue real Slack, CMS, or social HTTP requests merely because
 the protected environment was sourced. Never remove this guard to make a test pass.

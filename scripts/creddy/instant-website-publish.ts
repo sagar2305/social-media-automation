@@ -90,6 +90,7 @@ export async function unpublishWebsiteArticleImmediately(options: {
 }
 
 export async function publishApprovedWebsiteArticlesImmediately(options: {
+  contentBankId?: string;
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   repositoryRoot?: string;
 } = {}): Promise<InstantWebsitePublishResult> {
@@ -107,12 +108,16 @@ export async function publishApprovedWebsiteArticlesImmediately(options: {
       CREDDY_WEBSITE_ASSET_WEBP_ENABLED: env.CREDDY_WEBSITE_ASSET_WEBP_ENABLED || 'true',
       CREDDY_WEBSITE_ASSET_WEBP_QUALITY: env.CREDDY_WEBSITE_ASSET_WEBP_QUALITY || '88',
       CREDDY_WEBSITE_CMS_FORCE_REPUBLISH: 'false',
+      CREDDY_WEBSITE_CONTENT_BANK_ID: options.contentBankId || '',
     },
     maxBuffer: 10 * 1024 * 1024,
     timeout: 120_000,
   });
   const parsed = JSON.parse(stdout) as { cms?: InstantWebsitePublishResult };
   if (!parsed.cms) throw new Error('Agent 8 completed without a CMS publish result.');
+  if (parsed.cms.failures.some(failure => failure.reason === 'Article SEO review is missing, failed, or no longer matches the approved article')) {
+    throw new Error('The exported article does not match its SEO review. Rebuild and review the production article.');
+  }
   if (parsed.cms.failures.length) throw new Error(`Agent 8 CMS publish failed for ${parsed.cms.failures.length} article(s).`);
   return parsed.cms;
 }
