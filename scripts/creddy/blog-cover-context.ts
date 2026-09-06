@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import { resolveWebsiteCmsCredentials } from './instant-website-publish.js';
 
 export type PublishedBlogCover = {
-  slug: string; publishedAt: string; photoAssetId?: string; subject?: string;
+  slug: string; publishedAt: string; photoAssetId?: string; subject?: string; sourceUrl?: string;
 };
 
 /** Editorial hints only: no writes, publication authority, or shadow history. */
@@ -30,17 +29,12 @@ export async function publishedBlogCoverContext(
         ? row.assets.find((asset: { id?: string } | null) => asset?.id === row.hero_id) : undefined;
       return { slug: row.slug, publishedAt: row.published_at,
         photoAssetId: typeof hero?.photoAssetId === 'string' ? hero.photoAssetId : undefined,
-        subject: typeof hero?.altText === 'string' ? hero.altText : undefined };
+        subject: typeof hero?.altText === 'string' ? hero.altText : undefined,
+        sourceUrl: typeof hero?.photoCredit?.sourceUrl === 'string' ? hero.photoCredit.sourceUrl : undefined };
     });
     return { status: 'available', covers };
   } catch {
     // Never expose credentials/response errors or mislabel unavailable as an empty archive.
     return { status: 'unavailable', covers: [] };
   }
-}
-
-/** Stable pseudo-random tie-break, applied only after editorial relevance filtering. */
-export function blogPhotoCandidateOrder(storyId: string, photoIds: string[]): string[] {
-  const rank = (id: string) => createHash('sha256').update(JSON.stringify(['blog-cover-v1', storyId, id])).digest('hex');
-  return [...new Set(photoIds)].sort((a, b) => rank(a).localeCompare(rank(b)) || a.localeCompare(b));
 }

@@ -113,7 +113,7 @@ export async function refreshPublishedBlogImages(input: {
   const { client, slug, expectedHash, replacements, root } = input;
   for (const replacement of replacements) {
     if (!replacement.photoAssetId) continue;
-    const { entry } = await resolveEditorialPhoto(replacement.photoAssetId);
+    const { entry } = await resolveEditorialPhoto(replacement.photoAssetId, undefined, root);
     if (JSON.stringify(replacement.photoCredit) !== JSON.stringify(entry.credit)) {
       throw new Error('Photo credit must match the reviewed registry');
     }

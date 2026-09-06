@@ -97,7 +97,7 @@ export async function recentBlogCoverSelections(root: string) {
       const hero = plan.articleVisuals!.assets.find(asset => asset.usage === 'hero')!;
       return { canonicalId: plan.canonicalId, selectedAt: plan.createdAt,
         headline: plan.cover.headline, photoAssetId: hero.photoAssetId,
-        brandAssetIds: hero.brandAssetIds, subject: hero.altText };
+        brandAssetIds: hero.brandAssetIds, subject: hero.altText, sourceUrl: hero.photoCredit?.sourceUrl };
     });
 }
 

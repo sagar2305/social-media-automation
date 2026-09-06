@@ -50,15 +50,30 @@ export async function editorialPhotoRegistry(): Promise<EditorialPhotoEntry[]> {
   return data.photos;
 }
 
-export async function resolveEditorialPhoto(id: string, registry = editorialPhotoRegistry()) {
-  const entry = (await registry).find(photo => photo.id === id);
+export async function resolveEditorialPhoto(id: string, registry = editorialPhotoRegistry(), root?: string) {
+  let directory = dirname(registryPath);
+  let entry: EditorialPhotoEntry | undefined;
+  if (id.startsWith('online-')) {
+    if (!root || !/^online-[a-f0-9]{64}$/.test(id)) throw new Error('Unknown online photo selection');
+    directory = safeDataPath(root, '06-visual-assets', 'online-selections', id);
+    const receipt = JSON.parse(await readFile(safeDataPath(directory, 'selection.json'), 'utf8'));
+    entry = receipt.entry;
+    if (receipt.version !== 1 || entry?.id !== id || receipt.sha256 !== entry.sha256
+        || receipt.sourceUrl !== entry.credit.sourceUrl) throw new Error('Invalid online photo selection receipt');
+    const identity = { storyId: receipt.storyId, sha256: entry.sha256, sourceUrl: entry.credit.sourceUrl,
+      subject: entry.subject, usageNotes: entry.usageNotes, credit: entry.credit };
+    if (`online-${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}` !== id
+        || entry.focalPoint?.x !== 0.5 || entry.focalPoint?.y !== 0.5) {
+      throw new Error('Online selection metadata integrity check failed');
+    }
+  } else entry = (await registry).find(photo => photo.id === id);
   if (!entry || !/^[a-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(entry.file)) throw new Error('Unknown or unsafe editorial photo');
   validatePhotoCredit(entry.credit);
   if (!entry.subject?.trim() || entry.subject.length > 170 || !entry.usageNotes?.trim()
       || ![entry.focalPoint?.x, entry.focalPoint?.y].every(point => Number.isFinite(point) && point >= 0 && point <= 1)) {
     throw new Error('Photo requires exact subject, usage context and valid focal point');
   }
-  const assetPath = resolve(dirname(registryPath), entry.file);
+  const assetPath = resolve(directory, entry.file);
   const info = await stat(assetPath);
   if (!info.isFile() || info.size > 20 * 1024 * 1024) throw new Error('Photo exceeds the local image size limit');
   const bytes = await readFile(assetPath);
@@ -69,7 +84,7 @@ export async function resolveEditorialPhoto(id: string, registry = editorialPhot
 /** A single reviewed photograph, without generated logos, text overlays, or decorative tiles. */
 export async function composeEditorialPhoto(input: { root: string; photoId: string; usage: 'hero' | 'inline' | 'comparison' }) {
   if (input.usage !== 'hero') throw new Error('Photo-first rollout is restricted to explicitly selected heroes');
-  const { entry, bytes } = await resolveEditorialPhoto(input.photoId);
+  const { entry, bytes } = await resolveEditorialPhoto(input.photoId, undefined, input.root);
   const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
   if (!['jpeg', 'png', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) > 1) throw new Error('Photo must be a static raster');
   const normalized = await sharp(bytes, { limitInputPixels: 40_000_000 }).rotate().toBuffer({ resolveWithObject: true });
