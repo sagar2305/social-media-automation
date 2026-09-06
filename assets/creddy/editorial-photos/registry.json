@@ -162,6 +162,96 @@
         "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
         "modifications": "Cropped to 16:9 and resized."
       }
+    },
+    {
+      "id": "sfo-terminal",
+      "file": "sfo-terminal.jpg",
+      "sha256": "cc871d6e30f64b8bd961337414c7b1101f6fbb2947369d5040255d116b98d687",
+      "subject": "San Francisco International Airport international terminal (2011)",
+      "usageNotes": "Generic airport/departure planning context. Not a named airline lounge, current terminal layout or an included access benefit.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Stickpen",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Sfo-intlterminal-interior.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "marriott-putrajaya-pool",
+      "file": "marriott-putrajaya-pool.jpg",
+      "sha256": "e248beda67be2829af20b99190c1b312e0eca9038f09a7208fd9bec6f8f18337",
+      "subject": "Swimming pool at Putrajaya Marriott Hotel, Malaysia (2014)",
+      "usageNotes": "Archive Marriott setting for broad hotel-program context. Not evidence of current amenities, eligibility or award availability; not another named property.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Hanno Böck",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Putrajaya-Marriott-Hotel-pool.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "paris-skyline",
+      "file": "paris-skyline.jpg",
+      "sha256": "e6cba9b2aa980639649158a937e7fdd165220e8e8da3db2e65fec9e6ba5fa71f",
+      "subject": "Paris skyline from Montparnasse Tower at sunset (2015)",
+      "usageNotes": "Destination/European travel inspiration for broad award planning. Never imply an offer includes Paris or guarantees a route, price or availability.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Joe deSousa",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Paris_skyline_from_the_observation_deck_of_the_Montparnasse_tower,_July_2015.jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "southwest-cabin",
+      "file": "southwest-cabin.jpg",
+      "sha256": "302a25e9f65e4707c7eb51ed6a5ca61b96cb2225d01357b3704a45c50325515c",
+      "subject": "Southwest Boeing 737 MAX 8 N8735L cabin (December 2022)",
+      "usageNotes": "Archive Southwest cabin for general program coverage only. Not the current fleet-wide cabin, seating policy, specific flight or premium-cabin benefit. Never use for a different airline.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Ian Abbott",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Southwest_737_MAX_8_Cabin.jpg",
+        "license": "CC-BY-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "waikiki-beach",
+      "file": "waikiki-beach.jpg",
+      "sha256": "07ba2751b54ea19d208d132f7c2f841843ca49fdf5108ac8954373fadeb368e2",
+      "subject": "Waikiki Beach, Honolulu, Hawaii (November 2013)",
+      "usageNotes": "Generic coastal destination inspiration for broad Hawaii or travel-rewards planning. Not a branded hotel beach, included amenity, current route or bookable award.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Bernard Spragg. NZ",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Waikiki_Beach_Honolulu._(13980768719).jpg",
+        "license": "CC0-1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
     }
   ]
 }

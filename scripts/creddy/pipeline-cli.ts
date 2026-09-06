@@ -65,7 +65,7 @@ import { VideoFactoryClient } from './video-factory-client.js';
 import { approveContentBankItem, rejectContentBankItem, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 import { autoApproveAndSubmitUrgentSocial } from './urgent-auto-delivery.js';
 import { assertAutoUrgentAuthorizationCurrent } from './publication-policy.js';
-import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
+import { acceptVisualPlan, listPendingVisualTasks, recentBlogCoverSelections } from './visual-stage.js';
 import {
   acceptOfficialVerification,
   listPendingOfficialVerificationTasks,
@@ -504,7 +504,7 @@ async function main(): Promise<void> {
   if (command === 'agent-5-prepare') {
     const pending = await listPendingVisualTasks(root);
     const reports = await writeObservablePipelineReports(root);
-    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(), editorialPhotos: await editorialPhotoRegistry(), pendingCount: pending.length, pending, reports }, null, 2));
+    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(), editorialPhotos: await editorialPhotoRegistry(), recentBlogCovers: await recentBlogCoverSelections(root), pendingCount: pending.length, pending, reports }, null, 2));
     return;
   }
   if (command === 'visual-pending') {

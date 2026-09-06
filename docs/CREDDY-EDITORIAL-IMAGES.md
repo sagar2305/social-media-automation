@@ -71,6 +71,24 @@ an old backup or delete newly uploaded files while references may remain.
 
 ## Verification and follow-up
 
+### Blog cover variety
+
+Agent 05 receives up to twelve recent accepted hero selections, plus the reviewed
+photo registry. These are editorial hints, not publication receipts or authority
+to change an existing cover. Prefer a different photo and subject when an equally
+relevant alternative exists, including choices earlier in the current batch.
+Select by reader intent: destinations, terminals, matching cabins, hotel settings
+and authentic brand/card art. Generic illustrative travel photographs are allowed
+for broad rewards topics, with exact subject/date and credit retained in the article.
+Never imply a generic scene is a named property, included benefit or available award.
+There is no random page-load rotation, quota, external image-search service or new
+history store. Accepted selections remain stable. News and social are unchanged.
+
+Archive rebalancing uses explicit `plan-photos` selections and the existing
+image-only canary/apply path. Do not update dates, prose or inline images, or use
+fresh cover permission as content approval. A future merge activates selection
+guidance; applying a reviewed archive plan updates live CMS covers independently.
+
 - Run `npm run creddy:validate`, `npm run creddy:test`, `npx tsc --noEmit` and the
   app repository's isolated News image migration SQL test.
 - Confirm the live article resolves, its image loads, its date is unchanged,

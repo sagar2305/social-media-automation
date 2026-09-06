@@ -12,7 +12,7 @@ import {
   type ContentDraftRecord,
   type VisualPlanRecord,
 } from './pipeline-types.js';
-import { acceptVisualPlan, listPendingVisualTasks, selectCreddyExpression, validateVisualPlan } from './visual-stage.js';
+import { acceptVisualPlan, listPendingVisualTasks, recentBlogCoverSelections, selectCreddyExpression, validateVisualPlan } from './visual-stage.js';
 import { decisionFingerprint, officialVerificationFingerprint } from './rolling-editorial.js';
 
 function canonical(): CanonicalNewsRecord {
@@ -25,6 +25,28 @@ function canonical(): CanonicalNewsRecord {
     evidenceRecordIds: ['raw-1'], cleanedMarkdown: 'A practical guide.', deduplicatedAt: '2026-08-19T12:10:00.000Z',
   };
 }
+
+test('recent blog covers are bounded, stable, deduplicated and exclude nested history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-cover-context-'));
+  assert.deepEqual(await recentBlogCoverSelections(root), []);
+  const make = (id: string, canonicalId: string, day: number) => ({
+    id, canonicalId, createdAt: `2026-09-${String(day).padStart(2, '0')}T00:00:00Z`,
+    cover: { headline: id }, articleVisuals: { assets: [{ usage: 'hero', photoAssetId: 'photo-one', altText: 'Terminal' }] },
+  });
+  for (let day = 1; day <= 15; day++) {
+    await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${day}.json`), make(`plan-${day}`, `canonical-${day}`, day));
+  }
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', 'duplicate.json'), make('latest', 'canonical-15', 16));
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', 'legacy', 'old.json'), make('legacy', 'legacy', 20));
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', 'social.json'), { id: 'social', createdAt: '2026-09-20T00:00:00Z' });
+  const context = await recentBlogCoverSelections(root);
+  assert.equal(context.length, 12);
+  assert.equal(context[0]!.headline, 'latest');
+  assert.equal(context.filter(item => item.canonicalId === 'canonical-15').length, 1);
+  assert.equal(context.some(item => item.headline === 'legacy'), false);
+  assert.deepEqual(await recentBlogCoverSelections(root), context);
+  assert.equal('assetPath' in context[0]!, false);
+});
 
 function draft(): ContentDraftRecord {
   return {

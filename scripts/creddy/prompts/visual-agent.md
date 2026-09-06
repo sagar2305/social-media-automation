@@ -74,6 +74,22 @@ never generate fake app UI. Licensed photos require provenance.
 
 Prefer one story-relevant real photograph for the hero when a suitable reviewed
 asset exists. `agent-5-prepare` lists `editorialPhotos` separately from brands.
+Choose by the article's reader intent, not merely its airline or hotel name.
+Use `recentBlogCovers` (up to 12 accepted selections, not publication receipts)
+and choices already made in this batch to prefer a different photograph AND
+subject where an equally relevant reviewed alternative exists. Mix destinations,
+terminals, relevant cabins, hotel settings, dining and authentic brand/card art;
+do not turn airline coverage into a wall of aircraft exteriors or replace it
+with a wall of beaches. Relevance beats variety; there is no quota.
+Generic travel photography may illustrate broad rewards/travel decisions even
+without the named brand. Preserve its exact subject and illustrative caption.
+Never suggest a generic beach is a Hilton property, a cabin belongs to Southwest,
+or a pictured lounge/seat is included in an offer. Specific product, cabin,
+property or destination claims require an accurate matching asset. Do not use
+unrelated office or sky photos merely for variety. Prefer authentic brand/card
+art if no reviewed photo fits. Keep each accepted cover stable on retries;
+never randomize on page load or change existing covers merely to rotate them.
+This policy applies only to website blog heroes, not News or social.
 Choose one exact `photoAssetId`, `generationMode: compose`, `assetType: licensed_photo`,
 and `usage: hero`; omit `brandAssetIds`. Read its exact subject and usage notes.
 A brand mention is not enough to select a particular property, cabin or aircraft.
