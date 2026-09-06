@@ -9,7 +9,11 @@ import { editorialBrandRegistry, matchEditorialBrands, resolveEditorialBrands } 
 
 test('reviewed photographs have integrity, no-cost licenses and a separate selection namespace', async () => {
   const photos = await editorialPhotoRegistry();
-  assert.equal(photos.length, 3);
+  for (const id of ['hilton-waikiki', 'klm-787', 'marriott-st-kitts', 'jal-singapore-2024',
+    'alaska-anchorage-2020', 'delta-taoyuan-2026', 'american-heathrow-2024',
+    'jetblue-boston-2025', 'southwest-bwi-2025']) {
+    assert.ok(photos.some(photo => photo.id === id), `retain reviewed photo ${id}`);
+  }
   const brands = await editorialBrandRegistry();
   for (const photo of photos) {
     const resolved = await resolveEditorialPhoto(photo.id);

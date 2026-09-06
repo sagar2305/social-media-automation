@@ -22,12 +22,20 @@ until the three representative previews and website layout are approved.
 
 ## Sources and rights
 
-The three local originals are listed in
+The reviewed local originals are listed in
 `assets/creddy/editorial-photos/registry.json`. Hilton Waikiki and Marriott St.
 Kitts are CC0; the KLM photograph is CC BY-SA 4.0. The resulting KLM crop remains
 CC BY-SA 4.0. This image license does not relicense unrelated application code.
 Each registry entry links to the file description and license. Integrity checks
 reject changed bytes, unsafe paths, animated/vector files and insufficient detail.
+
+The expanded library includes subject-specific JAL, Alaska, Delta, American,
+JetBlue and Southwest
+aircraft photography. Select the actual depicted airline, not a generic plane for
+an unrelated brand. Retain the authentic brand fallback for card-only or unmatched
+topics. Free stock sites do not share one blanket license: Unsplash and Pexels
+assets require their own verified license support before entering this registry;
+never relabel them as Creative Commons. No external photo-search service is added.
 
 The website must render creator, source and license links, plus modification
 disclosure, beside the photo inside the article. Listing cards have no visible

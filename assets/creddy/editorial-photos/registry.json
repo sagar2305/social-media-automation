@@ -2,12 +2,123 @@
   "version": 1,
   "photos": [
     {
+      "id": "jetblue-boston-2025",
+      "file": "jetblue-boston-2025.jpg",
+      "sha256": "e49edad4ba7fd49115129f61ebc652d5b6773a0241e2e0fa23dff59780200972",
+      "subject": "JetBlue Airbus A320 N796JB departing Boston (August 2025)",
+      "usageNotes": "Archive photograph. JetBlue TrueBlue or United-JetBlue coverage; not a United aircraft or evidence of current routes or award availability.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "4300streetcar",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File%3AJetBlue_Airbus_A320_N796JB_departing_Boston_August_2025.jpg",
+        "license": "CC-BY-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "southwest-bwi-2025",
+      "file": "southwest-bwi-2025.jpg",
+      "sha256": "0ec2baacb86d5077646c4bd81b69605d2a75479d673a72357145f388cd7de267",
+      "subject": "Southwest Airlines Boeing 737-700 N955WN at Baltimore/Washington Airport (March 2025)",
+      "usageNotes": "Archive photograph. Southwest Rapid Rewards coverage; not evidence of current seats, benefits, routes or award availability.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Acroterion",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File%3ASouthwest_Boeing_737-700_N955WN_BWI_MD3.jpg",
+        "license": "CC-BY-SA-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "modifications": "Cropped to 16:9 and resized. This adapted image is also CC BY-SA 4.0."
+      }
+    },
+    {
+      "id": "jal-singapore-2024",
+      "file": "jal-singapore-2024.jpg",
+      "sha256": "e9acbdc191ec8308edeb9845ceb5b0dffe230934a05dd6ac192c8a6c95049de7",
+      "subject": "Japan Airlines Boeing 787-9 JA876J at Singapore Changi Airport (2024)",
+      "usageNotes": "Archive photograph. JAL program or transfer coverage; not evidence of a specific flight, cabin, seat or award availability.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Bahnfrend",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File%3AJapan_Airlines_Boeing_787_JA876J_Singapore_2024_(02).jpg",
+        "license": "CC-BY-SA-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "modifications": "Cropped to 16:9 and resized. This adapted image is also CC BY-SA 4.0."
+      }
+    },
+    {
+      "id": "alaska-anchorage-2020",
+      "file": "alaska-anchorage-2020.jpg",
+      "sha256": "bdb817b065cded6df0edc23fcbbeccfdb84acaa4af9bd80184bc40f440dc555c",
+      "subject": "Alaska Airlines Boeing 737-900ER N297AK in Anchorage, Alaska (2020)",
+      "usageNotes": "Archive photograph. Alaska or Atmos Rewards coverage; not a Hawaiian aircraft or evidence of current routes, seats or awards.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Quintin Soloviev",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File%3AAlaska_Airlines_Boeing_737_900ER_N297AK_Anchorage_(Quintin_Soloviev).jpg",
+        "license": "CC-BY-SA-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "modifications": "Cropped to 16:9 and resized. This adapted image is also CC BY-SA 4.0."
+      }
+    },
+    {
+      "id": "delta-taoyuan-2026",
+      "file": "delta-taoyuan-2026.jpg",
+      "sha256": "f562b32b79f7fad7a6f2538a072dabe7dae972c6381b990e100a57b1c587b90d",
+      "subject": "Delta Air Lines Airbus A350-900 N507DN at Taiwan Taoyuan Airport (February 2026)",
+      "usageNotes": "Archive photograph. Delta SkyMiles coverage; not evidence of a card benefit, current route, cabin or award availability.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "4300streetcar",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File%3ADelta_Air_Lines_Airbus_A350-900_N507DN_at_Taoyuan_February_2026_2.jpg",
+        "license": "CC-BY-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "modifications": "Cropped to 16:9 and resized."
+      }
+    },
+    {
+      "id": "american-heathrow-2024",
+      "file": "american-heathrow-2024.jpg",
+      "sha256": "9c5a925ccf40aa5caec032d2b903b58596a045f841055b05d4509ca3feafe6c4",
+      "subject": "American Airlines Boeing 787-9 N827AN at London Heathrow Airport (July 2024)",
+      "usageNotes": "Archive photograph. American AAdvantage coverage; not a depiction of a card product or evidence of current awards or routes.",
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "credit": {
+        "creator": "Mike Peel (www.mikepeel.net)",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File%3AAmerican_Airlines_Boeing_787-9_(N827AN)_%40_LHR%2C_July_2024_(01).jpg",
+        "license": "CC-BY-SA-4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "modifications": "Cropped to 16:9 and resized. This adapted image is also CC BY-SA 4.0."
+      }
+    },
+    {
       "id": "hilton-waikiki",
       "file": "hilton-waikiki.jpg",
       "sha256": "772437fc69739d3ab5a6568d59d4419e6ef2afc752bd61ab40f46c2104011134",
       "subject": "Hilton Hawaiian Village beside Duke Kahanamoku Lagoon, Waikiki (2013)",
       "usageNotes": "Archive photograph, suitable as clearly labeled illustrative Hilton travel imagery. Not evidence of current amenities, award availability, prices or offer eligibility. Do not use for a different named property.",
-      "focalPoint": { "x": 0.5, "y": 0.5 },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
       "credit": {
         "creator": "Bernard Spragg. NZ",
         "sourceUrl": "https://commons.wikimedia.org/wiki/File:Hilton_Waikiki_Hawaii._(16545672009).jpg",
@@ -22,7 +133,10 @@
       "sha256": "1ef90bf222f64d6fc52f5c585b58199e7ba1d2e25bbed24e56f47a5f9289a6d3",
       "subject": "KLM Boeing 787 PH-BHI, photographed in 2019",
       "usageNotes": "Illustrative KLM or Flying Blue coverage only. Not evidence of an aircraft, cabin or seat on a specific flight. Preserve the whole aircraft in the crop. Derivative image remains CC BY-SA 4.0; source and license links must be visible wherever used.",
-      "focalPoint": { "x": 0.5, "y": 0.5 },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.5
+      },
       "credit": {
         "creator": "Styyx",
         "sourceUrl": "https://commons.wikimedia.org/wiki/File:KLM_787.jpg",
@@ -37,7 +151,10 @@
       "sha256": "106adb95b9c7f3f717d04e6a5992136204012355911b7fdcf482a93ed7acb7c6",
       "subject": "Beach cabanas at St. Kitts Marriott Resort (2014)",
       "usageNotes": "Archive photograph, suitable as clearly labeled illustrative Marriott resort imagery. Not a depiction of every Marriott, current amenities, award availability or offer eligibility. Do not use for a different named property.",
-      "focalPoint": { "x": 0.5, "y": 0.58 },
+      "focalPoint": {
+        "x": 0.5,
+        "y": 0.58
+      },
       "credit": {
         "creator": "NoTalkMan",
         "sourceUrl": "https://commons.wikimedia.org/wiki/File:Marriott_Resort_Beach,_St._Kitts.JPG",
