@@ -82,6 +82,25 @@ function contentDraftFiles(root: string): Promise<string[]> {
   );
 }
 
+/** Editorial hints only: accepted choices, not proof of publication or permission. */
+export async function recentBlogCoverSelections(root: string) {
+  const directory = safeDataPath(root, '06-visual-plans');
+  const files = (await listJsonFiles(directory)).filter(path =>
+    path.slice(directory.length + 1).indexOf('/') === -1);
+  const plans = await Promise.all(files.map(path => readJson<VisualPlanRecord>(path)));
+  return plans.filter(plan => plan.articleVisuals?.assets?.some(asset => asset.usage === 'hero')
+      && Number.isFinite(Date.parse(plan.createdAt)))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id))
+    .filter((plan, index, all) => all.findIndex(other => other.canonicalId === plan.canonicalId) === index)
+    .slice(0, 12)
+    .map(plan => {
+      const hero = plan.articleVisuals!.assets.find(asset => asset.usage === 'hero')!;
+      return { canonicalId: plan.canonicalId, selectedAt: plan.createdAt,
+        headline: plan.cover.headline, photoAssetId: hero.photoAssetId,
+        brandAssetIds: hero.brandAssetIds, subject: hero.altText, sourceUrl: hero.photoCredit?.sourceUrl };
+    });
+}
+
 async function visualTasks(root: string): Promise<VisualPlanningTaskRecord[]> {
   const canonical = await Promise.all(
     (await listJsonFiles(safeDataPath(root, '03-canonical-news', 'approved')))

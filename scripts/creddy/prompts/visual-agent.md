@@ -72,8 +72,55 @@ editorial illustration, data visualization, licensed photography, and approved
 Creddy product captures. Product captures must be supplied real screenshots;
 never generate fake app UI. Licensed photos require provenance.
 
-Prefer one story-relevant real photograph for the hero when a suitable reviewed
-asset exists. `agent-5-prepare` lists `editorialPhotos` separately from brands.
+Find a fresh online photograph for each new website blog hero. Do not select
+from a fixed local image library or enumerate past downloads as candidates.
+Choose search terms by reader intent, not merely the airline/hotel name: relevant
+destinations, cabin interiors, terminal experiences, hotel rooms/pools, or dining.
+Use the available web search/browser tools, starting with Wikimedia Commons file
+pages. Limit a story to three focused queries and six promising candidates.
+Inspect the actual image and its file-description page, creator, license, exact
+subject and any warnings. Search-engine thumbnails and publisher images are not
+reuse permission. Reject uncertain authorship, disputed rights, synthetic-looking
+photos, unrelated imagery or images that imply an unsupported benefit.
+The importer currently supports explicit CC0, CC BY 4.0 and CC BY-SA 4.0 on Commons;
+unknown/custom/NC/ND licenses fail closed. Do not claim every online image is free.
+For the chosen image, write one selection JSON with `storyId` (canonical ID),
+`sourcePageUrl` (HTTPS Commons File: page), `subject` (exact, <=170 characters),
+and `usageNotes` (why relevant, what it does NOT imply, rights-review context).
+Run `npm run creddy:editorial-images -- import-online <selection.json>`. This
+fetches authoritative metadata and image bytes, verifies supported license,
+host, size and integrity, and returns an `online-...` photoAssetId plus a durable
+selection receipt. Inspect the downloaded image before accepting the visual plan.
+Use that ID with `generationMode: compose`, `assetType: licensed_photo`, hero only;
+preserve returned `photoCredit` and exact subject. Agent06 crops/hosts the chosen
+image through the existing path. The receipt is for this story's audit/retry,
+not a library. On retry reuse the accepted ID; never silently choose a new image.
+First inspect `publishedBlogCovers`: the latest 20 actually published blog heroes,
+including archive image refreshes. Avoid their source URLs when another
+equally relevant reviewed option exists. If status is unavailable, use the local
+hints below and say that published history was unavailable; do not assume no
+photo has been used or block the queue. Missing source URLs mean unknown imagery.
+Compare canonical Commons File: identities (decode escapes, spaces/underscores,
+ignore query/fragment); different IDs must not disguise the same photograph.
+Filter candidates for truthful subject and relevance first, then recent exact
+reuse and neighboring subject repetition. Vary the search angle and choose among
+equally suitable unused results. Keep the accepted choice fixed on retries. Reuse is allowed
+when there is no equally relevant alternative; the 20-story window is not a quota.
+Use `recentBlogCovers` (up to 12 accepted selections, not publication receipts)
+and choices already made in this batch to prefer a different photograph AND
+subject where an equally relevant reviewed alternative exists. Mix destinations,
+terminals, relevant cabins, hotel settings, dining and authentic brand/card art;
+do not turn airline coverage into a wall of aircraft exteriors or replace it
+with a wall of beaches. Relevance beats variety; there is no quota.
+Generic travel photography may illustrate broad rewards/travel decisions even
+without the named brand. Preserve its exact subject and illustrative caption.
+Never suggest a generic beach is a Hilton property, a cabin belongs to Southwest,
+or a pictured lounge/seat is included in an offer. Specific product, cabin,
+property or destination claims require an accurate matching asset. Do not use
+unrelated office or sky photos merely for variety. Prefer authentic brand/card
+art if no reviewed photo fits. Keep each accepted cover stable on retries;
+never randomize on page load or change existing covers merely to rotate them.
+This policy applies only to website blog heroes, not News or social.
 Choose one exact `photoAssetId`, `generationMode: compose`, `assetType: licensed_photo`,
 and `usage: hero`; omit `brandAssetIds`. Read its exact subject and usage notes.
 A brand mention is not enough to select a particular property, cabin or aircraft.

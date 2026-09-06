@@ -1,5 +1,25 @@
 # Creddy editorial imagery
 
+New website blog heroes use fresh online photo searches per story, not a fixed
+library. Agent05 reviews a bounded set of relevant Commons file pages and images,
+then `npm run creddy:editorial-images -- import-online <selection.json>` imports
+only the selected photo. The JSON contains storyId, sourcePageUrl, exact subject
+and usageNotes. Explicit CC0/CC BY 4.0/CC BY-SA 4.0 metadata, creator, HTTPS host,
+static raster, dimensions, byte limit and source hash are checked. Unknown rights
+fail closed. Selected bytes and provenance live under
+`06-visual-assets/online-selections/<online-id>/`; these are audit/retry receipts,
+never a candidate catalog. Legacy checked-in photos remain only for historical
+plans, rendering and rollback. Do not add new photos to that registry.
+
+Agent05 reads the latest 20 published heroes when tasks are pending, including
+archive refreshes. Compare source URLs as well as IDs; source URLs identify the
+same photo across old/new IDs. This optional five-second read returns compact
+public metadata, not credentials/private paths. On failure, local/batch hints
+remain available. Vary relevant search angles, not arbitrary photos. Keep accepted
+images fixed on retries and page loads. If no suitable licensed image is found,
+retain an existing safe image or use the reviewed truthful brand fallback. No
+new history store, schema, scheduler or News/social change is required.
+
 Blogs and App News use recognizable, authentic brand assets in restrained 2D
 editorial compositions. No generated logos, invented card designs, glossy 3D
 coins, or toy-aircraft illustrations. Existing website frames and social
@@ -70,6 +90,24 @@ a fresh current revision/hash guard. Never overwrite a whole article row from
 an old backup or delete newly uploaded files while references may remain.
 
 ## Verification and follow-up
+
+### Blog cover variety
+
+Agent 05 receives up to twelve recent accepted hero selections alongside the
+published-cover context. These are editorial hints, not authority
+to change an existing cover. Prefer a different photo and subject when an equally
+relevant alternative exists, including choices earlier in the current batch.
+Select by reader intent: destinations, terminals, matching cabins, hotel settings
+and authentic brand/card art. Generic illustrative travel photographs are allowed
+for broad rewards topics, with exact subject/date and credit retained in the article.
+Never imply a generic scene is a named property, included benefit or available award.
+There is no random page-load rotation, quota, new image-search service or new
+history store. Accepted selections remain stable. News and social are unchanged.
+
+Archive rebalancing uses explicit `plan-photos` selections and the existing
+image-only canary/apply path. Do not update dates, prose or inline images, or use
+fresh cover permission as content approval. A future merge activates selection
+guidance; applying a reviewed archive plan updates live CMS covers independently.
 
 - Run `npm run creddy:validate`, `npm run creddy:test`, `npx tsc --noEmit` and the
   app repository's isolated News image migration SQL test.

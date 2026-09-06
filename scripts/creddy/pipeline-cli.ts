@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { publishedBlogCoverContext } from './blog-cover-context.js';
 import { resolveWebsiteCmsCredentials } from './instant-website-publish.js';
 
 import { recordAgent1Feedback } from './agent1-feedback.js';
@@ -54,7 +55,6 @@ import { refreshCreddyProductReleaseStatus } from './product-release-stage.js';
 import { runPublishStage } from './publish-stage.js';
 import { listPendingProductionTasks, prepareProductionPackages, refreshArticlePreviews } from './production-stage.js';
 import { editorialBrandRegistry } from './brand-asset-registry.js';
-import { editorialPhotoRegistry } from './editorial-photos.js';
 import { writeObservablePipelineReports } from './report-stage.js';
 import { runSlackReviewStage, SlackClient } from './slack-stage.js';
 import { runSlideshowContentBankHandoff } from './slideshow-bank-stage.js';
@@ -65,7 +65,7 @@ import { VideoFactoryClient } from './video-factory-client.js';
 import { approveContentBankItem, rejectContentBankItem, runArticleContentBankHandoff, runContentBankHandoff, runVideoStage } from './video-stage.js';
 import { autoApproveAndSubmitUrgentSocial } from './urgent-auto-delivery.js';
 import { assertAutoUrgentAuthorizationCurrent } from './publication-policy.js';
-import { acceptVisualPlan, listPendingVisualTasks } from './visual-stage.js';
+import { acceptVisualPlan, listPendingVisualTasks, recentBlogCoverSelections } from './visual-stage.js';
 import {
   acceptOfficialVerification,
   listPendingOfficialVerificationTasks,
@@ -504,7 +504,11 @@ async function main(): Promise<void> {
   if (command === 'agent-5-prepare') {
     const pending = await listPendingVisualTasks(root);
     const reports = await writeObservablePipelineReports(root);
-    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(), editorialPhotos: await editorialPhotoRegistry(), pendingCount: pending.length, pending, reports }, null, 2));
+    const publishedBlogCovers = pending.length ? await publishedBlogCoverContext()
+      : { status: 'not_requested_no_pending_tasks', covers: [] };
+    console.log(JSON.stringify({ agent: 5, editorialBrands: await editorialBrandRegistry(),
+      photoSelectionMode: 'fresh_online_search_per_story', publishedBlogCovers, recentBlogCovers: await recentBlogCoverSelections(root),
+      pendingCount: pending.length, pending, reports }, null, 2));
     return;
   }
   if (command === 'visual-pending') {
