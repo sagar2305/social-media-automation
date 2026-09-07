@@ -1,5 +1,10 @@
 # Photo-first editorial pilot
 
+Historical pilot record only. Current selection/provider/fallback policy is in
+`CREDDY-EDITORIAL-IMAGES.md` and `scripts/creddy/prompts/visual-agent.md`.
+The fixed-library and brand-fallback instructions below describe the original
+pilot, not the current workflow. Existing assets remain for retries and rollback.
+
 This extends the existing image pipeline. It does not add a schedule, provider,
 database migration, or native-app layout change. Do not replace published images
 until the three representative previews and website layout are approved.

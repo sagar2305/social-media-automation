@@ -76,14 +76,20 @@ Find a fresh online photograph for each new website blog hero. Do not select
 from a fixed local image library or enumerate past downloads as candidates.
 Choose search terms by reader intent, not merely the airline/hotel name: relevant
 destinations, cabin interiors, terminal experiences, hotel rooms/pools, or dining.
-Use the available web search/browser tools, starting with Wikimedia Commons file
-pages. Limit a story to three focused queries and six promising candidates.
+Write two visual angles before searching: what the reader could experience, and
+a useful human moment or practical detail. Natural travelers/guests are welcome;
+never imply endorsement of Creddy or a named brand. Prefer Pexels for general
+travel experiences when configured and Commons for specific matching subjects.
+Run `npm run creddy:editorial-images -- search-pexels "<focused query>"` for at
+most six candidates. Missing credentials/provider failure means continue with
+Commons and report the setup blocker, not scrape around the API.
+Limit a story to three queries total and six promising candidates across providers.
 Inspect the actual image and its file-description page, creator, license, exact
 subject and any warnings. Search-engine thumbnails and publisher images are not
 reuse permission. Reject uncertain authorship, disputed rights, synthetic-looking
 photos, unrelated imagery or images that imply an unsupported benefit.
-The importer currently supports explicit CC0, CC BY 4.0 and CC BY-SA 4.0 on Commons;
-unknown/custom/NC/ND licenses fail closed. Do not claim every online image is free.
+Commons supports explicit CC0, CC BY 4.0 and CC BY-SA 4.0. Pexels uses its own
+Pexels license, never Creative Commons. Unknown/NC/ND rights fail closed.
 For the chosen image, write one selection JSON with `storyId` (canonical ID),
 `sourcePageUrl` (HTTPS Commons File: page), `subject` (exact, <=170 characters),
 and `usageNotes` (why relevant, what it does NOT imply, rights-review context).
@@ -95,6 +101,15 @@ Use that ID with `generationMode: compose`, `assetType: licensed_photo`, hero on
 preserve returned `photoCredit` and exact subject. Agent06 crops/hosts the chosen
 image through the existing path. The receipt is for this story's audit/retry,
 not a library. On retry reuse the accepted ID; never silently choose a new image.
+For Pexels use its exact photo-page URL in `sourcePageUrl` and run
+`npm run creddy:editorial-images -- import-pexels <selection.json>` instead.
+It re-fetches authoritative metadata by photo ID and validates the original.
+Either provider accepts optional `focalPoint: { "x": 0.5, "y": 0.35 }`, using
+reviewed normalized coordinates after EXIF orientation. Inspect the 1600x900
+render and 320px thumbnail; do not crop away the subject to fill the frame.
+Before publishing Pexels, deploy the companion website license/credit support.
+Articles must visibly link "Photo by [creator] on Pexels" to the photo page.
+Cards stay credit-free; sharing retains the existing attribution-safe fallback.
 First inspect `publishedBlogCovers`: the latest 20 actually published blog heroes,
 including archive image refreshes. Avoid their source URLs when another
 equally relevant reviewed option exists. If status is unavailable, use the local
@@ -117,8 +132,10 @@ without the named brand. Preserve its exact subject and illustrative caption.
 Never suggest a generic beach is a Hilton property, a cabin belongs to Southwest,
 or a pictured lounge/seat is included in an offer. Specific product, cabin,
 property or destination claims require an accurate matching asset. Do not use
-unrelated office or sky photos merely for variety. Prefer authentic brand/card
-art if no reviewed photo fits. Keep each accepted cover stable on retries;
+unrelated office or sky photos merely for variety. If no photo fits, use an
+inspected restrained editorial fallback, not an automatic logo-only hero.
+Exact product art remains appropriate for product-specific stories.
+Keep each accepted cover stable on retries;
 never randomize on page load or change existing covers merely to rotate them.
 This policy applies only to website blog heroes, not News or social.
 Choose one exact `photoAssetId`, `generationMode: compose`, `assetType: licensed_photo`,
@@ -129,7 +146,10 @@ photograph. Agent 06 crops the reviewed source, preserves its credit/license,
 and includes those links in the public blog. Do not use these photos for inline
 or comparison slots in this rollout, and do not repeat the hero three times.
 Use exact approved card art for card stories when available; never invent it.
-If no reviewed photograph fits, use the existing brand composition below.
+If no reviewed photograph fits, use the existing restrained flat composition
+with `brandAssetIds: []`, only after inspecting its relevance and thumbnail quality.
+If that fallback is bland or unhelpful, retain a safe existing image or leave the
+image task retryable. Do not manufacture a collage or generate logos.
 News retains its independent brand-image path; photographs are not automatically
 selected for News, where required public photo credits are not yet supported.
 

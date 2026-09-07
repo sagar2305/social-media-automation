@@ -1,5 +1,58 @@
 # Creddy editorial imagery
 
+## Pexels and experience-led covers
+
+Use fresh Pexels searches for broad travel experiences and Commons for specific
+matching subjects. Choose the story's experience or practical detail before
+searching for a brand. Natural people are allowed without implying endorsement.
+Review recent subjects, framing and color as well as duplicate URLs, then inspect
+the actual 16:9 crop at 320px. Do not replace aircraft repetition with beach repetition.
+
+Pexels is an optional provider in the existing workflow, not another schedule.
+Set `PEXELS_API_KEY` in the protected local/runtime environment; never paste it
+into prompts, receipts, commits or logs. Missing credentials fail the Pexels
+command safely; Commons and the rest of the pipeline remain available.
+
+```sh
+npm run creddy:editorial-images -- search-pexels "traveler airport window"
+npm run creddy:editorial-images -- import-pexels /absolute/path/to/selection.json
+```
+
+The explicit selection uses the existing storyId, sourcePageUrl, subject and
+usageNotes fields. For either importer, optional `focalPoint: {"x":0.5,"y":0.35}`
+defines a reviewed point after EXIF orientation. New focal-point receipts use
+version 2 and include the crop point in their immutable identity. Existing v1
+identities, centered crops and retry receipts are unchanged.
+
+The Pexels importer re-fetches the selected photo ID through the official API,
+uses only authoritative photographer/page/original metadata, rejects redirects,
+and validates streaming byte limits, pixels, static raster and crop resolution.
+Search is bounded to six results, with no automatic selection or pagination loop.
+Across providers, Agent05 still has three focused queries and six reviewed
+candidates per story. No downloaded-photo library or page-load rotation is added.
+
+Pexels has a distinct license; never label it CC0. Deploy the companion website
+Pexels credit validator/component before publishing these images, otherwise
+the old website rejects the article. Link "Photo by [creator] on Pexels" inside
+the article, not on cards. Retain the existing safe sharing-image fallback.
+Official guidance: https://www.pexels.com/api/documentation/
+License: https://www.pexels.com/license/
+
+Prefer one strong photograph. An occasional inspected, restrained existing flat
+editorial treatment is allowed; logo-only heroes are no longer the automatic
+fallback. No new collage renderer is introduced. If a fallback is unhelpful,
+retain an existing safe image or keep the image task retryable.
+
+Rollout: review six unpublished covers; deploy website compatibility; configure
+the key securely and verify a live API import; use one image-only archive canary
+with preimage/hash guards; then refresh the explicitly reviewed archive plan.
+No prose, dates, approval or stored pipeline flag changes. No database, Cron or
+Edge Function migration is needed. News remains on its independent image path
+until public attribution is verified for that surface; this does not authorize
+sending Pexels images to News or social without that check.
+
+## Existing Commons and delivery safeguards
+
 New website blog heroes use fresh online photo searches per story, not a fixed
 library. Agent05 reviews a bounded set of relevant Commons file pages and images,
 then `npm run creddy:editorial-images -- import-online <selection.json>` imports
@@ -17,11 +70,12 @@ same photo across old/new IDs. This optional five-second read returns compact
 public metadata, not credentials/private paths. On failure, local/batch hints
 remain available. Vary relevant search angles, not arbitrary photos. Keep accepted
 images fixed on retries and page loads. If no suitable licensed image is found,
-retain an existing safe image or use the reviewed truthful brand fallback. No
+retain an existing safe image or use an inspected restrained editorial fallback. No
 new history store, schema, scheduler or News/social change is required.
 
-Blogs and App News use recognizable, authentic brand assets in restrained 2D
-editorial compositions. No generated logos, invented card designs, glossy 3D
+Blog heroes prefer reviewed photography. Blog secondary/product-specific visuals
+and the independent App News path may use authentic brand assets in restrained
+2D editorial compositions. No generated logos, invented card designs, glossy 3D
 coins, or toy-aircraft illustrations. Existing website frames and social
 templates are unchanged. A logo identifies coverage; it never asserts a
 partnership, sponsorship, benefit, or transfer relationship.

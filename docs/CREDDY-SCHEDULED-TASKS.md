@@ -108,9 +108,11 @@ not active handoff inputs. Existing remote social submission IDs can be reconcil
 without recreating their old packages; new delivery still requires all current
 approval and verification checks. TikTok inbox delivery is not public publication.
 
-Blogs and News follow [editorial imagery](CREDDY-EDITORIAL-IMAGES.md): use the
-reviewed authentic brand registry and flat editorial fallback, not generated
-logos or artificial 3D artwork. The existing News stage repairs up to five
+Blogs and News follow [editorial imagery](CREDDY-EDITORIAL-IMAGES.md). Blog heroes
+prefer fresh reviewed Pexels/Commons photography with explicit crop points and
+article-level credits; Pexels requires a protected API key and deployed website
+credit compatibility. News retains its independent reviewed brand/owned-flat
+path. Never generate logos or artificial 3D artwork. The existing News stage repairs up to five
 durable pending image updates per pass without holding up new News text.
 Missing images and confirmed image/Slack repairs are reported separately. When
 no reviewed brand matches, use the existing Creddy-owned flat illustration with
