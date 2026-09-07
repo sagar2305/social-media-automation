@@ -6,6 +6,7 @@ import type { EditorialPhotoEntry, EditorialPhotoCredit } from './editorial-phot
 
 export type OnlinePhotoSelection = {
   storyId: string; sourcePageUrl: string; subject: string; usageNotes: string;
+  focalPoint?: { x: number; y: number };
 };
 const maxBytes = 20 * 1024 * 1024;
 const licenseMap: Record<string, Pick<EditorialPhotoCredit, 'license' | 'licenseUrl'>> = {
@@ -23,7 +24,7 @@ export function canonicalPhotoSource(value: string): string {
   return `https://commons.wikimedia.org/wiki/${encodeURIComponent(title).replaceAll('%3A', ':')}`;
 }
 
-async function boundedBytes(response: Response, limit: number): Promise<Buffer> {
+export async function boundedBytes(response: Response, limit: number): Promise<Buffer> {
   if (!response.ok || !response.body || Number(response.headers.get('content-length')) > limit) throw new Error('Photo download unavailable or oversized');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -45,8 +46,7 @@ const plainText = (value: string) => value.replace(/<[^>]*>/g, '').replaceAll('&
 
 /** Import just one reviewed online choice. Receipts are never a future-candidate catalog. */
 export async function importOnlinePhoto(root: string, selection: OnlinePhotoSelection, fetcher: typeof fetch = fetch) {
-  if (!/^[a-z0-9-]{2,120}$/.test(selection.storyId) || !selection.subject?.trim() || selection.subject.length > 170
-      || !selection.usageNotes?.trim()) throw new Error('Photo requires story identity, exact subject and editorial context');
+  validateOnlineSelection(selection);
   const sourceUrl = canonicalPhotoSource(selection.sourcePageUrl);
   const api = new URL('https://commons.wikimedia.org/w/api.php');
   api.search = new URLSearchParams({ action: 'query', format: 'json', prop: 'imageinfo',
@@ -82,14 +82,31 @@ export async function importOnlinePhoto(root: string, selection: OnlinePhotoSele
   if (!['jpeg', 'png', 'webp'].includes(dimensions.format ?? '') || (dimensions.pages ?? 1) !== 1
       || dimensions.width !== info.width || dimensions.height !== info.height
       || bytes.length !== info.size || createHash('sha1').update(bytes).digest('hex') !== info.sha1) throw new Error('Photo bytes do not match reviewed metadata');
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
   const credit = { creator, sourceUrl, ...license, modifications: 'Cropped to 16:9 and resized; no subject alteration.' };
-  const identity = { storyId: selection.storyId, sha256, sourceUrl, subject: selection.subject, usageNotes: selection.usageNotes, credit };
+  return persistOnlinePhoto(root, selection, bytes, dimensions.format!, credit, imageUrl.href, info);
+}
+
+export function validateOnlineSelection(selection: OnlinePhotoSelection) {
+  if (!/^[a-z0-9-]{2,120}$/.test(selection.storyId) || !selection.subject?.trim() || selection.subject.length > 170
+      || !selection.usageNotes?.trim()) throw new Error('Photo requires story identity, exact subject and editorial context');
+  if (selection.focalPoint !== undefined && ![selection.focalPoint?.x, selection.focalPoint?.y]
+      .every(value => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error('Invalid reviewed focal point');
+}
+
+/** Content-addressed receipt shared by providers; omitted focal points retain v1 identities. */
+export async function persistOnlinePhoto(root: string, selection: OnlinePhotoSelection, bytes: Buffer,
+  format: string, credit: EditorialPhotoCredit, downloadUrl: string, metadata: unknown) {
+  validateOnlineSelection(selection);
+  const sourceUrl = credit.sourceUrl;
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const focalPoint = selection.focalPoint ? { x: selection.focalPoint.x, y: selection.focalPoint.y } : { x: 0.5, y: 0.5 };
+  const identity = { storyId: selection.storyId, sha256, sourceUrl, subject: selection.subject, usageNotes: selection.usageNotes, credit,
+    ...(selection.focalPoint ? { focalPoint } : {}) };
   const id = `online-${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}`;
   const directory = safeDataPath(root, '06-visual-assets', 'online-selections', id);
-  const file = `photo.${dimensions.format === 'jpeg' ? 'jpg' : dimensions.format}`;
+  const file = `photo.${format === 'jpeg' ? 'jpg' : format}`;
   const entry: EditorialPhotoEntry = { id, file, sha256, subject: selection.subject, usageNotes: selection.usageNotes,
-    credit, focalPoint: { x: 0.5, y: 0.5 } };
+    credit, focalPoint };
   const receiptPath = safeDataPath(directory, 'selection.json');
   if (!await pathExists(receiptPath)) {
     await mkdir(directory, { recursive: true });
@@ -98,11 +115,12 @@ export async function importOnlinePhoto(root: string, selection: OnlinePhotoSele
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
           || !bytes.equals(await readFile(safeDataPath(directory, file)))) throw new Error('Existing photo bytes changed');
     }
-    await writeJsonAtomic(receiptPath, { version: 1, ...identity, selectedAt: new Date().toISOString(), downloadUrl: imageUrl.href,
-      metadata: info, entry });
+    await writeJsonAtomic(receiptPath, { version: selection.focalPoint ? 2 : 1, ...identity, selectedAt: new Date().toISOString(), downloadUrl,
+      metadata, entry });
   } else {
     const previous = JSON.parse(await readFile(receiptPath, 'utf8'));
     if (JSON.stringify(previous.entry) !== JSON.stringify(entry)) throw new Error('Existing selection receipt changed');
+    if (!bytes.equals(await readFile(safeDataPath(directory, file)))) throw new Error('Existing photo bytes changed');
   }
   return { photoAssetId: id, sourceUrl, sha256, photoCredit: credit, subject: entry.subject,
     receiptPath, assetPath: safeDataPath(directory, file) };

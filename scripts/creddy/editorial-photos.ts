@@ -8,7 +8,7 @@ import { safeDataPath } from './pipeline-store.js';
 export interface EditorialPhotoCredit {
   creator: string;
   sourceUrl: string;
-  license: 'CC0-1.0' | 'CC-BY-4.0' | 'CC-BY-SA-4.0';
+  license: 'CC0-1.0' | 'CC-BY-4.0' | 'CC-BY-SA-4.0' | 'Pexels';
   licenseUrl: string;
   modifications: string;
 }
@@ -30,6 +30,7 @@ const licenses = {
   'CC0-1.0': 'https://creativecommons.org/publicdomain/zero/1.0/',
   'CC-BY-4.0': 'https://creativecommons.org/licenses/by/4.0/',
   'CC-BY-SA-4.0': 'https://creativecommons.org/licenses/by-sa/4.0/',
+  Pexels: 'https://www.pexels.com/license/',
 } as const;
 
 export function validatePhotoCredit(credit: EditorialPhotoCredit): void {
@@ -39,6 +40,9 @@ export function validatePhotoCredit(credit: EditorialPhotoCredit): void {
   }
   const source = new URL(credit.sourceUrl);
   if (source.protocol !== 'https:' || source.username || source.password) throw new Error('Photo source must be public HTTPS');
+  if (credit.license === 'Pexels' && !/^https:\/\/www\.pexels\.com\/photo\/(?:[a-z0-9-]+-)?[1-9][0-9]*\/?$/.test(credit.sourceUrl)) {
+    throw new Error('Photo requires an authoritative Pexels page');
+  }
 }
 
 /** Separate from the brand registry: a brand mention never selects a property photograph. */
@@ -58,12 +62,13 @@ export async function resolveEditorialPhoto(id: string, registry = editorialPhot
     directory = safeDataPath(root, '06-visual-assets', 'online-selections', id);
     const receipt = JSON.parse(await readFile(safeDataPath(directory, 'selection.json'), 'utf8'));
     entry = receipt.entry;
-    if (receipt.version !== 1 || entry?.id !== id || receipt.sha256 !== entry.sha256
+    if (![1, 2].includes(receipt.version) || entry?.id !== id || receipt.sha256 !== entry.sha256
         || receipt.sourceUrl !== entry.credit.sourceUrl) throw new Error('Invalid online photo selection receipt');
     const identity = { storyId: receipt.storyId, sha256: entry.sha256, sourceUrl: entry.credit.sourceUrl,
-      subject: entry.subject, usageNotes: entry.usageNotes, credit: entry.credit };
+      subject: entry.subject, usageNotes: entry.usageNotes, credit: entry.credit,
+      ...(receipt.version === 2 ? { focalPoint: entry.focalPoint } : {}) };
     if (`online-${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}` !== id
-        || entry.focalPoint?.x !== 0.5 || entry.focalPoint?.y !== 0.5) {
+        || (receipt.version === 1 && (entry.focalPoint?.x !== 0.5 || entry.focalPoint?.y !== 0.5))) {
       throw new Error('Online selection metadata integrity check failed');
     }
   } else entry = (await registry).find(photo => photo.id === id);

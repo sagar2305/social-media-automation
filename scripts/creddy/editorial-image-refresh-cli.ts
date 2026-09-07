@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { importOnlinePhoto } from './online-photo-selection.js';
+import { importPexelsPhoto, searchPexelsPhotos } from './pexels-photos.js';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
@@ -23,13 +24,18 @@ const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 
 async function main() {
   const command = process.argv[2];
-  if (command === 'import-online') {
-    if (!process.argv[3]) throw new Error('An explicit online photo selection file is required');
-    const selection = JSON.parse(await readFile(resolve(process.argv[3]), 'utf8'));
-    console.log(JSON.stringify(await importOnlinePhoto(resolveCreddyDataRoot(), selection), null, 2));
+  if (command === 'search-pexels') {
+    console.log(JSON.stringify(await searchPexelsPhotos(process.argv[3] ?? ''), null, 2));
     return;
   }
-  if (!['plan', 'plan-photos', 'apply'].includes(command)) throw new Error('Use editorial-images import-online <selection.json>, plan, plan-photos <selections.json>, or apply <plan.json>');
+  if (command === 'import-online' || command === 'import-pexels') {
+    if (!process.argv[3]) throw new Error('An explicit online photo selection file is required');
+    const selection = JSON.parse(await readFile(resolve(process.argv[3]), 'utf8'));
+    const importer = command === 'import-pexels' ? importPexelsPhoto : importOnlinePhoto;
+    console.log(JSON.stringify(await importer(resolveCreddyDataRoot(), selection), null, 2));
+    return;
+  }
+  if (!['plan', 'plan-photos', 'apply'].includes(command)) throw new Error('Use editorial-images search-pexels <query>, import-pexels/import-online <selection.json>, plan, plan-photos <selections.json>, or apply <plan.json>');
   const credentials = resolveWebsiteCmsCredentials();
   const client = createClient(credentials.url, credentials.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }) } });

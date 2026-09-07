@@ -298,7 +298,9 @@ function renderBlock(
         : `<div class="visual-placeholder">Visual · ${escapeHtml(block.visualId)}</div>`;
       const credit = asset?.photoCredit;
       if (credit) validatePhotoCredit(credit);
-      const attribution = credit ? ` Photo: ${escapeHtml(credit.creator)}. <a href="${escapeHtml(credit.sourceUrl)}">Source</a> / <a href="${escapeHtml(credit.licenseUrl)}">${escapeHtml(credit.license)}</a>. ${escapeHtml(credit.modifications)}` : '';
+      const attribution = credit ? (credit.license === 'Pexels'
+        ? ` <a href="${escapeHtml(credit.sourceUrl)}">Photo by ${escapeHtml(credit.creator)} on Pexels</a>. <a href="${escapeHtml(credit.licenseUrl)}">Pexels license</a>. ${escapeHtml(credit.modifications)}`
+        : ` Photo: ${escapeHtml(credit.creator)}. <a href="${escapeHtml(credit.sourceUrl)}">Source</a> / <a href="${escapeHtml(credit.licenseUrl)}">${escapeHtml(credit.license)}</a>. ${escapeHtml(credit.modifications)}`) : '';
       return `<figure class="visual" data-visual-id="${escapeHtml(block.visualId)}"><div class="visual-ornaments" aria-hidden="true"><span class="ornament-coins"></span><span class="ornament-route"></span><span class="ornament-card"></span><span class="ornament-star"></span></div><div class="visual-frame">${media}</div><figcaption>${escapeHtml(block.caption)}${attribution}</figcaption></figure>`;
     }
     case 'referral_card': return `<aside class="referral"><div><span>Recommended option</span><strong>${escapeHtml(block.title)}</strong><p>${escapeHtml(block.body)}</p></div><a href="#referral-${escapeHtml(block.referralId)}">${escapeHtml(block.ctaLabel)}</a></aside>`;
