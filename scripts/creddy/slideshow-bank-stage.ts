@@ -76,6 +76,7 @@ export type SlideshowBankResult = {
   created: number;
   updated: number;
   skipped: number;
+  finalizedSkipped: number;
   failures: string[];
   slackNotificationsSent: number;
   slackNotificationsSkipped: number;
@@ -233,6 +234,7 @@ export async function runSlideshowContentBankHandoff(
     created: 0,
     updated: 0,
     skipped: 0,
+    finalizedSkipped: 0,
     failures: [],
     slackNotificationsSent: 0,
     slackNotificationsSkipped: 0,
@@ -246,20 +248,24 @@ export async function runSlideshowContentBankHandoff(
       if (dirname(manifestPath) !== safeDataPath(root, '07-slideshow-renders', visualPlanId)) {
         throw new Error('Manifest is not in its current visual-plan folder');
       }
-      const plan = await readJson<VisualPlanRecord>(safeDataPath(root, '06-visual-plans', `${visualPlanId}.json`));
-      const contentDraftId = validateId(plan.contentDraftId, 'content draft id');
-      const draft = await readJson<ContentDraftRecord>(safeDataPath(root, '06-content-drafts', `${contentDraftId}.json`));
-      validateIndependentSlideshowCopy(draft);
-      const slideImagePaths = await validateSlides(manifestPath, manifest, plan);
       const id = validateId(`slideshow-${visualPlanId}`, 'Content Bank id');
       const destination = safeDataPath(root, '09-pending-approval', `${id}.json`);
       const existing = (await pathExists(destination))
         ? await readJson<ContentBankRecord>(destination)
         : undefined;
       if (existing && !['pending_review', 'changes_requested', 'rendering_revision'].includes(existing.status)) {
+        // Finalized bank items belong to their reviewed revision. Revalidating
+        // against subsequently edited draft/plan files creates false failures;
+        // delivery still independently checks its authorization boundary.
         result.skipped += 1;
+        result.finalizedSkipped += 1;
         continue;
       }
+      const plan = await readJson<VisualPlanRecord>(safeDataPath(root, '06-visual-plans', `${visualPlanId}.json`));
+      const contentDraftId = validateId(plan.contentDraftId, 'content draft id');
+      const draft = await readJson<ContentDraftRecord>(safeDataPath(root, '06-content-drafts', `${contentDraftId}.json`));
+      validateIndependentSlideshowCopy(draft);
+      const slideImagePaths = await validateSlides(manifestPath, manifest, plan);
       const productionPath = safeDataPath(root, '06-content-packages', `production-${draft.analysisId}.json`);
       const production = await pathExists(productionPath)
         ? await readJson<ContentPackageRecord>(productionPath)

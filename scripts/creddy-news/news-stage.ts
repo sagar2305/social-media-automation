@@ -63,6 +63,7 @@ export function prepareAppNews(
   if (image && ['licensed', 'owned', 'publisher_permission', 'editorial_reference'].includes(image.rights ?? '') && image.attribution?.trim() && publicHttps(image.url)) content.image_url = image.url;
   return { content, error: errors.length ? errors.join(' ') : null, provenance: {
     canonicalId: article.canonicalId, analysisId: decision.id, evidenceRecordIds: decision.evidenceRecordIds,
+    decisionHash: decisionFingerprint(decision),
     claims: decision.claims, imageRights: content.image_url ? image : null,
     sourcePublishedAt: policy.date.sourcePublishedAt ?? null,
     firstSeenAt: policy.date.firstSeenAt,
@@ -170,13 +171,32 @@ export async function runAppNewsStage(root: string, options: {
           }
         }
         if (!Number.isFinite(prepared.content.published_at)) prepared.content.published_at = 0;
-        item = await service.ingest({ id: previous?.id ?? id, sourceKey: previous?.source_key ?? sourceKey, ...prepared });
+        if (!prepared.error && previous?.status === 'published' && !previous.manually_edited
+          && previous.provenance.canonicalId === decision.canonicalId
+          && previous.source_key === sourceKey
+          && previous.content.source_url === prepared.content.source_url
+          && previous.content.publisher === prepared.content.publisher) {
+          // The ingest guard deliberately retains published rows. A separate CAS
+          // operation updates pipeline-owned text and evidence, never human edits.
+          item = await service.syncPublished({ id: previous.id, revision: previous.revision,
+            sourceKey, content: prepared.content, provenance: prepared.provenance });
+        } else {
+          item = await service.ingest({ id: previous?.id ?? id, sourceKey: previous?.source_key ?? sourceKey, ...prepared });
+        }
         const imagePending = result.imageWithheld.find(pending => pending.id === decision.canonicalId);
         if (imagePending) imagePending.newsId = item.id;
         // Ingest may return an older publication or a human edit unchanged.
         // Only bind the current decision when the returned content matches it.
-        reflectsCurrentDecision = (Object.keys(prepared.content) as Array<keyof NewsContent>)
+        // Image and original publication date are independently maintained and
+        // must not make otherwise current text appear undelivered.
+        reflectsCurrentDecision = (['headline', 'summary', 'category', 'publisher', 'source_url'] as const)
           .every(key => item.content[key] === prepared.content[key]) && item.validation_error === prepared.error;
+        if (item.status === 'published' && !reflectsCurrentDecision) {
+          result.withheld.push({ id: decision.canonicalId, headline: prepared.content.headline,
+            reason: previous?.manually_edited
+              ? 'A human-edited News item differs from the current ranking; editorial review is required.'
+              : 'The published News item does not reflect the current ranking; content reconciliation is required.' });
+        }
       }
       await writeJsonAtomic(safeDataPath(root, 'reports', 'news-delivery', `${decision.canonicalId}.json`), {
         canonicalId: decision.canonicalId, analysisInputHash: decision.analysisInputHash,

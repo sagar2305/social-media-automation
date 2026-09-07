@@ -89,6 +89,43 @@ test('slideshow handoff rejects a package whose internal ID would create a dangl
   assert.equal(await pathExists(safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json')), false);
 });
 
+test('finalized slideshow revisions skip stale current plans without changing bank state', async () => {
+  for (const status of ['approved', 'scheduled', 'published', 'rejected'] as const) {
+    const { root, manifest } = await fixture();
+    const bankPath = safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json');
+    const bank = { version: 1, id: 'slideshow-plan-1', contentPackageId: 'production-analysis-1',
+      createdAt: '2026-08-19T12:00:00.000Z', status, revision: 2 };
+    await writeJsonAtomic(bankPath, bank);
+    (manifest.slides as Array<{ sourceText: string }>)[0]!.sourceText = 'Stale rendered copy';
+    await writeJsonAtomic(safeDataPath(root, '07-slideshow-renders', 'plan-1', 'manifest.json'), manifest);
+    const result = await runSlideshowContentBankHandoff(root, new Date(), async () => {
+      throw new Error('A finalized item must not send a new review notification');
+    });
+    assert.equal(result.skipped, 1);
+    assert.equal(result.finalizedSkipped, 1);
+    assert.deepEqual(result.failures, []);
+    assert.equal(result.created + result.updated + result.slackNotificationsSent, 0);
+    assert.deepEqual(await readJson(bankPath), bank);
+  }
+});
+
+test('pending slideshow revisions still fail stale-render validation', async () => {
+  for (const status of ['pending_review', 'changes_requested', 'rendering_revision'] as const) {
+    const { root, manifest } = await fixture();
+    const bankPath = safeDataPath(root, '09-pending-approval', 'slideshow-plan-1.json');
+    const bank = { version: 1, id: 'slideshow-plan-1', contentPackageId: 'production-analysis-1',
+      createdAt: '2026-08-19T12:00:00.000Z', status, revision: 2 };
+    await writeJsonAtomic(bankPath, bank);
+    (manifest.slides as Array<{ sourceText: string }>)[0]!.sourceText = 'Stale rendered copy';
+    await writeJsonAtomic(safeDataPath(root, '07-slideshow-renders', 'plan-1', 'manifest.json'), manifest);
+    const result = await runSlideshowContentBankHandoff(root);
+    assert.equal(result.finalizedSkipped, 0);
+    assert.match(result.failures[0]!, /slide 1 does not match/);
+    assert.equal(result.created + result.updated, 0);
+    assert.deepEqual(await readJson(bankPath), bank);
+  }
+});
+
 test('Agent 7 keeps article publishing separate from slideshow review', async () => {
   const { root } = await fixture();
   const articleDirectory = safeDataPath(root, '06-content-packages', 'articles');

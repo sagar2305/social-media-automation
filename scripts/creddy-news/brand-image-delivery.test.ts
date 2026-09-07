@@ -50,6 +50,7 @@ async function fixture() {
   const service = {
     findByIdentity: async () => current,
     get: async () => current!,
+    syncPublished: async () => current!,
     ingest: async (input: Parameters<NewsService['ingest']>[0]) => {
       assert.equal(input.error, null);
       current ??= { id: input.id, source_key: input.sourceKey, content: input.content, provenance: input.provenance,
