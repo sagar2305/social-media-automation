@@ -21,6 +21,7 @@ import {
 import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
 import { composeEditorialImage } from './brand-asset-registry.js';
 import { composeEditorialPhoto } from './editorial-photos.js';
+import { hasGenericBlogCover } from './blog-cover-policy.js';
 
 export interface ProductionTaskRecord {
   draft: ContentDraftRecord;
@@ -240,6 +241,18 @@ export async function prepareProductionPackages(root: string, now = new Date()):
           reason: 'Current evidence or authorization changed; a fresh reviewed revision is required. Historical package and approvals retained.' });
         continue;
       }
+    }
+    if (hasGenericBlogCover(task.visualPlan.articleVisuals)) {
+      if (await pathExists(priorPath)) {
+        // Do not invalidate or overwrite historical reviewed packages while
+        // reconciling. Existing covers need an explicit, scoped backfill.
+        result.skippedCount++;
+        continue;
+      }
+      (result.assetFailures ??= []).push({ visualPlanId: task.visualPlan.id,
+        reason: 'Generic blog hero withheld; select a reviewed story-specific image. Visual plan retained for correction.' });
+      result.skippedCount++;
+      continue;
     }
     // Existing supplied/generated assets remain immutable. Only explicit new
     // brand composition plans are rendered; social scenes are untouched.

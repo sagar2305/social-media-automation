@@ -92,7 +92,10 @@ ownership or a blanket license over a third-party trademark. Review each new
 asset's source and permitted context; scraped publisher metadata is not consent.
 
 Agent 05 chooses up to four explicit `brandAssetIds` for each article visual in
-`generationMode: compose`. `[]` requests an original flat editorial fallback.
+`generationMode: compose`. `[]` requests a flat illustration for inline or
+comparison use only. A brandless composed blog hero (empty/missing brand IDs
+and no reviewed photo) is rejected, even if it already has an asset path.
+Keep that visual task pending until a relevant reviewed image is selected.
 The existing CMS contract is exactly three 16:9 assets. Agent 06 renders at
 1600x900; inspect hero and section images at 320px width. Product-specific card
 art must match that exact card, not merely its issuer. Supplied licensed photos
@@ -136,8 +139,11 @@ Reports live under `reports/editorial-image-refresh/<id>/` and
 results. Old image objects are never deleted. Reapply the same plan to reconcile
 an already-applied image's cache/Slack receipt. A genuine intervening edit stays
 retryable and requires a newly reviewed plan; never automatically rebase it.
-Unmatched News remains in the durable image queue. Brand-less blogs get a flat
-fallback, and the coverage report identifies them separately.
+Unmatched News remains in the durable image queue. Brand-less blogs remain
+pending with their existing images retained; use `plan-photos` for a reviewed
+story-specific replacement. Applying an old generic blog plan is blocked before
+upload. Historical production packages are not invalidated by this policy;
+their published covers are changed only through an explicit image-only backfill.
 
 For rollback, restore only the old image metadata from the saved preimage using
 a fresh current revision/hash guard. Never overwrite a whole article row from

@@ -186,6 +186,21 @@ test('Agent 5 accepts a manifest-safe plan without creating video jobs', async (
   assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
 });
 
+test('Agent 5 rejects generic heroes and resurfaces unproduced legacy plans', async () => {
+  const root = await fixture();
+  const value = plan();
+  Object.assign(value.articleVisuals!.assets[0]!, {
+    generationMode: 'compose', assetType: 'editorial_illustration', brandAssetIds: [],
+    assetPath: '/tmp/existing-globe.png',
+  });
+  await assert.rejects(() => acceptVisualPlan(root, value), /Generic brandless blog hero/);
+  assert.equal((await listJsonFiles(safeDataPath(root, '06-visual-plans'))).length, 0);
+  await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${value.id}.json`), value);
+  assert.equal((await listPendingVisualTasks(root)).length, 1);
+  await writeJsonAtomic(safeDataPath(root, '06-content-packages', `production-${value.analysisId}.json`), { id: 'historical' });
+  assert.equal((await listPendingVisualTasks(root)).length, 0);
+});
+
 test('Agent 5 ignores legacy or no-longer-verified Agent 4 drafts', async () => {
   const root = await fixture();
   const legacy = draft();

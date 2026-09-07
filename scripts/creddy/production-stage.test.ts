@@ -125,12 +125,14 @@ test('brand composition is idempotent and a failed plan does not block an unrela
   await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
   await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${draft().id}.json`), draft());
   const plan = visualPlan();
+  plan.articleVisuals!.assets[0]!.assetPath = '/tmp/approved-story-photo.png';
   for (const asset of plan.articleVisuals!.assets) {
+    if (asset.usage === 'hero') continue;
     asset.generationMode = 'compose'; asset.assetType = 'editorial_illustration';
     asset.aspectRatio = '16:9'; asset.brandAssetIds = [];
   }
   const broken = structuredClone(plan); broken.id = 'visual-broken';
-  broken.articleVisuals!.assets[0]!.brandAssetIds = ['not-approved'];
+  broken.articleVisuals!.assets[1]!.brandAssetIds = ['not-approved'];
   await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${broken.id}.json`), broken);
   await writeJsonAtomic(safeDataPath(root, '06-visual-plans', `${plan.id}.json`), plan);
   const first = await prepareProductionPackages(root);
@@ -168,6 +170,36 @@ test('photo composition re-resolves prepopulated paths and isolates unknown phot
   assert.equal((await prepareProductionPackages(root)).updatedArticlePackages, 0);
   const previews = await refreshArticlePreviews(root);
   assert.match(await readFile(previews.previewPaths[0]!, 'utf8'), /Photo: Styyx/);
+});
+
+test('generic blog covers stay retryable before production and historical packages stay untouched', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-generic-cover-'));
+  await initializeCreddyDataRoot(root);
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'canonical-1.json'), canonical());
+  await writeJsonAtomic(safeDataPath(root, '05-content-opportunities', 'evergreen', 'analysis-1.json'), decision());
+  const copy = draft();
+  const plan = visualPlan();
+  Object.assign(plan.articleVisuals!.assets[0]!, {
+    generationMode: 'compose', assetType: 'editorial_illustration', brandAssetIds: [],
+    assetPath: '/tmp/already-rendered-globe.png',
+  });
+  const planPath = safeDataPath(root, '06-visual-plans', `${plan.id}.json`);
+  await writeJsonAtomic(safeDataPath(root, '06-content-drafts', `${copy.id}.json`), copy);
+  await writeJsonAtomic(planPath, plan);
+  const first = await prepareProductionPackages(root);
+  assert.equal(first.createdPackages, 0);
+  assert.match(first.assetFailures![0]!.reason, /Generic blog hero withheld/);
+  assert.deepEqual(await readJson(planPath), plan);
+  assert.equal((await listJsonFiles(safeDataPath(root, '06-content-packages'))).length, 0);
+  assert.equal((await listJsonFiles(safeDataPath(root, '07-video-jobs'))).length, 0);
+  const prior = buildProductionPackage({ draft: copy, visualPlan: plan });
+  const packagePath = safeDataPath(root, '06-content-packages', `${prior.id}.json`);
+  await writeJsonAtomic(packagePath, prior);
+  const before = await readFile(packagePath, 'utf8');
+  const second = await prepareProductionPackages(root);
+  assert.equal(second.assetFailures?.length ?? 0, 0);
+  assert.equal(second.updatedArticlePackages, 0);
+  assert.equal(await readFile(packagePath, 'utf8'), before);
 });
 
 test('Agent 6 assembles one immutable package and exactly two render jobs', async () => {

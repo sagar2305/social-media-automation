@@ -15,8 +15,9 @@ import { notifyNews } from '../../shared/creddy-news/creddy-news-slack.js';
 import type { NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
 import { composeEditorialPhoto } from './editorial-photos.js';
 import { replaceBlogVisuals, validatePhotoRefreshPreview, type BlogVisualReplacement } from './blog-image-refresh.js';
+import { hasGenericArchiveBlogCover } from './blog-cover-policy.js';
 
-type PlannedImage = Omit<BlogVisualReplacement, 'assetPath'> & { path: string; sha256: string };
+type PlannedImage = Omit<BlogVisualReplacement, 'assetPath'> & { path: string; sha256: string; usage?: string };
 type PlannedItem = { kind: 'blog' | 'news'; id: string; title: string; expectedHash?: string; expectedRevision?: number;
   brands: string[]; images: PlannedImage[]; status: 'ready' | 'pending'; reason?: string };
 type RefreshPlan = { version: 1; projectRef: string; items: PlannedItem[] };
@@ -54,7 +55,7 @@ async function main() {
       if (response.error || !response.data) throw new Error('Selected published blog could not be read');
       const blog = response.data as CreddyBlogCmsRow;
       const rendered = await composeEditorialPhoto({ root, photoId: selection.photoAssetId, usage: 'hero' });
-      const image: PlannedImage = { id: blog.content.article.heroVisualId, path: rendered.assetPath, sha256: hash(await readFile(rendered.assetPath)),
+      const image: PlannedImage = { id: blog.content.article.heroVisualId, usage: 'hero', path: rendered.assetPath, sha256: hash(await readFile(rendered.assetPath)),
         photoAssetId: selection.photoAssetId, photoCredit: rendered.photoCredit,
         altText: rendered.altText, caption: rendered.caption, provenance: rendered.provenanceText };
       // Validate the hero/block boundary before creating an applicable plan.
@@ -94,6 +95,9 @@ async function main() {
       if (source.kind === 'news' && !brands.length) {
         item.status = 'pending'; item.reason = 'No reviewed brand asset matches; existing News image retained.'; continue;
       }
+      if (source.kind === 'blog' && !brands.length) {
+        item.status = 'pending'; item.reason = 'No reviewed story-specific blog cover selected; existing image retained. Use plan-photos with a reviewed photo.'; continue;
+      }
       try {
         const visuals = 'blog' in source ? source.blog.content.visuals.assets : [{ id: 'hero', usage: 'hero' as const, articleBlockId: '' }];
         if ('blog' in source && visuals.length !== 3) throw new Error('Unexpected blog image count');
@@ -102,7 +106,7 @@ async function main() {
           const section = block && ('text' in block ? block.text : 'caption' in block ? block.caption : 'title' in block ? block.title : '');
           const rendered = await composeEditorialImage({ root, title: `${source.title} ${section || ''}`,
             usage: visual.usage === 'hero' ? 'hero' : index === visuals.length - 1 ? 'comparison' : 'inline', brandIds: brands });
-          item.images.push({ id: visual.id, path: rendered.assetPath, sha256: hash(await readFile(rendered.assetPath)),
+          item.images.push({ id: visual.id, usage: visual.usage, path: rendered.assetPath, sha256: hash(await readFile(rendered.assetPath)),
             altText: rendered.altText, caption: rendered.caption, provenance: rendered.provenanceText });
         }
       } catch { item.status = 'pending'; item.reason = 'Composition failed; item retained for a fresh plan and retry.'; }
@@ -111,7 +115,7 @@ async function main() {
     await writeJsonAtomic(path, plan);
     console.log(JSON.stringify({ path, blogs: blogs.length, news: newsItems.length, ready: plan.items.filter(item => item.status === 'ready').length,
       pending: plan.items.filter(item => item.status === 'pending').map(item => ({ id: item.id, reason: item.reason })),
-      flatFallbackBlogs: plan.items.filter(item => item.kind === 'blog' && !item.brands.length).map(item => item.id) }, null, 2));
+      pendingPhotoBlogs: plan.items.filter(item => item.kind === 'blog' && !item.brands.length).map(item => item.id) }, null, 2));
     return;
   }
   const path = resolve(process.argv[3] || '');
@@ -123,6 +127,11 @@ async function main() {
   const resultPath = safeDataPath(dirname(path), `results-${randomUUID()}.json`);
   const results: Record<string, unknown>[] = [];
   for (const item of plan.items) {
+    if (hasGenericArchiveBlogCover(item)) {
+      results.push({ kind: item.kind, id: item.id, status: 'pending',
+        reason: 'Generic blog cover withheld before upload; existing image retained. Create a reviewed photo plan.' });
+      continue;
+    }
     if (item.status !== 'ready') {
       if (item.kind === 'news' && /^[a-zA-Z0-9_-]{1,90}$/.test(item.id)) {
         await writeJsonAtomic(safeDataPath(root, 'reports', 'news-image-pending', `backfill-${item.id}.json`), {
