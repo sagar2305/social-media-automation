@@ -19,6 +19,7 @@ import { phoneTemplateForDraft } from './product-capabilities.js';
 import { validateCreddyArticleVisuals } from './article-content.js';
 import { CREDDY_APPROVED_EXPRESSIONS } from './expression-library.js';
 import { listPublicationDecisions, publicationModeForOpportunity } from './publication-policy.js';
+import { assertStorySpecificBlogCover, hasGenericBlogCover } from './blog-cover-policy.js';
 
 export const CREDDY_MANIFEST_EXPRESSIONS = CREDDY_APPROVED_EXPRESSIONS;
 
@@ -241,7 +242,11 @@ export async function listPendingVisualTasks(root: string): Promise<VisualPlanni
   for (const task of await visualTasks(root)) {
     const output = safeDataPath(root, '06-visual-plans', `visual-${task.draft.id}.json`);
     const existing = await pathExists(output) ? await readJson<VisualPlanRecord>(output) : undefined;
-    if (!existing || existing.analysisBatchId !== task.draft.analysisBatchId ||
+    // Resurface legacy placeholders that have not entered production. Historical
+    // packages/receipts are repaired only through an explicit image backfill.
+    const pendingCover = hasGenericBlogCover(existing?.articleVisuals)
+      && !await pathExists(safeDataPath(root, '06-content-packages', `production-${task.draft.analysisId}.json`));
+    if (!existing || pendingCover || existing.analysisBatchId !== task.draft.analysisBatchId ||
         JSON.stringify(existing.productionAuthorization) !== JSON.stringify(task.draft.productionAuthorization) ||
         JSON.stringify(existing.verificationGate) !== JSON.stringify(task.draft.verificationGate) ||
         JSON.stringify(existing.factualClaims) !== JSON.stringify(task.draft.factualClaims) ||
@@ -294,6 +299,7 @@ export async function acceptVisualPlan(root: string, input: VisualPlanRecord): P
       throw new Error('Agent 05 must plan article and social visuals in the same visual record');
     }
     validateCreddyArticleVisuals(plan.articleVisuals, task.draft.article, task.draft.factualClaims);
+    assertStorySpecificBlogCover(plan.articleVisuals);
     const articleVisualIds = new Set(
       task.draft.article.blocks.filter((block) => block.type === 'visual').map((block) => block.visualId),
     );

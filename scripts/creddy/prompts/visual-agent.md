@@ -74,6 +74,11 @@ never generate fake app UI. Licensed photos require provenance.
 
 Find a fresh online photograph for each new website blog hero. Do not select
 from a fixed local image library or enumerate past downloads as candidates.
+Never submit a brandless composed hero (`generationMode: compose` with no
+photo and empty/missing `brandAssetIds`): it renders a repetitive generic globe
+or building, not a finished blog cover. If no suitable reviewed image is found,
+leave the visual task pending and report the image-selection blocker. This
+hero-only rule does not change News imagery or inline/comparison illustrations.
 Choose search terms by reader intent, not merely the airline/hotel name: relevant
 destinations, cabin interiors, terminal experiences, hotel rooms/pools, or dining.
 Write two visual angles before searching: what the reader could experience, and
