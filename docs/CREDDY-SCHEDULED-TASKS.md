@@ -111,12 +111,14 @@ approval and verification checks. TikTok inbox delivery is not public publicatio
 Blogs and News follow [editorial imagery](CREDDY-EDITORIAL-IMAGES.md). Blog heroes
 prefer fresh reviewed Pexels/Commons photography with explicit crop points and
 article-level credits; Pexels requires a protected API key and deployed website
-credit compatibility. News retains its independent reviewed brand/owned-flat
-path. Never generate logos or artificial 3D artwork. The existing News stage repairs up to five
-durable pending image updates per pass without holding up new News text.
-Missing images and confirmed image/Slack repairs are reported separately. When
-no reviewed brand matches, use the existing Creddy-owned flat illustration with
-truthful owned-image provenance, never an invented logo or unlicensed photo.
+credit compatibility. News shares the exact matching published blog's reviewed
+Pexels/CC0 hero using canonical identity or source URL. The existing News stage
+repairs up to five durable pending images per pass after the blog cover is ready,
+without holding up new News text. Missing images and confirmed image/Slack repairs
+are reported separately. Do not regenerate logo-only or generic flat News tiles.
+Keep unavailable or attribution-required photo selections pending; never invent
+logos or substitute unlicensed photos. Apply the same relevance, visual variety
+and 320px crop checks to blog and News covers.
 
 `reports/latest/hourly-editorial.json` and `app-news.json` distinguish completed,
 disabled, and degraded News processing. A News setup/service failure is retained

@@ -4,7 +4,7 @@ import { basename } from 'node:path';
 import type { NewsImageReplacement, NewsService } from '../../shared/creddy-news/creddy-news-service.js';
 import { notifyNews } from '../../shared/creddy-news/creddy-news-slack.js';
 import { publicHttps, type NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
-import { prepareNewsBrandImage } from '../creddy/editorial-image-delivery.js';
+import { prepareNewsPhotoImage } from './news-photo-image.js';
 import { listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from '../creddy/pipeline-store.js';
 
 type PendingImage = {
@@ -30,7 +30,7 @@ function hasApprovedImage(item: NewsItem): boolean {
 export async function reconcilePendingNewsImages(root: string, options: {
   service: NewsService;
   env?: NodeJS.ProcessEnv;
-  prepareImage?: typeof prepareNewsBrandImage;
+  prepareImage?: typeof prepareNewsPhotoImage;
   notify?: typeof notifyNews;
 }) {
   const env = options.env ?? process.env;
@@ -69,7 +69,7 @@ export async function reconcilePendingNewsImages(root: string, options: {
         reason = 'Existing image needs a provenance review; no image change was made.';
       } else {
         if (!item.content.image_url) {
-          const image = await (options.prepareImage ?? prepareNewsBrandImage)(root, `${item.content.headline} ${item.content.summary}`, env);
+          const image = await (options.prepareImage ?? prepareNewsPhotoImage)(root, `${item.content.headline} ${item.content.summary}`, env, { canonicalId: typeof item.provenance.canonicalId === 'string' ? item.provenance.canonicalId : record.id, sourceUrl: item.content.source_url });
           if (image) {
             updatedRecord.previousImage ??= { url: item.content.image_url, imageRights: item.provenance.imageRights ?? null, revision: item.revision };
             // Persist the preimage before the revision-guarded image mutation.
@@ -80,7 +80,7 @@ export async function reconcilePendingNewsImages(root: string, options: {
               throw new Error('Image publication was not confirmed');
             }
             if (item.revision !== previousRevision) result.updated++;
-          } else reason = 'No reviewed brand asset matches; the image remains pending.';
+          } else reason = 'The reviewed story photo is not ready; the image remains pending.';
         }
         if (hasApprovedImage(item)) {
           await (options.notify ?? notifyNews)(options.service, item.id, env);
