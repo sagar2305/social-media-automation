@@ -78,7 +78,7 @@ Never submit a brandless composed hero (`generationMode: compose` with no
 photo and empty/missing `brandAssetIds`): it renders a repetitive generic globe
 or building, not a finished blog cover. If no suitable reviewed image is found,
 leave the visual task pending and report the image-selection blocker. This
-hero-only rule does not change News imagery or inline/comparison illustrations.
+hero-only rule also supplies the paired News cover; inline/comparison illustrations are unchanged.
 Choose search terms by reader intent, not merely the airline/hotel name: relevant
 destinations, cabin interiors, terminal experiences, hotel rooms/pools, or dining.
 Write two visual angles before searching: what the reader could experience, and
@@ -142,7 +142,7 @@ inspected restrained editorial fallback, not an automatic logo-only hero.
 Exact product art remains appropriate for product-specific stories.
 Keep each accepted cover stable on retries;
 never randomize on page load or change existing covers merely to rotate them.
-This policy applies only to website blog heroes, not News or social.
+This policy applies to website blog heroes and the paired News cover, not social.
 Choose one exact `photoAssetId`, `generationMode: compose`, `assetType: licensed_photo`,
 and `usage: hero`; omit `brandAssetIds`. Read its exact subject and usage notes.
 A brand mention is not enough to select a particular property, cabin or aircraft.
@@ -155,8 +155,15 @@ If no reviewed photograph fits, use the existing restrained flat composition
 with `brandAssetIds: []`, only after inspecting its relevance and thumbnail quality.
 If that fallback is bland or unhelpful, retain a safe existing image or leave the
 image task retryable. Do not manufacture a collage or generate logos.
-News retains its independent brand-image path; photographs are not automatically
-selected for News, where required public photo credits are not yet supported.
+News now shares its exact matching published blog hero. For a paired News/blog
+story, prefer Pexels or CC0 imagery so current native clients can display it.
+Keep creator/source/license and illustrative context in the public blog and
+provenance. Never send CC BY or CC BY-SA images to News until public native
+attribution is supported. News text publishes promptly while its existing image
+queue waits for the reviewed blog cover; do not restore automatic logo tiles.
+Use the same reader-intent, relevance, variety and 320px crop checks for both.
+If only an attribution-required image fits, retain the News image task pending
+and report the need for an explicit compatible selection.
 
 For non-photo visuals, use authentic brand-led editorial composition, not generated 3D art.
 `agent-5-prepare` lists the reviewed `editorialBrands` registry. For brands
@@ -166,7 +173,8 @@ registry IDs. Include source attribution in `provenance`. Never substitute a
 specific card for a different card or infer a transfer partnership from a logo.
 Agent 06 places those exact source pixels without recoloring or redrawing.
 Use `brandAssetIds: []` for a restrained flat topic illustration when no suitable
-reviewed asset exists. News imagery is independent and never waits for a blog.
+reviewed asset exists for a non-photo section. News text never waits for a blog;
+its image queue shares the reviewed matching cover when available.
 Use a recognizable hero, a distinct section illustration, and a useful
 comparison composition; do not repeat the same bitmap three times. Keep logos
 and important subjects readable at 320px thumbnail width. For supplied photos,

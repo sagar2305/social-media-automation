@@ -31,7 +31,8 @@
     "creddy:editorial-images": "node --import tsx scripts/creddy/editorial-image-refresh-cli.ts",
     "creddy:sync:cloud": "node scripts/creddy-sync-cloud.mjs",
     "creddy:slack:socket": "node --import tsx scripts/creddy/slack-socket.ts",
-    "creddy:deploy:validate": "node --import tsx scripts/creddy/validate-deployment.ts"
+    "creddy:deploy:validate": "node --import tsx scripts/creddy/validate-deployment.ts",
+    "creddy:news-photos": "node --import tsx scripts/creddy-news/news-photo-refresh.ts"
   },
   "keywords": [],
   "author": "",

@@ -6,7 +6,7 @@ import { listJsonFiles, readJson, safeDataPath, writeJsonAtomic } from '../credd
 import { validateAnalysisDecision } from '../creddy/analysis-stage.js';
 import { evaluateTrustedNewsPolicy } from '../creddy/news-policy.js';
 import { decisionFingerprint } from '../creddy/rolling-editorial.js';
-import { prepareNewsBrandImage } from '../creddy/editorial-image-delivery.js';
+import { prepareNewsPhotoImage } from './news-photo-image.js';
 import { reconcilePendingNewsImages } from './news-image-repair.js';
 import type { AnalysisDecisionRecord, CanonicalNewsRecord, RawArticleRecord } from '../creddy/pipeline-types.js';
 
@@ -82,7 +82,7 @@ export async function runAppNewsStage(root: string, options: {
   /** Existing publications with a confirmed conflict, including aged/rejected stories. */
   conflictIds?: string[];
   notifyMode?: 'all' | 'published_only' | 'none';
-  prepareImage?: typeof prepareNewsBrandImage;
+  prepareImage?: typeof prepareNewsPhotoImage;
 } = {}) {
   const env = options.env ?? process.env;
   if (env.CREDDY_NEWS_ENABLED !== 'true') return {
@@ -162,11 +162,11 @@ export async function runAppNewsStage(root: string, options: {
         );
         if (!prepared.error && !prepared.content.image_url && (!previous || previous.status === 'not_published' && !previous.manually_edited)) {
           try {
-            const image = await (options.prepareImage ?? prepareNewsBrandImage)(root, `${prepared.content.headline} ${prepared.content.summary}`, env);
+            const image = await (options.prepareImage ?? prepareNewsPhotoImage)(root, `${prepared.content.headline} ${prepared.content.summary}`, env, { canonicalId: decision.canonicalId, sourceUrl: prepared.content.source_url });
             if (image) { prepared.content.image_url = image.url; prepared.provenance.imageRights = image; }
-            else result.imageWithheld.push({ id: decision.canonicalId, reason: 'No reviewed brand asset matches this headline; News does not wait for imagery.' });
+            else result.imageWithheld.push({ id: decision.canonicalId, reason: 'The reviewed story photo is not ready; News does not wait for imagery.' });
           } catch {
-            result.imageWithheld.push({ id: decision.canonicalId, reason: 'Optional brand image failed; News text can publish. Retained for editorial-image-refresh backfill.' });
+            result.imageWithheld.push({ id: decision.canonicalId, reason: 'The story photo is unavailable; News text can publish and image repair will retry.' });
           }
         }
         if (!Number.isFinite(prepared.content.published_at)) prepared.content.published_at = 0;

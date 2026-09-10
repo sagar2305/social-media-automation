@@ -8,10 +8,9 @@ import { editorialBrandRegistry, matchEditorialBrands, composeEditorialImage } f
 import { refreshPublishedBlogImages } from './blog-image-refresh.js';
 import { uploadEditorialImage } from './editorial-image-delivery.js';
 import { resolveWebsiteCmsCredentials } from './instant-website-publish.js';
-import { resolveCreddyDataRoot, safeDataPath, writeJsonAtomic, pathExists } from './pipeline-store.js';
+import { resolveCreddyDataRoot, safeDataPath, writeJsonAtomic } from './pipeline-store.js';
 import { createWebsiteRevalidator, type CreddyBlogCmsRow } from './website-cms-stage.js';
 import { configuredNewsService } from '../../shared/creddy-news/creddy-news-service.js';
-import { notifyNews } from '../../shared/creddy-news/creddy-news-slack.js';
 import type { NewsItem } from '../../shared/creddy-news/creddy-news-types.js';
 import { composeEditorialPhoto } from './editorial-photos.js';
 import { replaceBlogVisuals, validatePhotoRefreshPreview, type BlogVisualReplacement } from './blog-image-refresh.js';
@@ -92,8 +91,8 @@ async function main() {
       const item: PlannedItem = { kind: source.kind, id: source.id, title: source.title, brands, images: [], status: 'ready',
         ...('blog' in source ? { expectedHash: source.blog.content_sha256 } : { expectedRevision: source.news.revision }) };
       plan.items.push(item);
-      if (source.kind === 'news' && !brands.length) {
-        item.status = 'pending'; item.reason = 'No reviewed brand asset matches; existing News image retained.'; continue;
+      if (source.kind === 'news') {
+        item.status = 'pending'; item.reason = 'News requires a reviewed story photograph. Use creddy:news-photos; existing image retained.'; continue;
       }
       if (source.kind === 'blog' && !brands.length) {
         item.status = 'pending'; item.reason = 'No reviewed story-specific blog cover selected; existing image retained. Use plan-photos with a reviewed photo.'; continue;
@@ -127,17 +126,17 @@ async function main() {
   const resultPath = safeDataPath(dirname(path), `results-${randomUUID()}.json`);
   const results: Record<string, unknown>[] = [];
   for (const item of plan.items) {
+    if (item.kind === 'news') {
+      results.push({ kind: item.kind, id: item.id, status: 'pending',
+        reason: 'Legacy News artwork refresh withheld. Use creddy:news-photos with an explicit reviewed photo.' });
+      continue;
+    }
     if (hasGenericArchiveBlogCover(item)) {
       results.push({ kind: item.kind, id: item.id, status: 'pending',
         reason: 'Generic blog cover withheld before upload; existing image retained. Create a reviewed photo plan.' });
       continue;
     }
     if (item.status !== 'ready') {
-      if (item.kind === 'news' && /^[a-zA-Z0-9_-]{1,90}$/.test(item.id)) {
-        await writeJsonAtomic(safeDataPath(root, 'reports', 'news-image-pending', `backfill-${item.id}.json`), {
-          id: `backfill-${item.id}`, newsId: item.id, status: 'pending_image_refresh', reason: item.reason, recordedAt: new Date().toISOString(),
-        });
-      }
       results.push({ kind: item.kind, id: item.id, status: 'pending', reason: item.reason }); continue;
     }
     try {
@@ -157,26 +156,6 @@ async function main() {
         const result = await refreshPublishedBlogImages({ client, slug: item.id, expectedHash: item.expectedHash!, replacements, root });
         const revalidation = result.status === 'updated' || result.status === 'noop' ? await revalidate(['/blog', `/blog/${item.id}`]) : 'not_attempted';
         results.push({ kind: item.kind, id: item.id, ...result, revalidation });
-      } else if (item.kind === 'news') {
-        if (replacements.length !== 1) throw new Error('News requires one reviewed image');
-        const previous = await news.get(item.id);
-        const image = replacements[0]!;
-        const desired = { url: image.assetPath, rights: 'editorial_reference' as const, attribution: image.provenance };
-        const previousRights = previous.provenance.imageRights as typeof desired | undefined;
-        const alreadyApplied = previous.content.image_url === desired.url && previousRights?.url === desired.url
-          && previousRights.rights === desired.rights && previousRights.attribution === desired.attribution;
-        if (previous.status !== 'published' || (!alreadyApplied && previous.revision !== item.expectedRevision)) throw new Error('News changed since planning');
-        const preimagePath = safeDataPath(dirname(path), `${item.id}-preimage.json`);
-        // Keep the first preimage across retries of this plan.
-        if (!await pathExists(preimagePath)) await writeJsonAtomic(preimagePath, previous);
-        const updated = alreadyApplied ? previous : await news.setImage(item.id, item.expectedRevision!, desired, 'editorial-image-refresh');
-        let notification = 'pending';
-        try {
-          await notifyNews(news, updated.id, process.env);
-          const receipt = await news.get(updated.id);
-          if (receipt.slack_revision >= receipt.revision && receipt.slack_ts && receipt.slack_channel && !receipt.slack_error) notification = 'confirmed';
-        } catch { /* Retain pending receipt for an idempotent same-plan retry. */ }
-        results.push({ kind: item.kind, id: item.id, status: alreadyApplied ? 'noop' : 'updated', revision: updated.revision, notification, preimagePath });
       } else throw new Error('Unsupported image refresh kind');
     } catch { results.push({ kind: item.kind, id: item.id, status: 'retry', reason: 'Image refresh failed or content changed; no content overwrite was attempted without a matching revision.' }); }
     await writeJsonAtomic(resultPath, results);

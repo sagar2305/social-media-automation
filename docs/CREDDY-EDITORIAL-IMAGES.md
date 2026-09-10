@@ -1,5 +1,47 @@
 # Creddy editorial imagery
 
+## News photo rollout, September 10, 2026
+
+This section supersedes the historical News exclusions below. News now uses the
+same reviewed, experience-led cover as its exact matching published blog.
+Matching uses canonical story identity or normalized source URL, never brand
+keywords. Ambiguous matches stay pending. A missing cover does not delay News
+text: the existing bounded image-repair queue retries after blog publication.
+Automatic logo and generic statistic/illustration tiles are no longer produced
+for News. Existing images stay stable until an explicit archive refresh.
+
+Current native News clients have no public credit/caption field. Reuse is limited
+to Pexels and CC0, with complete creator/source/license/context provenance retained
+and the matching blog retaining visible credit. Pexels licenses permit app reuse
+without mandatory attribution: https://www.pexels.com/license/. The provider API
+is used only during editorial selection, with provider links in its review output;
+News serves the hosted derivative, not provider search results. CC BY/CC BY-SA
+remain withheld from this surface. Never imply a pictured generic room is a named
+hotel or that a seat, lounge, breakfast or award is included in an offer.
+
+Archive refresh uses explicit selections, local 1600x900 previews and 320px visual
+review. Do not choose existing downloads by keyword. Reuse a corresponding blog
+selection, or search/review a fresh photo with the existing bounded importer.
+
+```json
+[{"newsId":"news-example","photoAssetId":"online-...","reason":"Exact story relevance and illustrative context reviewed."}]
+```
+
+```sh
+npm run creddy:news-photos -- plan /absolute/path/to/selections.json
+npm run creddy:news-photos -- apply /absolute/path/to/plan.json
+```
+
+Use the protected environment. Inspect the previews, apply a single-item canary,
+then apply the full reviewed plan. The command rechecks the source recipe, license,
+preview hash, published state, destination and expected revision. It retains first
+preimages, writes content-addressed assets and changes only image URL/provenance
+through the audited News RPC. Dates, prose, approvals and source evidence remain.
+Deleted or concurrently edited News is never revived or overwritten. Same-plan
+retries are idempotent. Per-item errors retain retry receipts. The command does
+not message Slack; notification reconciliation remains with the existing workflow.
+No native build, schema, infrastructure, stored flag or schedule change is needed.
+
 ## Pexels and experience-led covers
 
 Use fresh Pexels searches for broad travel experiences and Commons for specific
@@ -180,3 +222,19 @@ guidance; applying a reviewed archive plan updates live CMS covers independently
   thumbnail click-through and article engagement; do not promise SEO gains from
   logos alone. Review expired offers and overlapping stories as separate content
   quality work, not as a side effect of an image refresh.
+
+## Verified News archive refresh, September 10, 2026
+
+All 28 published News images were replaced with reviewed photographs: 17 exact
+matching blog covers, two explicitly reviewed related-story covers and nine fresh
+Pexels selections. Reviewed all 28 at 320px in feed order. A single-item IHG canary
+passed before the remaining 27 updates. Anonymous `creddy_news_snapshot` returned
+all 28 new URLs, and every image returned HTTP 200 as WebP. Compared every item's
+non-image content and source evidence to its preimage; all remained unchanged.
+
+Durable report directory under the configured Creddy data root:
+`reports/news-photo-refresh/4b9de527-18d4-439e-b44c-13fb0e9bd2f6/`.
+It contains explicit selections, the reviewed contact sheet, plan, first preimages,
+per-attempt receipts and `verification.json`. No Slack messages were sent by this
+refresh. The existing schedule, stored feature flags and native binaries were
+unchanged. Validation: 365 pipeline tests passed, TypeScript and diff checks passed.
