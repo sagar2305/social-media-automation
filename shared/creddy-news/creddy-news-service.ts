@@ -51,6 +51,12 @@ export class NewsService {
     if (action === 'edit') { if (!patch) throw new Error('News text is required.'); validateNewsPatch(patch); }
     return this.request('rpc/creddy_news_manage', 'POST', { p_id: id, p_revision: revision, p_action: action, p_patch: patch, p_actor: actor });
   }
+  async syncPublished(input: { id: string; revision: number; sourceKey: string; content: NewsContent; provenance: Record<string, unknown> }): Promise<NewsItem> {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(input.id) || !Number.isSafeInteger(input.revision) || input.revision < 1) throw new Error('Invalid news identity.');
+    validateNewsContent(input.content);
+    return this.request('rpc/creddy_news_sync', 'POST', { p_id: input.id, p_revision: input.revision,
+      p_source_key: input.sourceKey, p_content: input.content, p_provenance: input.provenance });
+  }
   async setImage(id: string, revision: number, image: NewsImageReplacement, actor: string): Promise<NewsItem> {
     if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id) || !Number.isSafeInteger(revision) || revision < 1) throw new Error('Invalid news identity.');
     if (!publicHttps(image.url) || new URL(image.url).search || new URL(image.url).hash

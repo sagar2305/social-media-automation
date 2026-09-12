@@ -228,6 +228,7 @@ test('standalone news branch consumes its own evidence root and records a report
   const service = {
     findByIdentity: async () => current,
     get: async () => current!,
+    syncPublished: async () => current!,
     ingest: async (input: { error: string | null }) => {
       assert.equal(input.error, null);
       ingested++;
@@ -402,12 +403,89 @@ test('an unchanged older publication cannot confirm delivery of the current deci
   const service = {
     findByIdentity: async () => previous,
     ingest: async () => previous,
+    syncPublished: async () => previous,
   } as unknown as NewsService;
   await runAppNewsStage(root, { env, service, notifyMode: 'none' });
   const receipt = await readJson<{ status: string; decisionHash?: string }>(safeDataPath(root, 'reports', 'news-delivery', `${decision.canonicalId}.json`));
   assert.equal(receipt.status, 'published');
   assert.equal(receipt.decisionHash, undefined);
 });
+test('pipeline text sync preserves images and date, binds current delivery and notifies once', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'creddy-news-sync-'));
+  await initializeCreddyDataRoot(root);
+  const { article, decision } = fixtures();
+  await writeJsonAtomic(safeDataPath(root, '03-canonical-news', 'approved', 'test.json'), article);
+  await writeJsonAtomic(safeDataPath(root, '01-raw', 'test.json'), article);
+  await writeJsonAtomic(safeDataPath(root, '04-analysis-queue', 'completed', 'test.json'), decision);
+  let current = item();
+  current.content.headline = 'A previous headline from this rolling source URL';
+  current.content.image_url = 'https://example.com/approved-brand.jpg';
+  current.content.published_at -= 86400000;
+  const before = structuredClone(current);
+  let notifications = 0;
+  let syncs = 0;
+  const service = {
+    findByIdentity: async () => structuredClone(current),
+    get: async () => current,
+    ingest: async () => current,
+    syncPublished: async (input: Parameters<NewsService['syncPublished']>[0]) => {
+      syncs++;
+      assert.equal(input.revision, current.revision);
+      if (current.manually_edited || current.status !== 'published') return current;
+      const changed = ['headline', 'summary', 'category'].some(key =>
+        input.content[key as keyof typeof input.content] !== current.content[key as keyof typeof current.content]);
+      current = { ...current, provenance: input.provenance, revision: current.revision + Number(changed),
+        content: { ...current.content, headline: input.content.headline, summary: input.content.summary, category: input.content.category } };
+      return current;
+    },
+  } as unknown as NewsService;
+  const notify = async () => { notifications++; current.slack_revision = current.revision;
+    current.slack_channel = 'CNEWS'; current.slack_ts = '1.2'; };
+  const first = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(first.publishedChanged, 1);
+  assert.deepEqual(first.failures, []);
+  assert.equal(current.content.headline, decision.headline);
+  assert.equal(current.content.image_url, before.content.image_url);
+  assert.equal(current.content.published_at, before.content.published_at);
+  const receiptPath = safeDataPath(root, 'reports', 'news-delivery', `${decision.canonicalId}.json`);
+  assert.ok((await readJson<{ decisionHash?: string }>(receiptPath)).decisionHash);
+  const retry = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(retry.publishedUnchanged, 1);
+  assert.equal(notifications, 1);
+  assert.equal(current.revision, before.revision + 1);
+  current.manually_edited = true;
+  current.content.headline = 'A human editor deliberately changed this headline';
+  const protectedResult = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(syncs, 2, 'human edits cannot enter pipeline sync');
+  assert.equal(protectedResult.withheld.length, 1);
+  assert.equal((await readJson<{ decisionHash?: string }>(receiptPath)).decisionHash, undefined);
+  current.manually_edited = false;
+  service.syncPublished = async () => { throw new Error('Concurrent revision change or service failure'); };
+  const failure = await runAppNewsStage(root, { env, service, notify });
+  assert.equal(failure.failures.length, 1);
+  assert.equal((await readJson<{ status: string }>(receiptPath)).status, 'failed');
+  assert.equal(current.content.headline, 'A human editor deliberately changed this headline');
+});
+
+test('News sync uses the revision-checked server RPC and validates input', async () => {
+  const current = item();
+  let calls = 0;
+  const service = new NewsService('https://example.com', 'test-key', async (url, options) => {
+    calls++;
+    assert.equal(String(url), 'https://example.com/rest/v1/rpc/creddy_news_sync');
+    const body = JSON.parse(String(options?.body));
+    assert.equal(body.p_revision, current.revision);
+    assert.equal(body.p_source_key, current.source_key);
+    return new Response(JSON.stringify(current));
+  });
+  const input = { id: current.id, revision: current.revision, sourceKey: current.source_key,
+    content: current.content, provenance: current.provenance };
+  await service.syncPublished(input);
+  await assert.rejects(service.syncPublished({ ...input, revision: 0 }));
+  await assert.rejects(service.syncPublished({ ...input, content: { ...input.content, headline: '' } }));
+  assert.equal(calls, 1);
+});
+
 test('server errors never reveal upstream bodies or credentials', async () => {
   const service = new NewsService('https://example.com', 'test-key', async () => new Response('private upstream payload', { status: 500 }));
   await assert.rejects(service.get('test'), error => error instanceof Error && !error.message.includes('private upstream payload') && !error.message.includes('test-key'));

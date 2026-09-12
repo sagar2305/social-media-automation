@@ -79,6 +79,14 @@ retry and 24 hours thereafter. A changed evidence hash creates a fresh task.
     reports distinguish newly inserted, changed, notification-reconciled, and
     unchanged published rows;
     the aggregate `published` count remains the number observed as published.
+    Eligible pipeline-owned publications are reconciled through the revision-checked
+    `creddy_news_sync` RPC when a rolling source changes. It updates headline,
+    summary, category and current evidence while preserving image, original date,
+    source identity, human edits and tombstones. Changed text advances the app
+    feed and Slack revision; evidence-only refreshes do not create notifications.
+    An older retained headline is reported as withheld current content, never
+    bound to the new ranking's delivery receipt. Deploy the app repository's
+    `20260907000029_news_pipeline_sync.sql` migration before this pipeline update.
     Policy exclusions are listed in the hourly report; ordinary age/score
     exclusions do not trigger Slack alerts. Verification exceptions and confirmed
     conflicts use the existing deduplicated digest. A confirmed material conflict
@@ -107,6 +115,10 @@ or reuse its approvals. Historical slideshow render revisions are audit records,
 not active handoff inputs. Existing remote social submission IDs can be reconciled
 without recreating their old packages; new delivery still requires all current
 approval and verification checks. TikTok inbox delivery is not public publication.
+Finalized slideshow bank records (approved, scheduled, published or rejected)
+are counted as `finalizedSkipped` before inspecting mutable current copy/plans.
+Pending review and revision records still undergo all validation; old failures
+remain visible until their actual content or render revision is repaired.
 
 Blogs and News follow [editorial imagery](CREDDY-EDITORIAL-IMAGES.md). Blog heroes
 prefer fresh reviewed Pexels/Commons photography with explicit crop points and
